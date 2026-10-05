@@ -15,7 +15,7 @@ set +e
 RESULT=$?
 set -e
 cat "$TEST_DIR/denied.log"
-if [[ $RESULT == 1 ]] && rg -q 'Could not allocate dynamic translator buffer' "$TEST_DIR/denied.log"; then
+if [[ $RESULT == 1 ]] && grep -q 'Could not allocate dynamic translator buffer' "$TEST_DIR/denied.log"; then
   echo 'Unicorn terminated the process while allocating its dynamic translator buffer (exit 1).'
 elif [[ $RESULT != 10 ]]; then
   echo "Expected Unicorn allocation failure; received $RESULT." >&2
