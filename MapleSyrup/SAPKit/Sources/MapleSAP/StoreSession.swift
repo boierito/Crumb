@@ -12,8 +12,6 @@ public actor StoreSession {
     private let persistence: KBSyncPersistence
     private var bag: [String: String]?
     private var busy = false
-    // Account/identity-bound, memory-only; never carried across logout.
-    private var licensedApps: Set<String> = []
     private let sleep: (TimeInterval) async throws -> Void
     private let progress: (StoreStage) async -> Void
     private let diagnostic: (String) async -> Void
@@ -51,23 +49,31 @@ public actor StoreSession {
         busy = true; defer { busy = false }
         guard externalVersionID.isEmpty || StoreParsing.identifier(externalVersionID) != nil else { throw StoreError.invalidApp }
         try await resolveBag()
-        // Apple does not always report 9610 from every download endpoint. Acquire
-        // a verified free app before querying its versions, rather than relying
-        // on a fallback to classify an unowned app. Buy the current license (0),
-        // then request the caller's actual externalVersionId unchanged.
-        var acquired = false
-        if acquireFreeLicense, app.price == 0, !licensedApps.contains(app.id) {
-            try await purchaseFree(app)
-            licensedApps.insert(app.id)
-            acquired = true
-        }
         let version = externalVersionID.isEmpty ? try await latestVersion(app) : externalVersionID
         guard StoreParsing.identifier(version) != nil else { throw StoreError.invalidApp }
         do { return try await requestDescriptor(app, version: version) }
-        catch StoreError.licenseRequired where acquireFreeLicense && !acquired {
-            licensedApps.remove(app.id)
-            try await purchaseFree(app)
-            licensedApps.insert(app.id)
+        catch let error as StoreError where acquireFreeLicense &&
+            (error == .licenseRequired || (error == .unavailable && app.price == 0)) {
+            // Download first: an unrelated buyProduct error must never block
+            // versions of an app the account already owns. Acquire only after
+            // a missing-license/unavailable response, once per operation.
+            do { try await purchaseFree(app) }
+            catch let purchaseError as StoreError where purchaseError == .http(500) || purchaseError == .invalidResponse {
+                // ipatool treats purchase HTTP 500 as already owned. Instead,
+                // verify access with a read-only download request; do not replay
+                // the purchase or invent a successful license state.
+                do {
+                    let result = try await requestDescriptor(app, version: version)
+                    await diagnostic("purchase-outcome=access-confirmed-after-ambiguous-response")
+                    return result
+                } catch {
+                    try Task.checkCancellation()
+                    if let failure = error as? StoreError, [.licenseRequired, .unavailable, .invalidResponse].contains(failure) {
+                        throw purchaseError
+                    }
+                    throw error
+                }
+            }
             return try await requestDescriptor(app, version: version)
         }
     }
@@ -104,6 +110,9 @@ public actor StoreSession {
                     do { return try await ent(url, app: app, version: version, blob: cached) }
                     catch {
                         try Task.checkCancellation()
+                        // A per-app license denial does not invalidate the
+                        // accepted account-bound signing blob.
+                        if (error as? StoreError) == .licenseRequired { throw error }
                         await diagnostic("recovery=rejected-cached-kbsync; category=\(ResponseDiagnostic.category(error))")
                         try? persistence.clear()
                     }
@@ -162,23 +171,28 @@ public actor StoreSession {
     }
     private func purchaseFree(_ app: StoreApp) async throws {
         guard app.price == 0 else { throw StoreError.paidPurchase }
-        guard let endpoint = bag?["buyProduct"], var components = URLComponents(string: endpoint),
-              let url = components.url else { throw SAPError.invalidBag }
-        _ = try SAPConfiguration.trustedAppleURL(endpoint)
-        let host = url.host?.lowercased() ?? ""
-        guard host == "buy.itunes.apple.com" || host.hasSuffix("-buy.itunes.apple.com"),
-              ["/WebObjects/MZBuy.woa/wa/buyProduct", "/WebObjects/MZFinance.woa/wa/buyProduct"].contains(url.path),
-              components.query == nil else { throw SAPError.invalidEndpoint }
-        if let pod = account.pod { components.host = "p\(pod)-buy.itunes.apple.com" }
+        // The live Bag's MZBuy buyProduct is not ipatool's Configurator purchase
+        // service. Derive the MZFinance sibling from the validated authenticated
+        // endpoint; host comes from the dynamic session/pod, not a fixed server.
+        let authenticated = try AuthenticationEndpoint.validate(account.authenticationURL)
+        guard var components = URLComponents(url: authenticated, resolvingAgainstBaseURL: false) else { throw SAPError.invalidEndpoint }
+        components.path = "/" + authenticated.path.split(separator: "/").dropLast().joined(separator: "/") + "/buyProduct"
+        components.query = nil
+        if let pod = account.pod, !pod.isEmpty { components.host = "p\(pod)-buy.itunes.apple.com" }
         guard let purchaseURL = components.url else { throw SAPError.invalidEndpoint }
         let body: [String: Any] = ["appExtVrsId": "0", "hasAskedToFulfillPreorder": "true", "buyWithoutAuthorization": "true",
             "hasDoneAgeCheck": "true", "guid": identity.guid, "needDiv": "0", "origPage": "Software-\(app.id)",
             "origPageLocation": "Buy", "price": "0", "pricingParameters": "STDQ", "productType": "C", "salableAdamId": NSNumber(value: UInt64(app.id) ?? 0)]
         await progress(.purchase)
-        let result = try await post(purchaseURL, body: body, token: true, retry: false)
-        if StoreParsing.identifier(result["failureType"]) == "5002" { return }
+        await diagnostic("purchase-route=MZFinance; guid-query=false")
+        let result = try await post(purchaseURL, body: body, token: true, retry: false, guidQuery: false)
+        if StoreParsing.identifier(result["failureType"]) == "5002" {
+            await diagnostic("purchase-outcome=already-owned")
+            return
+        }
         try StoreParsing.failure(result)
         guard result["jingleDocType"] as? String == "purchaseSuccess", StoreParsing.identifier(result["status"]) == "0" else { throw StoreError.licenseRequired }
+        await diagnostic("purchase-outcome=confirmed")
     }
     private func dispatchURL(_ text: String, path: String) throws -> URL {
         guard let c = URLComponents(string: text), let url = c.url, c.scheme == "https", c.host == "downloaddispatch.itunes.apple.com",
@@ -186,9 +200,9 @@ public actor StoreSession {
               c.percentEncodedPath == path else { throw SAPError.invalidEndpoint }
         return url
     }
-    private func post(_ url: URL, body: [String: Any], token: Bool, ent: Bool = false, retry: Bool = true) async throws -> [String: Any] {
+    private func post(_ url: URL, body: [String: Any], token: Bool, ent: Bool = false, retry: Bool = true, guidQuery: Bool = true) async throws -> [String: Any] {
         var c = URLComponents(url: url, resolvingAgainstBaseURL: false)!
-        c.queryItems = [URLQueryItem(name: "guid", value: identity.guid)]
+        if guidQuery { c.queryItems = [URLQueryItem(name: "guid", value: identity.guid)] }
         var request = URLRequest(url: c.url!)
         request.httpMethod = "POST"
         request.httpBody = try PropertyListSerialization.data(fromPropertyList: body, format: .xml, options: 0)
@@ -243,7 +257,7 @@ public actor StoreSession {
                     return data
                 }
                 if response.statusCode == 200 { return data }
-                if response.statusCode == 500 && data.isEmpty { throw StoreError.emptyRedownload }
+                if response.statusCode == 500 && data.isEmpty, request.url?.path == "/r/redownload" { throw StoreError.emptyRedownload }
                 guard retry, attempt < 2, ([204, 404, 429].contains(response.statusCode) || response.statusCode / 100 == 5) else { throw StoreError.http(response.statusCode) }
                 let delay = try StoreRetry.delay(response.value(forHTTPHeaderField: "Retry-After"), attempt: attempt)
                 try await sleep(delay)
