@@ -12,6 +12,8 @@ public actor StoreSession {
     private let persistence: KBSyncPersistence
     private var bag: [String: String]?
     private var busy = false
+    // Account/identity-bound, memory-only; never carried across logout.
+    private var licensedApps: Set<String> = []
     private let sleep: (TimeInterval) async throws -> Void
     private let progress: (StoreStage) async -> Void
     private let diagnostic: (String) async -> Void
@@ -47,12 +49,25 @@ public actor StoreSession {
     public func descriptor(app: StoreApp, externalVersionID: String = "", acquireFreeLicense: Bool = true) async throws -> StoreDownload {
         guard !busy else { throw SAPError.invalidState }
         busy = true; defer { busy = false }
+        guard externalVersionID.isEmpty || StoreParsing.identifier(externalVersionID) != nil else { throw StoreError.invalidApp }
+        try await resolveBag()
+        // Apple does not always report 9610 from every download endpoint. Acquire
+        // a verified free app before querying its versions, rather than relying
+        // on a fallback to classify an unowned app. Buy the current license (0),
+        // then request the caller's actual externalVersionId unchanged.
+        var acquired = false
+        if acquireFreeLicense, app.price == 0, !licensedApps.contains(app.id) {
+            try await purchaseFree(app)
+            licensedApps.insert(app.id)
+            acquired = true
+        }
         let version = externalVersionID.isEmpty ? try await latestVersion(app) : externalVersionID
         guard StoreParsing.identifier(version) != nil else { throw StoreError.invalidApp }
-        try await resolveBag()
         do { return try await requestDescriptor(app, version: version) }
-        catch StoreError.licenseRequired where acquireFreeLicense {
+        catch StoreError.licenseRequired where acquireFreeLicense && !acquired {
+            licensedApps.remove(app.id)
             try await purchaseFree(app)
+            licensedApps.insert(app.id)
             return try await requestDescriptor(app, version: version)
         }
     }
@@ -103,6 +118,9 @@ public actor StoreSession {
                 return result
             } catch {
                 try Task.checkCancellation()
+                // Preserve a structured license rejection so acquisition is not
+                // hidden by an unrelated legacy/redownload failure.
+                if (error as? StoreError) == .licenseRequired { throw error }
                 await diagnostic("recovery=ent-to-pod; category=\(ResponseDiagnostic.category(error)); saved-session=retained")
                 preferredError = error
             }

@@ -63,7 +63,7 @@ private final class StoreFixtureCache: KBSyncPersistence {
 }
 extension StoreTests {
     private func plist(_ root: [String: Any]) throws -> Data { try PropertyListSerialization.data(fromPropertyList: root, format: .xml, options: 0) }
-    private var app: StoreApp { StoreApp(id: "123", bundleID: "test.app", name: "Test", price: 0) }
+    private var app: StoreApp { StoreApp(id: "123", bundleID: "test.app", name: "Test", price: nil) }
     private func reply(version: String = "999") throws -> Data {
         try plist(["songList": [["URL": "https://iosapps.itunes.apple.com/a.ipa", "metadata": ["itemId": "123", "softwareVersionExternalIdentifier": version,
             "softwareVersionBundleId": "test.app", "softwareVersionExternalIdentifiers": ["999", "888"]]]]])
@@ -111,22 +111,75 @@ extension StoreTests {
         XCTAssertNil(requests.last?.value(forHTTPHeaderField: "X-Token"))
     }
     func testFreeLicenseUsesBagPurchaseAndAuthenticatedPod() async throws {
-        let transport = StoreFixtureTransport([.init(status: 200, data: try bag()), .init(status: 200, data: try plist(["failureType": "9610"])),
-            .init(status: 200, data: try plist(["failureType": "9610"])),
-            .init(status: 200, data: try plist(["jingleDocType": "purchaseSuccess", "status": 0])), .init(status: 200, data: try reply())])
-        _ = try await session(transport).descriptor(app: app, externalVersionID: "999")
+        let transport = StoreFixtureTransport([.init(status: 200, data: try bag()),
+            .init(status: 200, data: try plist(["jingleDocType": "purchaseSuccess", "status": 0])),
+            .init(status: 200, data: try reply(version: "888"))])
+        let free = StoreApp(id: app.id, bundleID: app.bundleID, name: app.name, price: 0)
+        let result = try await session(transport).descriptor(app: free, externalVersionID: "888")
+        XCTAssertEqual(result.externalVersionID, "888")
         let requests = await transport.requests
-        XCTAssertEqual(requests[3].url?.path, "/WebObjects/MZBuy.woa/wa/buyProduct")
-        XCTAssertEqual(requests[3].url?.host, "p42-buy.itunes.apple.com")
-        let root = try PropertyListSerialization.propertyList(from: requests[3].httpBody!, format: nil) as! [String: Any]
+        XCTAssertEqual(requests[1].url?.path, "/WebObjects/MZBuy.woa/wa/buyProduct")
+        XCTAssertEqual(requests[1].url?.host, "p42-buy.itunes.apple.com")
+        XCTAssertEqual(requests[1].value(forHTTPHeaderField: "X-Token"), "fixture-token")
+        let root = try PropertyListSerialization.propertyList(from: requests[1].httpBody!, format: nil) as! [String: Any]
         XCTAssertEqual(root["price"] as? String, "0")
         XCTAssertEqual(root["pricingParameters"] as? String, "STDQ")
+        XCTAssertEqual(root["appExtVrsId"] as? String, "0")
+        let download = try PropertyListSerialization.propertyList(from: requests[2].httpBody!, format: nil) as! [String: Any]
+        XCTAssertEqual(download["externalVersionId"] as? String, "888")
+    }
+    func testAlreadyOwnedFreeAppIsAcquiredOnlyOncePerSession() async throws {
+        let transport = StoreFixtureTransport([.init(status: 200, data: try bag()),
+            .init(status: 200, data: try plist(["failureType": "5002"])),
+            .init(status: 200, data: try reply()), .init(status: 200, data: try reply(version: "888"))])
+        let store = try session(transport)
+        let free = StoreApp(id: app.id, bundleID: app.bundleID, name: app.name, price: 0)
+        _ = try await store.descriptor(app: free, externalVersionID: "999")
+        _ = try await store.descriptor(app: free, externalVersionID: "888")
+        let requests = await transport.requests
+        XCTAssertEqual(requests.filter { $0.url?.path.hasSuffix("buyProduct") == true }.count, 1)
+        XCTAssertEqual(requests.count, 4)
+    }
+    func testEntLicenseErrorIsNotLostInFallbackAndHonorsOptOut() async throws {
+        let transport = StoreFixtureTransport([.init(status: 200, data: try bag()),
+            .init(status: 200, data: try plist(["failureType": "9610"]))])
+        do {
+            _ = try await session(transport).descriptor(app: app, externalVersionID: "888", acquireFreeLicense: false)
+            XCTFail("missing license accepted")
+        } catch { XCTAssertEqual(error as? StoreError, .licenseRequired) }
+        let requests = await transport.requests
+        XCTAssertEqual(requests.count, 2)
+    }
+    func testFreeAcquisitionFailureDoesNotDownloadOrCacheLicense() async throws {
+        let transport = StoreFixtureTransport([.init(status: 200, data: try bag()),
+            .init(status: 200, data: try plist(["failureType": "2059", "customerMessage": "Requires App Store interaction"])),
+            .init(status: 200, data: try plist(["jingleDocType": "purchaseSuccess", "status": 0])),
+            .init(status: 200, data: try reply())])
+        let store = try session(transport)
+        let free = StoreApp(id: app.id, bundleID: app.bundleID, name: app.name, price: 0)
+        do { _ = try await store.descriptor(app: free, externalVersionID: "999"); XCTFail("unconfirmed license") }
+        catch { XCTAssertEqual(error as? StoreError, .apple("2059", "Requires App Store interaction")) }
+        var requests = await transport.requests
+        XCTAssertEqual(requests.count, 2)
+        _ = try await store.descriptor(app: free, externalVersionID: "999")
+        requests = await transport.requests
+        XCTAssertEqual(requests[2].url?.path, "/WebObjects/MZBuy.woa/wa/buyProduct")
+    }
+    func testMissingFreeLicenseAfterConfirmedPurchaseIsNotPurchasedInLoop() async throws {
+        let transport = StoreFixtureTransport([.init(status: 200, data: try bag()),
+            .init(status: 200, data: try plist(["jingleDocType": "purchaseSuccess", "status": 0])),
+            .init(status: 200, data: try plist(["failureType": "9610"]))])
+        let free = StoreApp(id: app.id, bundleID: app.bundleID, name: app.name, price: 0)
+        do { _ = try await session(transport).descriptor(app: free, externalVersionID: "888"); XCTFail("license rejection") }
+        catch { XCTAssertEqual(error as? StoreError, .licenseRequired) }
+        let requests = await transport.requests
+        XCTAssertEqual(requests.count, 3)
     }
     func testPaidAppCannotBePurchasedAutomatically() async throws {
-        let transport = StoreFixtureTransport([.init(status: 200, data: try bag()), .init(status: 200, data: try plist(["failureType": "9610"])), .init(status: 200, data: try plist(["failureType": "9610"]))])
+        let transport = StoreFixtureTransport([.init(status: 200, data: try bag()), .init(status: 200, data: try plist(["failureType": "9610"]))])
         do { _ = try await session(transport).descriptor(app: StoreApp(id: "123", bundleID: "test.app", name: "Paid", price: 2), externalVersionID: "999"); XCTFail("paid acquisition") }
         catch { XCTAssertEqual(error as? StoreError, .paidPurchase) }
-        let requests = await transport.requests; XCTAssertEqual(requests.count, 3)
+        let requests = await transport.requests; XCTAssertEqual(requests.count, 2)
     }
 }
 extension StoreTests {
