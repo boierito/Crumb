@@ -66,6 +66,7 @@ Relative to original d508e53 / upstream-wafflestore-2.2.2.
 - `docs/evidence/ios27-authentication-user-report.md`
 - `docs/evidence/ios27-ksign-user-report.md`
 - `docs/evidence/ios27-store-dev3-user-report.md`
+- `docs/evidence/ios27-store-dev4-user-report.md`
 - `docs/evidence/original-build-linux.log`
 - `docs/evidence/original-ci-xcode16.log`
 - `docs/evidence/original-ci-xcode26.log`
