@@ -213,6 +213,20 @@ final class AuthenticationTests: XCTestCase {
         catch { XCTAssertEqual(error as? SAPError, .keychain(-50)) }
     }
 
+    func testCancelledBeforePersistenceDoesNotSaveReceivedCredentials() async throws {
+        let store = FixtureAccountStore()
+        let transport = FixtureAuthenticationTransport([.http(200, try success(), responseHeaders)])
+        let task = Task {
+            try await AppleAuthentication(transport: transport, signer: FixtureSigner(), persistence: store)
+                .login(email: "fixture@example.test", password: "fixture-password", identity: identity, endpoint: endpoint) { stage in
+                    if stage == .saving { withUnsafeCurrentTask { $0?.cancel() } }
+                }
+        }
+        do { _ = try await task.value; XCTFail("Saved after cancellation") }
+        catch { XCTAssertTrue(error is CancellationError) }
+        XCTAssertNil(try store.load())
+    }
+
     func testAccountRoundTripLogoutAndIdentityMismatch() throws {
         let store = FixtureAccountStore()
         let account = StoreAccount(email: "fixture@example.test", name: "Fixture", dsid: "123", passwordToken: "token",

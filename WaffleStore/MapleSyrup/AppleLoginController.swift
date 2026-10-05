@@ -53,8 +53,9 @@ extension AppData {
                 case .authenticated(let account):
                     applyStoreAccount(account, restored: false)
                 }
-            } catch is CancellationError {
+            } catch let error where error is CancellationError || Task.isCancelled {
                 applicationStatus = "Sign-in cancelled."
+                authenticationDiagnostic += "\noutcome=cancelled"
             } catch {
                 if hasSent2FACode { pendingAuthenticationCookies = await loginTransport.cookies() }
                 // Apple/SAP errors have sanitized, bounded descriptions. Arbitrary
