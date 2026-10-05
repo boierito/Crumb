@@ -28,7 +28,7 @@ de bytes exactos, cierre y rechazo de runtime JIT/firma vacía/respuestas grande
 AuthenticationTests usa un signer fixture **sin firmas válidas de Apple** y
 respuestas locales. Cubre plist/headers, POST/body/attempt tras redirects,
 rechazo de hosts/rutas inseguros y 303, límite de cuatro redirects, -5000 y
-attempt 2, challenge 2FA y rechazo/normalización de códigos, 204/403/404/429/5xx,
+attempt 2, challenge 2FA/cookies en memoria y rechazo/normalización de códigos, 204/403/404/429/5xx,
 timeout/cancelación, Retry-After/backoff, respuestas incompletas, mensajes
 redactados, fallo de persistencia, serialización de cuenta sin password/código,
 cookies/expiración/host, GUID mismatch, logout y Keychain real en macOS.

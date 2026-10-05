@@ -31,7 +31,7 @@ public enum AuthenticationError: Error, LocalizedError, Equatable {
     }
 }
 
-public enum AuthenticationOutcome { case authenticated(StoreAccount), twoFactorRequired }
+public enum AuthenticationOutcome { case authenticated(StoreAccount), twoFactorRequired([StoreCookie]) }
 public enum AuthenticationStage: String, Sendable {
     case bag = "Resolving Store Bag", sap = "Initializing SAP", signing = "Signing authentication request"
     case authenticating = "Contacting Apple", redirect = "Following Store pod", retrying = "Waiting to retry"
@@ -98,7 +98,7 @@ public struct AppleAuthentication {
                 continue
             }
             if failure.isEmpty, message == "MZFinance.BadLogin.Configurator_message" {
-                if code.isEmpty { await progress(.twoFactor); return .twoFactorRequired }
+                if code.isEmpty { await progress(.twoFactor); return .twoFactorRequired(await transport.cookies()) }
                 throw AuthenticationError.verificationRejected
             }
             if message == "Your account is disabled." { throw AuthenticationError.accountDisabled }

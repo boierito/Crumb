@@ -108,6 +108,23 @@ final class AuthenticationTests: XCTestCase {
         XCTAssertNil(try store.load())
     }
 
+    func testChallengeCookiesAreCarriedInMemoryIntoEphemeralVerificationJar() async throws {
+        let rawCookie = HTTPCookie(properties: [.name: "challenge", .value: "fixture-secret-cookie", .domain: ".itunes.apple.com", .path: "/", .secure: "TRUE"])!
+        let challenge = try plist(["customerMessage": "MZFinance.BadLogin.Configurator_message"])
+        let transport = FixtureAuthenticationTransport([.http(200, challenge, [:])], cookies: [StoreCookie(rawCookie)])
+        let store = FixtureAccountStore()
+        guard case .twoFactorRequired(let cookies) = try await login(transport, store: store) else { return XCTFail("No challenge") }
+        XCTAssertNil(try store.load())
+        let verificationTransport = AppleAuthenticationTransport(cookies: cookies)
+        defer { verificationTransport.close() }
+        let carried = await verificationTransport.cookies()
+        XCTAssertTrue(carried.contains { $0.name == "challenge" && $0.value == "fixture-secret-cookie" })
+        let unrelated = AppleAuthenticationTransport()
+        defer { unrelated.close() }
+        let isolated = await unrelated.cookies()
+        XCTAssertFalse(isolated.contains { $0.name == "challenge" })
+    }
+
     func testCodeNormalizationRejectsNonASCIIAndInvalidLengthsBeforeRequests() async throws {
         XCTAssertEqual(try TwoFactorAuthentication.normalize("12\n34 56"), "123456")
         for code in ["12345", "1234567", "１２３４５６", "12a456", "123-456", "   "] {
@@ -238,7 +255,8 @@ private actor FixtureAuthenticationTransport: AuthenticationTransport {
     enum Reply { case http(Int, Data, [String: String]), error(URLError.Code) }
     var replies: [Reply]
     var requests: [URLRequest] = []
-    init(_ replies: [Reply]) { self.replies = replies }
+    let storedCookies: [StoreCookie]
+    init(_ replies: [Reply], cookies: [StoreCookie] = []) { self.replies = replies; self.storedCookies = cookies }
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         requests.append(request)
         guard !replies.isEmpty else { throw SAPError.invalidState }
@@ -248,7 +266,7 @@ private actor FixtureAuthenticationTransport: AuthenticationTransport {
         case .error(let code): throw URLError(code)
         }
     }
-    func cookies() async -> [StoreCookie] { [] }
+    func cookies() async -> [StoreCookie] { storedCookies }
 }
 private final class FixtureSigner: ActionSigning {
     var bodies: [Data] = []

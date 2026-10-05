@@ -170,7 +170,9 @@ en Keychain; no se utiliza el jar global ni se reenvían secretos a hosts ajenos
 
 `-5000` en la primera respuesta genera únicamente el segundo intento lógico,
 igual que ipatool. BadLogin.Configurator_message activa el campo de 2FA, sin
-persistir credenciales. La segunda petición usa password + código ASCII de
+persistir credenciales. Las cookies del challenge se conservan únicamente en
+memoria y se cargan en el jar efímero de la verificación, como en ipatool.
+La segunda petición usa password + código ASCII de
 seis dígitos sin espacios, sólo en memoria. Códigos inválidos se rechazan antes
 de SAP/red. Si Apple pide un código fresco, se conserva la pantalla 2FA y se
 limpia el código anterior. Se puede cancelar/reiniciar para otra cuenta.

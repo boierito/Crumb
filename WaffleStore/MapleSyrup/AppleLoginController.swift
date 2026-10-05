@@ -11,6 +11,7 @@ extension AppData {
         let email = appleId.trimmingCharacters(in: .whitespacesAndNewlines)
         let secret = password
         let verification = hasSent2FACode ? code : ""
+        let challengeCookies = hasSent2FACode ? pendingAuthenticationCookies : []
         isAuthenticating = true
         authenticationError = ""
         authenticationDiagnostic = ["WaffleStore authentication probe v2",
@@ -20,7 +21,7 @@ extension AppData {
         authenticationTask = Task {
             defer { isAuthenticating = false; authenticationTask = nil }
             let sapTransport = AppleSAPTransport()
-            let loginTransport = AppleAuthenticationTransport()
+            let loginTransport = AppleAuthenticationTransport(cookies: challengeCookies)
             defer { sapTransport.close(); loginTransport.close() }
             var sap: SAPSession?
             do {
@@ -43,7 +44,8 @@ extension AppData {
                     }
                 try Task.checkCancellation()
                 switch outcome {
-                case .twoFactorRequired:
+                case .twoFactorRequired(let cookies):
+                    pendingAuthenticationCookies = cookies
                     authenticationDiagnostic += "\noutcome=2FA-required"
                     hasSent2FACode = true
                     code = ""
@@ -54,6 +56,7 @@ extension AppData {
             } catch is CancellationError {
                 applicationStatus = "Sign-in cancelled."
             } catch {
+                if hasSent2FACode { pendingAuthenticationCookies = await loginTransport.cookies() }
                 // Apple/SAP errors have sanitized, bounded descriptions. Arbitrary
                 // URL errors can include routing secrets: expose only numeric codes.
                 if let error = error as? AuthenticationError { authenticationError = error.localizedDescription }
@@ -75,6 +78,7 @@ extension AppData {
         hasSent2FACode = false
         code = ""
         password = ""
+        pendingAuthenticationCookies = []
         authenticationError = ""
         applicationStatus = "Not logged in!".localized
     }
@@ -105,6 +109,7 @@ extension AppData {
             isAuthenticated = false
             hasSent2FACode = false
             appleId = ""; password = ""; code = ""
+            pendingAuthenticationCookies = []
             authenticationError = ""
             hasAppBeenServed = false
             applicationStatus = "Not logged in!".localized
@@ -124,6 +129,7 @@ extension AppData {
     private func applyStoreAccount(_ account: StoreAccount, restored: Bool) {
         appleId = account.email
         password = ""; code = ""; hasSent2FACode = false
+        pendingAuthenticationCookies = []
         ipaTool = IPATool(account: account)
         isAuthenticated = true
         applicationStatus = restored ? "Saved session loaded; Apple validity not checked." : "Signed in. Store download migration pending."

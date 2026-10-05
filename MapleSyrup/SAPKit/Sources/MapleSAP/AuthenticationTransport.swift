@@ -22,6 +22,13 @@ public final class AppleAuthenticationTransport: NSObject, AuthenticationTranspo
     }()
     private lazy var session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
 
+    public init(cookies: [StoreCookie] = []) {
+        super.init()
+        // Carry challenge cookies into the verification request, as ipatool's
+        // shared jar does. The jar remains ephemeral; no challenge is persisted.
+        for cookie in cookies.compactMap({ $0.cookie() }) { configuration.httpCookieStorage?.setCookie(cookie) }
+    }
+
     public func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let (file, response) = try await session.download(for: request)
         defer { try? FileManager.default.removeItem(at: file) }
