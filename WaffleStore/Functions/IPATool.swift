@@ -154,6 +154,7 @@ class StoreClient {
 
 class IPATool {
     let storeClient: StoreClient
+    var appleId: String { storeClient.appleId }
 
     init(account: StoreAccount) {
         storeClient = StoreClient(account: account)
@@ -253,4 +254,3 @@ class IPATool {
         return unzipDirectory.path
     }
 }
-

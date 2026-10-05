@@ -14,7 +14,8 @@ extension AppData {
         isAuthenticating = true
         authenticationError = ""
         authenticationDiagnostic = ["WaffleStore authentication probe v2",
-            "iOS=\(UIDevice.current.systemVersion)", "app-build=23002",
+            "iOS=\(UIDevice.current.systemVersion)",
+            "app-build=\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") ?? "unknown")",
             "password-persistence=false", "signer=tci-no-jit"].joined(separator: "\n")
         authenticationTask = Task {
             defer { isAuthenticating = false; authenticationTask = nil }

@@ -70,7 +70,8 @@ public enum AuthenticationEndpoint {
     // Same authentication host/path policy as ipatool 3411d57. Bag-only SAP
     // probes may discover other endpoints; credentials never use a fallback.
     public static func validate(_ url: URL) throws -> URL {
-        _ = try SAPConfiguration.trustedAppleURL(url.absoluteString)
+        do { _ = try SAPConfiguration.trustedAppleURL(url.absoluteString) }
+        catch { throw AuthenticationError.invalidRedirect }
         let host = url.host?.lowercased() ?? ""
         let path = "/WebObjects/MZFinance.woa/wa/authenticate"
         guard (host == "buy.itunes.apple.com" || host.hasSuffix("-buy.itunes.apple.com")),

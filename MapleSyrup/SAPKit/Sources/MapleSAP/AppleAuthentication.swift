@@ -176,15 +176,20 @@ public struct AppleAuthentication {
 
     private func retryDelay(_ header: String?, attempt: Int) throws -> TimeInterval {
         guard let header = header?.trimmingCharacters(in: .whitespacesAndNewlines) else { return Double(10 << (attempt - 1)) }
-        var delay = Double(header)
-        if delay == nil {
-            let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.timeZone = TimeZone(secondsFromGMT: 0); formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss z"
-            delay = formatter.date(from: header)?.timeIntervalSinceNow
+        if !header.isEmpty, header.allSatisfy({ $0.isASCII && $0.isNumber }) {
+            guard let seconds = UInt64(header), seconds <= 30 else { throw AuthenticationError.retryLater }
+            return max(1, Double(seconds))
         }
-        guard let value = delay, value.isFinite, value >= 0 else { return Double(10 << (attempt - 1)) }
-        guard value <= 30 else { throw AuthenticationError.retryLater }
-        return max(1, value)
+        for format in ["EEE, dd MMM yyyy HH:mm:ss z", "EEEE, dd-MMM-yy HH:mm:ss z", "EEE MMM d HH:mm:ss yyyy"] {
+            let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = TimeZone(secondsFromGMT: 0); formatter.dateFormat = format
+            if let date = formatter.date(from: header) {
+                let value = max(0, date.timeIntervalSinceNow)
+                guard value <= 30 else { throw AuthenticationError.retryLater }
+                return max(1, value)
+            }
+        }
+        return Double(10 << (attempt - 1))
     }
     private func string(_ value: Any?) -> String { (value as? String) ?? (value as? NSNumber)?.stringValue ?? "" }
     private func safe(_ text: String, secrets: [String]) -> String {

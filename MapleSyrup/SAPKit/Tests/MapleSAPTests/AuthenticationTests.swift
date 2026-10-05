@@ -160,6 +160,13 @@ final class AuthenticationTests: XCTestCase {
         let requests = await cancelled.requests; XCTAssertEqual(requests.count, 1)
     }
 
+    func testRetryAfterPastHTTPDateWaitsAtLeastOneSecond() async throws {
+        let sleeps = FixtureSleeps()
+        _ = try await login(FixtureAuthenticationTransport([.http(429, Data(), ["Retry-After": "Wed, 21 Oct 2015 07:28:00 GMT"]),
+            .http(200, try success(), responseHeaders)]), sleeps: sleeps)
+        let delays = await sleeps.values; XCTAssertEqual(delays, [1])
+    }
+
     func testMissingTokenDSIDOrStorefrontCannotCreateSession() async throws {
         for response in [try plist(["dsPersonId": "1"]), try plist(["passwordToken": "token"]), try plist([:])] {
             let store = FixtureAccountStore()
