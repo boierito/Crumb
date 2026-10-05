@@ -150,7 +150,7 @@
 			buildActionMask = 2147483647;
 			files = ();
 			inputPaths = ();
-			outputPaths = ();
+			outputPaths = ("$(SRCROOT)/build/Native/libunicorn.a", "$(SRCROOT)/build/Native/libWaffleSAP.a");
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
 			shellScript = "bash \"$SRCROOT/scripts/ensure-native.sh\"\n";
