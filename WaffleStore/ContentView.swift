@@ -121,7 +121,7 @@ struct ContentView: View {
     
     private var LoginSection: some View {
         Group {
-            Section(header: HeaderLabel(text: "Login".localized, icon: "icloud"), footer: Text("")) {
+            Section(header: HeaderLabel(text: "Login".localized, icon: "icloud"), footer: Text("Apple may sign in directly or request a verification code. A new 2FA prompt is not required for every login.")) {
                 VStack {
                     TextField("Apple ID".localized, text: $appData.appleId)
                         .modifier(TextFieldBackground())

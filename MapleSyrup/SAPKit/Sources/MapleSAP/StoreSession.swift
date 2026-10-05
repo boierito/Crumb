@@ -14,13 +14,15 @@ public actor StoreSession {
     private var busy = false
     private let sleep: (TimeInterval) async throws -> Void
     private let progress: (StoreStage) async -> Void
+    private let diagnostic: (String) async -> Void
     public init(account: StoreAccount, identity: MachineIdentity, transport: AuthenticationTransport,
                 generator: KBSyncGenerator, persistence: KBSyncPersistence = NoKBSyncPersistence(),
                 progress: @escaping (StoreStage) async -> Void = { _ in },
+                diagnostic: @escaping (String) async -> Void = { _ in },
                 sleep: @escaping (TimeInterval) async throws -> Void = { try await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000)) }) throws {
         try account.validate(identity: identity)
         self.account = account; self.identity = identity; self.transport = transport
-        self.generator = generator; self.persistence = persistence; self.sleep = sleep; self.progress = progress
+        self.generator = generator; self.persistence = persistence; self.sleep = sleep; self.progress = progress; self.diagnostic = diagnostic
     }
     public func lookup(_ input: String) async throws -> StoreApp {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -85,8 +87,11 @@ public actor StoreSession {
                 let url = try dispatchURL(endpoint, path: "/WebObjects/DownloadDispatch.woa/wa/ent/download")
                 if let cached = try persistence.load(dsid: account.dsid, guid: account.guid) {
                     do { return try await ent(url, app: app, version: version, blob: cached) }
-                    catch let error as StoreError where error == .sessionExpired || error == .licenseRequired { throw error }
-                    catch { try Task.checkCancellation(); try persistence.clear() }
+                    catch {
+                        try Task.checkCancellation()
+                        await diagnostic("recovery=rejected-cached-kbsync; category=\(ResponseDiagnostic.category(error))")
+                        try? persistence.clear()
+                    }
                 }
                 guard let dsid = UInt64(account.dsid), dsid > 0 else { throw AuthenticationError.invalidSession }
                 await progress(.kbsync)
@@ -96,8 +101,11 @@ public actor StoreSession {
                 // Cache failures cannot invalidate an already validated Apple reply.
                 try? persistence.save(blob, dsid: account.dsid, guid: account.guid)
                 return result
-            } catch let error as StoreError where error == .sessionExpired || error == .licenseRequired { throw error }
-            catch { try Task.checkCancellation(); preferredError = error }
+            } catch {
+                try Task.checkCancellation()
+                await diagnostic("recovery=ent-to-pod; category=\(ResponseDiagnostic.category(error)); saved-session=retained")
+                preferredError = error
+            }
         }
         // ipatool's legacy fallback derives the host from the authenticated pod.
         // Bag endpoints remain authoritative for ent, redownload and update.
@@ -173,7 +181,7 @@ public actor StoreSession {
             request.setValue(account.storefront, forHTTPHeaderField: "X-Apple-Store-Front")
             request.setValue(account.passwordToken, forHTTPHeaderField: "X-Token")
         }
-        let data = try await send(request, retry: retry)
+        let data = try await send(request, retry: retry, secrets: [body["kbsync"] as? String ?? ""])
         guard var root = try ApplePlist.dictionary(data) else { throw StoreError.invalidResponse }
         if var message = root["customerMessage"] as? String {
             let secrets = [account.passwordToken, account.dsid, account.guid, account.email, body["kbsync"] as? String ?? ""]
@@ -189,17 +197,33 @@ public actor StoreSession {
         c.queryItems = query.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
         return try await send(URLRequest(url: c.url!))
     }
-    private func send(_ request: URLRequest, retry: Bool = true) async throws -> Data {
+    private func send(_ request: URLRequest, retry: Bool = true, secrets: [String] = []) async throws -> Data {
         var request = request
         request.setValue("Configurator/2.18 (Macintosh; OS X 15.3.2; 24D81) AppleWebKit/0620.2.4.11.6", forHTTPHeaderField: "User-Agent")
         for attempt in 0..<(retry ? 3 : 1) {
             try Task.checkCancellation()
             do {
                 let (data, response) = try await transport.send(request)
-                if response.statusCode == 401 { throw StoreError.sessionExpired }
+                let scope: String
+                switch request.url?.path {
+                case "/WebObjects/DownloadDispatch.woa/wa/ent/download": scope = "ent"
+                case "/WebObjects/MZFinance.woa/wa/volumeStoreDownloadProduct": scope = "pod"
+                case "/r/redownload": scope = "redownload"
+                case "/up/updateProduct": scope = "update"
+                case "/WebObjects/MZBuy.woa/wa/buyProduct", "/WebObjects/MZFinance.woa/wa/buyProduct": scope = "purchase"
+                case "/bag.xml": scope = "bag"
+                default: scope = "catalog"
+                }
+                await diagnostic(ResponseDiagnostic.response(data, status: response.statusCode, scope: scope, attempt: attempt + 1,
+                    secrets: secrets + [account.passwordToken, account.dsid, account.guid, account.email]))
+                // A bare HTTP rejection is not proof that the account token expired.
+                // Decode populated Apple errors before generic HTTP classification.
+                if let root = try? ApplePlist.dictionary(data), root["failureType"] != nil || root["customerMessage"] != nil {
+                    return data
+                }
                 if response.statusCode == 200 { return data }
                 if response.statusCode == 500 && data.isEmpty { throw StoreError.emptyRedownload }
-                guard retry, attempt < 2, [204, 404, 429, 500, 502, 503, 504].contains(response.statusCode) else { throw StoreError.http(response.statusCode) }
+                guard retry, attempt < 2, ([204, 404, 429].contains(response.statusCode) || response.statusCode / 100 == 5) else { throw StoreError.http(response.statusCode) }
                 let delay = try StoreRetry.delay(response.value(forHTTPHeaderField: "Retry-After"), attempt: attempt)
                 try await sleep(delay)
             } catch let error as URLError where retry && attempt < 2 && [.timedOut, .networkConnectionLost, .cannotConnectToHost].contains(error.code) {

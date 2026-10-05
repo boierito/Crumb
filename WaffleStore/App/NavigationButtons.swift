@@ -25,7 +25,7 @@ struct NavigationButtons: View {
                     } else if appData.hasSent2FACode {
                         ButtonLabel(text: "Log In".localized, icon: "arrow.right")
                     } else {
-                        ButtonLabel(text: "Send 2FA Code".localized, icon: "key")
+                        ButtonLabel(text: "Sign in", icon: "key")
                     }
                 }
                 .buttonStyle(FancyButtonStyle())

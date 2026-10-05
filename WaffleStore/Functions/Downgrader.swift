@@ -22,7 +22,7 @@ extension AppData {
         guard storeTask == nil else { return }
         isDowngrading = true; showsDowngradeProgress = true; downgradeProgress = 0
         storeError = ""
-        storeDiagnostic = "WaffleStore Store probe v3\nkbsync-runtime=tci-no-jit\ninstallation=not-attempted\nsecret-values=withheld"
+        storeDiagnostic = "WaffleStore Store probe v4\nkbsync-runtime=tci-no-jit\ninstallation=not-attempted\nsecret-values=withheld"
         storeTask = Task {
             defer { storeTask = nil; isDowngrading = false; showsDowngradeProgress = false }
             let fm = FileManager.default

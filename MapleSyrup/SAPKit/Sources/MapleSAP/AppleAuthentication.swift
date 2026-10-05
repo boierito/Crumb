@@ -59,12 +59,14 @@ public struct AppleAuthentication {
     private let signer: ActionSigning
     private let persistence: StoreAccountPersistence
     private let sleep: (TimeInterval) async throws -> Void
+    private let diagnostic: (String) async -> Void
     public init(transport: AuthenticationTransport, signer: ActionSigning,
                 persistence: StoreAccountPersistence,
+                diagnostic: @escaping (String) async -> Void = { _ in },
                 sleep: @escaping (TimeInterval) async throws -> Void = {
                     try await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000))
                 }) {
-        self.transport = transport; self.signer = signer; self.persistence = persistence; self.sleep = sleep
+        self.transport = transport; self.signer = signer; self.persistence = persistence; self.sleep = sleep; self.diagnostic = diagnostic
     }
 
     public func login(email: String, password: String, code: String = "", identity: MachineIdentity,
@@ -76,7 +78,7 @@ public struct AppleAuthentication {
         var body = try payload(email: email, password: password, code: code, guid: identity.guid, attempt: logicalAttempt)
         while true {
             try Task.checkCancellation()
-            let (data, response) = try await send(body: body, endpoint: endpoint, progress: progress)
+            let (data, response) = try await send(body: body, endpoint: endpoint, progress: progress, secrets: [password, code, email])
             if (300..<400).contains(response.statusCode) {
                 guard [301, 302, 307, 308].contains(response.statusCode),
                       let location = response.value(forHTTPHeaderField: "Location") else {
@@ -137,7 +139,7 @@ public struct AppleAuthentication {
             "guid": guid, "password": password + code, "rmp": "0", "why": "signIn"], format: .xml, options: 0)
     }
 
-    private func send(body: Data, endpoint: URL, progress: (AuthenticationStage) async -> Void) async throws -> (Data, HTTPURLResponse) {
+    private func send(body: Data, endpoint: URL, progress: (AuthenticationStage) async -> Void, secrets: [String]) async throws -> (Data, HTTPURLResponse) {
         for attempt in 1...3 {
             try Task.checkCancellation()
             await progress(.signing)
@@ -152,6 +154,7 @@ public struct AppleAuthentication {
             await progress(.authenticating)
             do {
                 let (data, response) = try await transport.send(request)
+                await diagnostic(ResponseDiagnostic.response(data, status: response.statusCode, scope: "authentication", attempt: attempt, secrets: secrets))
                 guard data.count <= SAPProtocol.maximumBodySize else { throw SAPError.oversizedResponse }
                 let result = try? ApplePlist.dictionary(data)
                 let populated = result.map { !string($0["failureType"]).isEmpty || !string($0["customerMessage"]).isEmpty || !string($0["passwordToken"]).isEmpty } ?? false

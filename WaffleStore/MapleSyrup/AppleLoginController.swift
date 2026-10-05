@@ -14,14 +14,14 @@ extension AppData {
         let challengeCookies = hasSent2FACode ? pendingAuthenticationCookies : []
         isAuthenticating = true
         authenticationError = ""
-        authenticationDiagnostic = ["WaffleStore authentication probe v2",
+        authenticationDiagnostic = ["WaffleStore authentication probe v4",
             "iOS=\(UIDevice.current.systemVersion)",
             "app-build=\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") ?? "unknown")",
             "password-persistence=false", "signer=tci-no-jit"].joined(separator: "\n")
         authenticationTask = Task {
             defer { isAuthenticating = false; authenticationTask = nil }
             let sapTransport = AppleSAPTransport()
-            let loginTransport = AppleAuthenticationTransport(cookies: challengeCookies)
+            let loginTransport = AppleAuthenticationTransport(cookies: challengeCookies, isolatedConnections: true)
             defer { sapTransport.close(); loginTransport.close() }
             var sap: SAPSession?
             do {
@@ -37,7 +37,12 @@ extension AppData {
                 try await signer.initialize(configuration: configuration, identity: identity)
                 try Task.checkCancellation()
                 let authentication = AppleAuthentication(transport: loginTransport, signer: signer,
-                    persistence: KeychainStoreAccount())
+                    persistence: KeychainStoreAccount(), diagnostic: { event in
+                        await MainActor.run {
+                            self.authenticationDiagnostic += "\n\(event)"
+                            print("Apple authentication diagnostic: \(event)")
+                        }
+                    })
                 let outcome = try await authentication.login(email: email, password: secret, code: verification,
                     identity: identity, endpoint: configuration.authenticationURL) { stage in
                         await MainActor.run { self.setAuthenticationStage(stage) }
@@ -51,6 +56,7 @@ extension AppData {
                     code = ""
                     applicationStatus = AuthenticationStage.twoFactor.rawValue
                 case .authenticated(let account):
+                    authenticationDiagnostic += "\ntwo-factor=\(verification.isEmpty ? "not-requested-in-this-login" : "submitted")"
                     applyStoreAccount(account, restored: false)
                 }
             } catch let error where error is CancellationError || Task.isCancelled {

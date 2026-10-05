@@ -20,23 +20,39 @@ public final class AppleAuthenticationTransport: NSObject, AuthenticationTranspo
         configuration.httpShouldSetCookies = true
         return configuration
     }()
+    private let isolatedConnections: Bool
+    private let lock = NSLock()
+    private var isolatedSessions: [UUID: URLSession] = [:]
+    private var closed = false
     private lazy var session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
 
-    public init(cookies: [StoreCookie] = []) {
+    public convenience init(cookies: [StoreCookie] = [], isolatedConnections: Bool = false) {
+        self.init(cookies: cookies, isolatedConnections: isolatedConnections, protocolClasses: nil)
+    }
+    // Test-only protocol injection never changes the production cookie policy.
+    init(cookies: [StoreCookie], isolatedConnections: Bool, protocolClasses: [AnyClass]?) {
+        self.isolatedConnections = isolatedConnections
         super.init()
+        configuration.protocolClasses = protocolClasses
         // Carry challenge cookies into the verification request, as ipatool's
         // shared jar does. The jar remains ephemeral; no challenge is persisted.
         for cookie in cookies.compactMap({ $0.cookie() }) { configuration.httpCookieStorage?.setCookie(cookie) }
     }
 
     public func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        // ipatool disables authentication connection pooling. HTTP/2 may ignore
+        // Connection: close, so login retries own distinct sessions while sharing
+        // the same ephemeral cookie jar. Store transport can still reuse sessions.
+        let identifier = UUID()
+        let current = try connection(identifier)
+        defer { if isolatedConnections { releaseConnection(identifier, current) } }
         // Login replies contain tokens. Keep them in bounded RAM, never a
         // URLSession download file, URLCache, or a persistent cookie jar.
         #if canImport(FoundationNetworking)
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await current.data(for: request)
         guard data.count <= SAPProtocol.maximumBodySize else { throw SAPError.oversizedResponse }
         #else
-        let (bytes, response) = try await session.bytes(for: request)
+        let (bytes, response) = try await current.bytes(for: request)
         var data = Data()
         for try await byte in bytes {
             guard data.count < SAPProtocol.maximumBodySize else { throw SAPError.oversizedResponse }
@@ -52,5 +68,22 @@ public final class AppleAuthenticationTransport: NSObject, AuthenticationTranspo
     public func urlSession(_ session: URLSession, task: URLSessionTask,
                            willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
                            completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
-    public func close() { session.invalidateAndCancel() }
+    private func connection(_ id: UUID) throws -> URLSession {
+        lock.lock(); defer { lock.unlock() }
+        guard !closed else { throw CancellationError() }
+        guard isolatedConnections else { return session }
+        let current = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+        isolatedSessions[id] = current
+        return current
+    }
+    private func releaseConnection(_ id: UUID, _ current: URLSession) {
+        lock.lock(); isolatedSessions.removeValue(forKey: id); lock.unlock()
+        current.finishTasksAndInvalidate()
+    }
+    public func close() {
+        lock.lock(); closed = true
+        let active = Array(isolatedSessions.values); isolatedSessions.removeAll(); lock.unlock()
+        active.forEach { $0.invalidateAndCancel() }
+        if !isolatedConnections { session.invalidateAndCancel() }
+    }
 }

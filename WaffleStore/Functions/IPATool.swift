@@ -21,6 +21,11 @@ final class IPATool {
                     AppData.shared.storeDiagnostic += "\nstage=\(stage.rawValue)"
                     print("Apple Store stage: \(stage.rawValue)")
                 }
+            }, diagnostic: { event in
+                await MainActor.run {
+                    AppData.shared.storeDiagnostic += "\n\(event)"
+                    print("Apple Store diagnostic: \(event)")
+                }
             })
         self.transport = transport; self.store = store
         return store

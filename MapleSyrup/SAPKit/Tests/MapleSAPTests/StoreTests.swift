@@ -71,11 +71,11 @@ extension StoreTests {
     private func bag() throws -> Data { try plist(["urlBag": ["volumeStoreDownloadProduct": "https://downloaddispatch.itunes.apple.com/WebObjects/DownloadDispatch.woa/wa/ent/download",
         "redownloadProduct": "https://downloaddispatch.itunes.apple.com/r/redownload", "updateProduct": "https://downloaddispatch.itunes.apple.com/up/updateProduct",
         "buyProduct": "https://buy.itunes.apple.com/WebObjects/MZBuy.woa/wa/buyProduct"]]) }
-    private func session(_ transport: StoreFixtureTransport, cache: StoreFixtureCache = StoreFixtureCache(), generator: StoreFixtureGenerator = StoreFixtureGenerator()) throws -> StoreSession {
+    private func session(_ transport: StoreFixtureTransport, cache: StoreFixtureCache = StoreFixtureCache(), generator: StoreFixtureGenerator = StoreFixtureGenerator(), diagnostic: @escaping (String) async -> Void = { _ in }) throws -> StoreSession {
         let identity = try MachineIdentity(hardwareID: Data([2, 1, 2, 3, 4, 5]))
         let account = StoreAccount(email: "fixture@example.invalid", name: "Test", dsid: "12345", passwordToken: "fixture-token", storefront: "143505-1,29", pod: "42", guid: identity.guid,
             authenticationURL: URL(string: "https://p42-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate")!)
-        return try StoreSession(account: account, identity: identity, transport: transport, generator: generator, persistence: cache)
+        return try StoreSession(account: account, identity: identity, transport: transport, generator: generator, persistence: cache, diagnostic: diagnostic)
     }
     func testEntUsesSameIdentityAndCachesOnlyAcceptedBlob() async throws {
         let cache = StoreFixtureCache(); let generator = StoreFixtureGenerator()
@@ -109,20 +109,21 @@ extension StoreTests {
     }
     func testFreeLicenseUsesBagPurchaseAndAuthenticatedPod() async throws {
         let transport = StoreFixtureTransport([.init(status: 200, data: try bag()), .init(status: 200, data: try plist(["failureType": "9610"])),
+            .init(status: 200, data: try plist(["failureType": "9610"])),
             .init(status: 200, data: try plist(["jingleDocType": "purchaseSuccess", "status": 0])), .init(status: 200, data: try reply())])
         _ = try await session(transport).descriptor(app: app, externalVersionID: "999")
         let requests = await transport.requests
-        XCTAssertEqual(requests[2].url?.path, "/WebObjects/MZBuy.woa/wa/buyProduct")
-        XCTAssertEqual(requests[2].url?.host, "p42-buy.itunes.apple.com")
-        let root = try PropertyListSerialization.propertyList(from: requests[2].httpBody!, format: nil) as! [String: Any]
+        XCTAssertEqual(requests[3].url?.path, "/WebObjects/MZBuy.woa/wa/buyProduct")
+        XCTAssertEqual(requests[3].url?.host, "p42-buy.itunes.apple.com")
+        let root = try PropertyListSerialization.propertyList(from: requests[3].httpBody!, format: nil) as! [String: Any]
         XCTAssertEqual(root["price"] as? String, "0")
         XCTAssertEqual(root["pricingParameters"] as? String, "STDQ")
     }
     func testPaidAppCannotBePurchasedAutomatically() async throws {
-        let transport = StoreFixtureTransport([.init(status: 200, data: try bag()), .init(status: 200, data: try plist(["failureType": "9610"]))])
+        let transport = StoreFixtureTransport([.init(status: 200, data: try bag()), .init(status: 200, data: try plist(["failureType": "9610"])), .init(status: 200, data: try plist(["failureType": "9610"]))])
         do { _ = try await session(transport).descriptor(app: StoreApp(id: "123", bundleID: "test.app", name: "Paid", price: 2), externalVersionID: "999"); XCTFail("paid acquisition") }
         catch { XCTAssertEqual(error as? StoreError, .paidPurchase) }
-        let requests = await transport.requests; XCTAssertEqual(requests.count, 2)
+        let requests = await transport.requests; XCTAssertEqual(requests.count, 3)
     }
 }
 extension StoreTests {
@@ -151,3 +152,51 @@ extension StoreTests {
     }
 }
 #endif
+
+private actor StoreDiagnosticEvents {
+    var values: [String] = []
+    func record(_ value: String) { values.append(value) }
+}
+extension StoreTests {
+    func testEnt401FallsBackWithoutDeclaringSessionExpired() async throws {
+        let events = StoreDiagnosticEvents(); let cache = StoreFixtureCache()
+        let transport = StoreFixtureTransport([.init(status: 200, data: try bag()),
+            .init(status: 401, data: Data()), .init(status: 200, data: try reply())])
+        let descriptor = try await session(transport, cache: cache, diagnostic: { await events.record($0) })
+            .descriptor(app: app, externalVersionID: "999")
+        XCTAssertEqual(descriptor.externalVersionID, "999")
+        let requests = await transport.requests
+        XCTAssertEqual(requests.last?.url?.host, "p42-buy.itunes.apple.com")
+        XCTAssertEqual(cache.saves, 0)
+        let diagnostics = await events.values
+        XCTAssertTrue(diagnostics.contains { $0.contains("scope=ent") && $0.contains("HTTP=401") })
+        XCTAssertTrue(diagnostics.contains { $0.contains("recovery=ent-to-pod") })
+    }
+    func testPreferredAppleTokenRejectionCanStillUsePodSession() async throws {
+        let transport = StoreFixtureTransport([.init(status: 200, data: try bag()),
+            .init(status: 401, data: try plist(["failureType": "2034", "customerMessage": "token rejected"])),
+            .init(status: 200, data: try reply())])
+        let result = try await session(transport).descriptor(app: app, externalVersionID: "999")
+        XCTAssertEqual(result.externalVersionID, "999")
+    }
+    func testPodStructuredTokenRejectionRemainsSpecific() async throws {
+        let transport = StoreFixtureTransport([.init(status: 200, data: try bag()),
+            .init(status: 401, data: Data()), .init(status: 401, data: try plist(["failureType": "2034"]))])
+        do { _ = try await session(transport).descriptor(app: app, externalVersionID: "999"); XCTFail("expired pod accepted") }
+        catch { XCTAssertEqual(error as? StoreError, .sessionExpired) }
+    }
+    func testBarePod401DoesNotProveExpiredToken() async throws {
+        let transport = StoreFixtureTransport([.init(status: 200, data: try bag()),
+            .init(status: 401, data: Data()), .init(status: 401, data: Data())])
+        do { _ = try await session(transport).descriptor(app: app, externalVersionID: "999"); XCTFail("empty unauthorized reply accepted") }
+        catch { XCTAssertEqual(error as? StoreError, .http(401)) }
+    }
+    func testDiagnosticsNeverIncludeResponseSecretsMessagesOrURLs() throws {
+        let body = try plist(["failureType": "2034", "customerMessage": "fixture-token https://secret.invalid/?token=private", "passwordToken": "fixture-token"])
+        let diagnostic = ResponseDiagnostic.response(body, status: 401, scope: "ent", attempt: 1, secrets: ["fixture-token"])
+        XCTAssertTrue(diagnostic.contains("apple-failure=2034"))
+        XCTAssertFalse(diagnostic.contains("fixture-token")); XCTAssertFalse(diagnostic.contains("https://"))
+        XCTAssertFalse(diagnostic.contains("private"))
+        XCTAssertEqual(ResponseDiagnostic.category(StoreError.sessionExpired), "session-expired-confirmed-by-Apple-response")
+    }
+}
