@@ -14,6 +14,7 @@ extension AppData {
         let challengeCookies = hasSent2FACode ? pendingAuthenticationCookies : []
         isAuthenticating = true
         authenticationError = ""
+        authenticationRecovery = ""
         authenticationDiagnostic = ["WaffleStore authentication probe v6",
             "iOS=\(UIDevice.current.systemVersion)",
             "app-build=\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") ?? "unknown")",
@@ -39,6 +40,9 @@ extension AppData {
                 let authentication = AppleAuthentication(transport: loginTransport, signer: signer,
                     persistence: KeychainStoreAccount(), diagnostic: { event in
                         await MainActor.run {
+                            if event.hasPrefix("authentication-recovery-attempt=") {
+                                self.authenticationRecovery = "Automatic attempt " + event.replacingOccurrences(of: "authentication-recovery-attempt=", with: "")
+                            }
                             self.authenticationDiagnostic += "\n\(event)"
                             print("Apple authentication diagnostic: \(event)")
                         }

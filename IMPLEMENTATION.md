@@ -422,7 +422,8 @@ La UI activa una recuperación automática finita: hasta 12 intentos/120 segundo
 por envío autenticado, espera 2/4/8/15 segundos, cookies conservadas y transportes
 separados. Default de la librería sigue 3 intentos como ipatool. No arregla por
 sí sola las respuestas HTML del backend: reduce acciones manuales y reutiliza
-SAP ya inicializado. No se reintentan fallos lógicos de password/2FA/cuenta; se
+SAP ya inicializado. Los errores lógicos de password/2FA/cuenta no activan este ciclo HTTP; -5000
+conserva el único reintento lógico de ipatool. Se
 respeta Retry-After y hay Cancel. Un redirect/paso lógico nuevo tiene otro envío
 acotado; no hay bucle de re-login indefinido.
 

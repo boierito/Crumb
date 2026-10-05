@@ -4,7 +4,7 @@
 
 - Registra versiones y exportación confirmadas en 23005 tras logout/login.
 - Login: recuperación automática hasta 12 intentos/120 segundos por request, cancelable.
-- No reintenta errores lógicos de cuenta/2FA ni ignora Retry-After.
+- No amplía reintentos lógicos de cuenta/2FA ni ignora Retry-After.
 - Versiones visibles: inspección serial de rangos IPA, labels y build real.
 - Confirma descarga en sheet independiente de la fila/scroll.
 - Comprueba versión preparada contra la inspeccionada cuando está disponible.

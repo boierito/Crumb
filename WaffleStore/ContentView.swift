@@ -163,6 +163,7 @@ struct ContentView: View {
             if appData.isAuthenticating {
                 Section {
                     ProgressView(appData.applicationStatus)
+                    Text(appData.authenticationRecovery).font(.caption).foregroundStyle(.secondary)
                     Button("Cancel sign-in") { appData.cancelAppleLogin() }
                 }
             }
