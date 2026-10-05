@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import MapleSAP
 
 private struct VersionSelection: Identifiable { let id: String }
