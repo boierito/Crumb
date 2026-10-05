@@ -87,8 +87,8 @@ those permission requests without executing unsigned memory or aborting.
 |---|---|---|---|
 | SHA1 Apple-ID GUID | machineIdentity from stable adapter MAC | Replace | Keychain-backed six-byte synthetic identity; Apple acceptance unverified |
 | Bag auth-only/fallback | full SAPConfig from current Bag | Replace | Swift parser implemented; no unsigned fallback |
-| No guest signer | SAP Machine + Unicorn | Replace | Need interpreter/AOT backend; current JIT rejected |
-| JSON auth | signed serialized plist | Replace | SAPSession adapter implemented; actual signer missing |
+| No guest signer | SAP Machine + Unicorn | Replace | Experimental TCI interpreter and guest C ABI implemented; jailed execution pending |
+| JSON auth | signed serialized plist | Replace | SAPSession and native guest sign test bodies; credential login not connected |
 | Recursive pod resolution | validated, bounded redirects | Replace | Dedicated URLSession delegate retaining body/method; future auth phase |
 | Blocking Bool login | Login returning account/errors | Replace | Swift async state/result; after signer validation |
 | Raw appended 2FA | normalized AuthCode, Apple failure taxonomy | Adapt | Preserve UI fields; don't persist code/appended password |

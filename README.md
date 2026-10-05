@@ -1,4 +1,16 @@
 # WaffleStore
+
+## Experimental revival — 2.3.0-dev.1
+
+This fork preserves the original app and adds a no-JIT SAP guest diagnostic.
+**Modern login and downloads are not restored yet.** The original and modified
+projects build in CI; the priority is validating Settings → SAP diagnostic on a
+conventionally sideloaded Release IPA on iOS 27 without a debugger. See
+[IMPLEMENTATION.md](IMPLEMENTATION.md), [TESTING.md](TESTING.md),
+[changed files](CHANGED_FILES.md), and [license notices](THIRD_PARTY_NOTICES.md).
+
+The upstream instructions below are preserved as historical documentation and
+are not a claim that their legacy login/install flow works in this branch.
 A **jailed** app store app downgrader, based off of [MuffinStoreJailed](https://github.com/mineek/MuffinStoreJailed-Public) and [PancakeStore](https://github.com/jailbreakdotparty/PancakeStore). Supports iOS 16.4+ and does not use any exploits.
 
 [PancakeStore (by jailbreakdotparty)](https://github.com/jailbreakdotparty/PancakeStore/releases/latest) • [MuffinStoreJailed (by mineek)](https://github.com/mineek/MuffinStoreJailed-Public)

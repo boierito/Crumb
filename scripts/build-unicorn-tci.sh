@@ -16,7 +16,7 @@ if digest != 'ea8863f095a0136388694e5a6063afd9bb7650e30243dd6251af59c5ce5601f4':
 PY
 tar -xzf "$WORK/unicorn.tar.gz" -C "$WORK"
 python3 "$ROOT/scripts/prepare-unicorn-tci.py" "$WORK/unicorn-2.1.4"
-OPTIONS=(-DUNICORN_ARCH=x86 -DUNICORN_BUILD_TESTS=OFF -DUNICORN_INSTALL=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release)
+OPTIONS=(-DUNICORN_ARCH=x86 -DUNICORN_BUILD_TESTS=OFF -DUNICORN_INSTALL=OFF "-DBUILD_SHARED_LIBS=${TCI_SHARED:-OFF}" -DCMAKE_BUILD_TYPE=Release)
 if [[ $PLATFORM == ios ]]; then
   SDK=$(xcrun --sdk iphoneos --show-sdk-path)
   OPTIONS+=(-DCMAKE_SYSTEM_NAME=iOS "-DCMAKE_OSX_SYSROOT=$SDK" -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=16.4)
@@ -27,6 +27,9 @@ fi
 cmake -S "$WORK/unicorn-2.1.4" -B "$WORK/build" "${OPTIONS[@]}"
 cmake --build "$WORK/build" --parallel 4
 cp "$WORK/build/libunicorn.a" "$OUTPUT/libunicorn.a"
+if [[ -f "$WORK/build/libunicorn.so.2" ]]; then
+  cp "$WORK/build"/libunicorn.so* "$OUTPUT/"
+fi
 cp -R "$WORK/unicorn-2.1.4/include" "$OUTPUT/"
 # Retain complete modified corresponding source with every generated library.
 tar -czf "$OUTPUT/unicorn-tci-corresponding-source.tar.gz" -C "$WORK" unicorn-2.1.4

@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B00100000000000000000007 = {isa = PBXBuildFile; fileRef = B00100000000000000000008; };
+		B00100000000000000000009 = {isa = PBXBuildFile; fileRef = B0010000000000000000000A; };
 		B00100000000000000000004 /* UnicornTCI in Frameworks */ = {isa = PBXBuildFile; fileRef = B00100000000000000000005; };
 		B00100000000000000000001 /* MapleSAP in Frameworks */ = {isa = PBXBuildFile; productRef = B00100000000000000000002 /* MapleSAP */; };
 		E6F5D491301692B600FEEC8A /* PartyUI in Frameworks */ = {isa = PBXBuildFile; productRef = 63A7EF12A4ADD015377FF7FF /* PartyUI */; };
@@ -15,6 +17,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		B00100000000000000000008 = {isa = PBXFileReference; lastKnownFileType = text; path = build/Native/GoThirdPartyNotices.txt; sourceTree = SOURCE_ROOT; };
+		B0010000000000000000000A = {isa = PBXFileReference; lastKnownFileType = text; path = build/Native/UNICORN-COPYING; sourceTree = SOURCE_ROOT; };
 		B00100000000000000000005 /* libunicorn.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = build/Native/libunicorn.a; sourceTree = SOURCE_ROOT; };
 		E6F5D41330168FCC00FEEC8A /* WaffleStore.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WaffleStore.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -139,6 +143,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B00100000000000000000007,
+				B00100000000000000000009,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -150,7 +156,7 @@
 			buildActionMask = 2147483647;
 			files = ();
 			inputPaths = ();
-			outputPaths = ("$(SRCROOT)/build/Native/libunicorn.a", "$(SRCROOT)/build/Native/libWaffleSAP.a");
+			outputPaths = ("$(SRCROOT)/build/Native/libunicorn.a", "$(SRCROOT)/build/Native/libWaffleSAP.a", "$(SRCROOT)/build/Native/GoThirdPartyNotices.txt", "$(SRCROOT)/build/Native/UNICORN-COPYING");
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
 			shellScript = "bash \"$SRCROOT/scripts/ensure-native.sh\"\n";

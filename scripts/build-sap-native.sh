@@ -39,6 +39,24 @@ GOOS=ios GOARCH=arm64 CGO_ENABLED=1 CC="$CLANG" SDKROOT="$SDK" \
   CGO_CFLAGS="-isysroot $SDK -target arm64-apple-ios16.4" \
   CGO_LDFLAGS="-isysroot $SDK -target arm64-apple-ios16.4" \
   go build -buildmode=c-archive -trimpath -o "$OUTPUT/libWaffleSAP.a" ./wafflebridge
+go list -deps -json ./wafflebridge > "$WORK/dependencies.json"
+python3 - "$WORK/dependencies.json" "$OUTPUT/GoThirdPartyNotices.txt" "$(go env GOROOT)" <<'PY'
+import json,pathlib,sys
+text=pathlib.Path(sys.argv[1]).read_text(); decoder=json.JSONDecoder(); modules={}
+while text.strip():
+    value,end=decoder.raw_decode(text.lstrip()); text=text.lstrip()[end:]
+    module=value.get('Module')
+    if module and module.get('Dir'): modules[module['Path']]=pathlib.Path(module['Dir'])
+pieces=['Go standard library\n'+(pathlib.Path(sys.argv[3])/'LICENSE').read_text()]
+for name,root in sorted(modules.items()):
+    found=[]
+    for path in sorted(root.iterdir()):
+        if path.is_file() and path.name.upper().startswith(('LICENSE','COPYING','NOTICE')):
+            found.append(path.name+'\n'+path.read_text(errors='replace'))
+    if not found: raise SystemExit('Missing license notice for linked module: '+name)
+    pieces.append(name+'\n'+'\n'.join(found))
+pathlib.Path(sys.argv[2]).write_text('\n\n'.join(pieces))
+PY
 cp "$OUTPUT/libWaffleSAP.h" "$OUTPUT/SAP-generated-ABI.h"
 cp "$SOURCE/LICENSE" "$OUTPUT/IPATOOL-LICENSE"
 tar -czf "$OUTPUT/ipatool-sap-corresponding-source.tar.gz" -C "$WORK" "$(basename "$SOURCE")"

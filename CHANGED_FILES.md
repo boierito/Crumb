@@ -1,0 +1,55 @@
+# Modified files
+
+Relative to original d508e53 / upstream-wafflestore-2.2.2.
+
+- `.github/workflows/build-ipa.yml`
+- `.github/workflows/sap-tests.yml`
+- `.gitignore`
+- `CHANGED_FILES.md`
+- `CHANGELOG.md`
+- `IMPLEMENTATION.md`
+- `MapleSyrup/NativeSAP/main.go`
+- `MapleSyrup/SAPKit/Package.swift`
+- `MapleSyrup/SAPKit/Sources/MapleSAP/KeychainIdentity.swift`
+- `MapleSyrup/SAPKit/Sources/MapleSAP/MemoryCapability.swift`
+- `MapleSyrup/SAPKit/Sources/MapleSAP/SAPSession.swift`
+- `MapleSyrup/SAPKit/Sources/MapleSAP/StoreBag.swift`
+- `MapleSyrup/SAPKit/Sources/MemoryProbe/MemoryProbe.c`
+- `MapleSyrup/SAPKit/Sources/MemoryProbe/include/MemoryProbe.h`
+- `MapleSyrup/SAPKit/Tests/MapleSAPTests/SAPTests.swift`
+- `README.md`
+- `TESTING.md`
+- `THIRD_PARTY_NOTICES.md`
+- `WaffleStore.xcodeproj/project.pbxproj`
+- `WaffleStore/App/SettingsView.swift`
+- `WaffleStore/Functions/IPATool.swift`
+- `WaffleStore/MapleSyrup/Native/SAPGuestBridge.h`
+- `WaffleStore/MapleSyrup/Native/SAPProbe-Bridging-Header.h`
+- `WaffleStore/MapleSyrup/Native/TCIProbe.c`
+- `WaffleStore/MapleSyrup/Native/TCIProbe.h`
+- `WaffleStore/MapleSyrup/NativeSAPGuest.swift`
+- `WaffleStore/MapleSyrup/SAPDiagnosticView.swift`
+- `WaffleStore/Resources/ThirdPartyNotices.txt`
+- `docs/BACKEND_AUDIT.md`
+- `docs/IPATOOL_AUDIT.md`
+- `docs/evidence/original-build-linux.log`
+- `docs/evidence/original-ci-xcode16.log`
+- `docs/evidence/original-ci-xcode26.log`
+- `docs/evidence/tci-guest-tests-linux.log`
+- `docs/evidence/tci-no-exec-linux.log`
+- `docs/evidence/tci-sap-reproducible-linux.log`
+- `docs/evidence/tci-sap-smoke-linux.log`
+- `docs/evidence/unicorn-no-exec-linux.log`
+- `scripts/build-sap-native.sh`
+- `scripts/build-unicorn-tci.sh`
+- `scripts/deny-exec.h`
+- `scripts/ensure-native.sh`
+- `scripts/prepare-unicorn-tci.py`
+- `scripts/sap-host-probe_test.go`
+- `scripts/tci-smoke.c`
+- `scripts/test-no-exec.sh`
+- `scripts/test-sap-host.sh`
+- `scripts/test-tci-host.sh`
+- `scripts/unicorn-no-exec.c`
+
+Generated IPAs, native libraries, Apple assets and build directories are excluded from git.
