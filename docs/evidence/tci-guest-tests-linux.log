@@ -1,0 +1,23 @@
+go: downloading github.com/onsi/ginkgo/v2 v2.5.0
+go: downloading github.com/onsi/gomega v1.24.0
+go: downloading github.com/blacktop/go-macho v1.1.282
+go: downloading howett.net/ranger v0.0.0-20171016084633-e2e137620847
+go: downloading github.com/ebitengine/purego v0.10.2
+go: downloading github.com/klauspost/compress v1.18.6
+go: downloading github.com/google/go-cmp v0.7.0
+go: downloading github.com/go-logr/logr v1.4.3
+go: downloading github.com/blacktop/go-dwarf v1.0.14
+go: downloading golang.org/x/net v0.55.0
+go: downloading gopkg.in/yaml.v3 v3.0.1
+go: downloading golang.org/x/sys v0.45.0
+go: downloading golang.org/x/text v0.37.0
+=== RUN   TestHardwareBlock
+--- PASS: TestHardwareBlock (0.00s)
+=== RUN   TestGuestServiceDispatchAndStackArguments
+--- PASS: TestGuestServiceDispatchAndStackArguments (0.00s)
+=== RUN   TestUnknownGuestServiceFailsClosed
+--- PASS: TestUnknownGuestServiceFailsClosed (0.00s)
+=== RUN   TestGuestAllocatorReusesAndClearsFreedMemory
+--- PASS: TestGuestAllocatorReusesAndClearsFreedMemory (0.00s)
+PASS
+ok  	github.com/majd/ipatool/v2/internal/sap/machine	0.008s

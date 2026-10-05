@@ -41,6 +41,17 @@ final class SAPTests: XCTestCase {
         XCTAssertThrowsError(try MachineIdentity(hardwareID: Data()))
     }
 
+    func testAppleDocumentEnvelopeIsParsedWithoutChangingBagFields() throws {
+        let original = try bag()
+        let xml = String(data: original, encoding: .utf8)!
+        let start = xml.range(of: "<plist")!.lowerBound
+        let end = xml.range(of: "</plist>")!.upperBound
+        let wrapped = Data(("<?xml version=\"1.0\"?><Document><Protocol>" + xml[start..<end] + "</Protocol></Document>").utf8)
+        XCTAssertEqual(try SAPConfiguration.parse(bag: wrapped), try SAPConfiguration.parse(bag: original))
+        let bareDict = Data("<Document><key>value</key><string>test</string></Document>".utf8)
+        XCTAssertThrowsError(try SAPConfiguration.parse(bag: bareDict))
+    }
+
     func testHandshakeSignsExactBodyOnlyAfterSuccessfulSetup() async throws {
         let configuration = try SAPConfiguration.parse(bag: bag())
         let transport = FakeTransport(responses: [try plist(["sign-sap-setup-cert": Data([1])]),

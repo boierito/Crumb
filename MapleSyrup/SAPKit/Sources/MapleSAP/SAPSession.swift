@@ -94,7 +94,7 @@ public struct SAPProtocol {
     }
 
     private func plistData(_ data: Data, key: String, error: SAPError) throws -> Data {
-        guard let plist = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+        guard let plist = try ApplePlist.dictionary(data),
               let value = plist[key] as? Data, !value.isEmpty else { throw error }
         return value
     }

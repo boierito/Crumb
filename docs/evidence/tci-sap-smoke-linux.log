@@ -1,0 +1,5 @@
+=== RUN   TestTCIDynamicSAPSmoke
+    tci_probe_test.go:15: SAP signature generated: 501 bytes; contents withheld
+--- PASS: TestTCIDynamicSAPSmoke (18.78s)
+PASS
+ok  	github.com/majd/ipatool/v2/internal/sap	18.788s

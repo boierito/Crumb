@@ -153,7 +153,7 @@
 			outputPaths = ();
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "set -euo pipefail\nif [ ! -f \"$SRCROOT/build/Native/libunicorn.a\" ]; then\n bash \"$SRCROOT/scripts/build-unicorn-tci.sh\"\nfi\n";
+			shellScript = "set -euo pipefail\nif [ ! -f \"$SRCROOT/build/Native/libunicorn.a\" ]; then\n bash \"$SRCROOT/scripts/build-unicorn-tci.sh\"\nfi\nif [ ! -f \"$SRCROOT/build/Native/libWaffleSAP.a\" ]; then\n bash \"$SRCROOT/scripts/build-sap-native.sh\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -327,6 +327,8 @@
 				SWIFT_VERSION = 5.0;
 				SWIFT_OBJC_BRIDGING_HEADER = "WaffleStore/MapleSyrup/Native/SAPProbe-Bridging-Header.h";
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/build/Native/include";
+				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/build/Native";
+				OTHER_LDFLAGS = ("$(inherited)", "-Wl,-export_dynamic", "-Wl,-force_load,$(SRCROOT)/build/Native/libunicorn.a", "$(SRCROOT)/build/Native/libWaffleSAP.a");
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
@@ -369,6 +371,8 @@
 				SWIFT_VERSION = 5.0;
 				SWIFT_OBJC_BRIDGING_HEADER = "WaffleStore/MapleSyrup/Native/SAPProbe-Bridging-Header.h";
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/build/Native/include";
+				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/build/Native";
+				OTHER_LDFLAGS = ("$(inherited)", "-Wl,-export_dynamic", "-Wl,-force_load,$(SRCROOT)/build/Native/libunicorn.a", "$(SRCROOT)/build/Native/libWaffleSAP.a");
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;

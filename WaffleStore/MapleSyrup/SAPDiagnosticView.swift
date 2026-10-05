@@ -12,8 +12,8 @@ struct SAPDiagnosticView: View {
         NavigationStack {
             List {
                 Section("SAP / jailed compatibility") {
-                    Text("Tests the memory protection sequence required by ipatool's Unicorn runtime. No credentials are sent. An experimental interpreter is linked for a synthetic CPU test. The Apple SAP guest adapter is not yet implemented.")
-                    Toggle("Fetch Apple Bag and SAP certificate", isOn: $includeAppleNetworkTest)
+                    Text("Tests memory permissions and the no-JIT interpreter. The optional SAP test downloads Apple's hash-verified guest assets into this app's cache, performs SAP setup and signs a test body. It sends no credentials. First initialization can take several minutes.")
+                    Toggle("Initialize SAP and sign a test body", isOn: $includeAppleNetworkTest)
                         .disabled(running)
                     Button(running ? "Testing…" : "Run diagnostic") {
                         running = true
@@ -43,6 +43,7 @@ struct SAPDiagnosticView: View {
             "tci-guest-rax=\(interpreter.guest_rax)",
             "tci-instruction-hooks=\(interpreter.instruction_hooks)",
             "tci-test-is-sap=false"]
+        var signatureGenerated = false
         do {
             let identity = try KeychainMachineIdentity.loadOrCreate()
             let repeated = try KeychainMachineIdentity.loadOrCreate()
@@ -53,8 +54,21 @@ struct SAPDiagnosticView: View {
                 let apple = SAPProtocol(transport: transport)
                 let bag = try await apple.bag(identity: identity)
                 lines.append("store-bag=validated; sap-version=\(bag.version)")
-                _ = try await apple.certificate(configuration: bag)
-                lines.append("sap-certificate=fetched-and-parsed")
+                let guest = try NativeSAPGuest()
+                let session = try SAPSession(guest: guest, transport: transport)
+                do {
+                    try await session.initialize(configuration: bag, identity: identity)
+                    lines.append("sap-initialization=completed")
+                    let body = try PropertyListSerialization.data(fromPropertyList:
+                        ["probe": "WaffleStore SAP no-login test", "guid": identity.guid], format: .xml, options: 0)
+                    let signature = try await session.actionSignature(body: body)
+                    lines.append("X-Apple-ActionSignature=generated; base64-length=\(signature.count); contents=withheld")
+                    signatureGenerated = true
+                    await session.close()
+                } catch {
+                    await session.close()
+                    throw error
+                }
             } else { lines.append("apple-network=not-requested") }
         } catch let error as SAPError {
             // SAPError only exposes fixed descriptions and numeric status codes.
@@ -65,9 +79,10 @@ struct SAPDiagnosticView: View {
             let nsError = error as NSError
             lines.append("probe-error-code=\(nsError.code)")
         }
-        lines += ["sap-runtime=unavailable", "sap-initialization=not-performed",
-                  "X-Apple-ActionSignature=not-generated",
-                  "Result: permission probes do not prove SAP or Apple acceptance. A Release IPA on a physical device without a debugger is required."]
+        if !signatureGenerated { lines.append("X-Apple-ActionSignature=not-generated") }
+        lines += ["sap-runtime=experimental-tci-static-library",
+                  "apple-login=not-attempted",
+                  "Result: a nonempty test signature does not prove login or Apple acceptance. Use a Release IPA on a physical device without a debugger."]
         report = lines.joined(separator: "\n")
     }
 }
