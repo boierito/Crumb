@@ -34,7 +34,7 @@ struct DownloadedAppsView: View {
                             if appData.showsDowngradeProgress {
                                 ProgressView(value: appData.downgradeProgress)
                                 HStack {
-                                    Text(appData.downgradeProgressDetail)
+                                    Text(appData.downloadProgressText)
                                     Spacer()
                                     Text("\(Int(appData.downgradeProgress * 100))%")
                                         .monospacedDigit()

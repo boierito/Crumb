@@ -58,6 +58,11 @@ final class AppData: ObservableObject {
         default: return "Preparing download"
         }
     }
+    var downloadProgressText: String {
+        if applicationStatus == "Downloading IPA from CDN" { return downgradeProgressDetail }
+        if applicationStatus == "Validating ZIP, app identity and purchase data" { return "Verifying the selected version" }
+        return "Getting the app ready"
+    }
     @Published var showsDowngradeProgress: Bool = false
     
     @Published var appBundleID: String = ""

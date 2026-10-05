@@ -87,10 +87,12 @@ struct AppSearchView: View {
                             Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
                         }
                         .padding(.vertical, 8)
+                        .padding(.horizontal, 16)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                     .disabled(appData.isDowngrading || appData.storeRequestCount > 0)
                 }
                 if appData.isDowngrading {
