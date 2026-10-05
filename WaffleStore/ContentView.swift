@@ -238,17 +238,6 @@ struct ItemInfoCell: View {
     }
 }
 
-struct SidebarToggleModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(iOS 17.0, *) {
-            content
-                .toolbar(removing: .sidebarToggle)
-        } else {
-            content
-        }
-    }
-}
-
 #Preview {
     ContentView()
         .environmentObject(AppData.shared)

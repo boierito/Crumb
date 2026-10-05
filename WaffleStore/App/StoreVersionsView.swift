@@ -205,6 +205,7 @@ struct StoreVersionsView: View {
             await labels.finish()
             appData.download(app: app, version: choice.id, tool: tool,
                 expectedVersion: expected, installWhenReady: install)
+            appData.selectedTab = .downloads
             dismiss()
         }
     }
