@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B00100000000000000000004 /* UnicornTCI in Frameworks */ = {isa = PBXBuildFile; fileRef = B00100000000000000000005; };
 		B00100000000000000000001 /* MapleSAP in Frameworks */ = {isa = PBXBuildFile; productRef = B00100000000000000000002 /* MapleSAP */; };
 		E6F5D491301692B600FEEC8A /* PartyUI in Frameworks */ = {isa = PBXBuildFile; productRef = 63A7EF12A4ADD015377FF7FF /* PartyUI */; };
 		E6F5D492301692B600FEEC8A /* Telegraph in Frameworks */ = {isa = PBXBuildFile; productRef = 4B51818CFD6F6A0FD21DFB33 /* Telegraph */; };
@@ -14,6 +15,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		B00100000000000000000005 /* libunicorn.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = build/Native/libunicorn.a; sourceTree = SOURCE_ROOT; };
 		E6F5D41330168FCC00FEEC8A /* WaffleStore.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WaffleStore.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -30,6 +32,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B00100000000000000000004 /* UnicornTCI in Frameworks */,
 				B00100000000000000000001 /* MapleSAP in Frameworks */,
 				E6F5D493301692B600FEEC8A /* Zip in Frameworks */,
 				E6F5D492301692B600FEEC8A /* Telegraph in Frameworks */,
@@ -63,6 +66,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = E6F5D41E30168FCD00FEEC8A /* Build configuration list for PBXNativeTarget "WaffleStore" */;
 			buildPhases = (
+				B00100000000000000000006 /* Build interpreter */,
 				E6F5D40F30168FCC00FEEC8A /* Sources */,
 				E6F5D41030168FCC00FEEC8A /* Frameworks */,
 				E6F5D41130168FCC00FEEC8A /* Resources */,
@@ -140,6 +144,19 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		B00100000000000000000006 /* Build interpreter */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			inputPaths = ();
+			outputPaths = ();
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "set -euo pipefail\nif [ ! -f \"$SRCROOT/build/Native/libunicorn.a\" ]; then\n bash \"$SRCROOT/scripts/build-unicorn-tci.sh\"\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		E6F5D40F30168FCC00FEEC8A /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -189,7 +206,7 @@
 				DEVELOPMENT_TEAM = 8Z9M523WF2;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -253,7 +270,7 @@
 				DEVELOPMENT_TEAM = 8Z9M523WF2;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -308,6 +325,8 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
+				SWIFT_OBJC_BRIDGING_HEADER = "WaffleStore/MapleSyrup/Native/SAPProbe-Bridging-Header.h";
+				HEADER_SEARCH_PATHS = "$(SRCROOT)/build/Native/include";
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
@@ -348,6 +367,8 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
+				SWIFT_OBJC_BRIDGING_HEADER = "WaffleStore/MapleSyrup/Native/SAPProbe-Bridging-Header.h";
+				HEADER_SEARCH_PATHS = "$(SRCROOT)/build/Native/include";
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;

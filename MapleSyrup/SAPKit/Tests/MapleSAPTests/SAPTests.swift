@@ -20,6 +20,7 @@ final class SAPTests: XCTestCase {
         let configuration = try SAPConfiguration.parse(bag: bag())
         XCTAssertEqual(configuration.version, 200)
         XCTAssertEqual(configuration.setupURL.path, "/setup")
+        XCTAssertEqual(try SAPConfiguration.parse(bag: bag(["sign-sap-setup-cert": "https://s.mzstatic.com/sap/setupCert.plist"])).certificateURL.host, "s.mzstatic.com")
         XCTAssertThrowsError(try SAPConfiguration.parse(bag: bag(["sign-sap-version": "201"]))) {
             XCTAssertEqual($0 as? SAPError, .unsupportedVersion)
         }

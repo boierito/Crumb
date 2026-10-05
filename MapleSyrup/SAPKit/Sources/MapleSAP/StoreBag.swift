@@ -60,7 +60,8 @@ public struct SAPConfiguration: Equatable {
 
     public static func trustedAppleURL(_ string: String) throws -> URL {
         guard let url = URL(string: string), url.scheme == "https",
-              let host = url.host?.lowercased(), (host == "apple.com" || host.hasSuffix(".apple.com")),
+              let host = url.host?.lowercased(),
+              (host == "apple.com" || host.hasSuffix(".apple.com") || host.hasSuffix(".mzstatic.com")),
               url.user == nil, url.password == nil, url.fragment == nil,
               url.port == nil || url.port == 443 else { throw SAPError.invalidEndpoint }
         return url

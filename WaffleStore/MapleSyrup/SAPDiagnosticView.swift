@@ -12,7 +12,7 @@ struct SAPDiagnosticView: View {
         NavigationStack {
             List {
                 Section("SAP / jailed compatibility") {
-                    Text("Tests the memory protection sequence required by ipatool's Unicorn runtime. No credentials are sent. The SAP guest interpreter is not yet implemented.")
+                    Text("Tests the memory protection sequence required by ipatool's Unicorn runtime. No credentials are sent. An experimental interpreter is linked for a synthetic CPU test. The Apple SAP guest adapter is not yet implemented.")
                     Toggle("Fetch Apple Bag and SAP certificate", isOn: $includeAppleNetworkTest)
                         .disabled(running)
                     Button(running ? "Testing…" : "Run diagnostic") {
@@ -34,10 +34,15 @@ struct SAPDiagnosticView: View {
     @MainActor private func run() async {
         defer { running = false }
         let capability = MemoryCapability.probe()
+        let interpreter = await Task.detached { waffle_probe_tci() }.value
         var lines = ["WaffleStore SAP probe v1", "iOS=\(UIDevice.current.systemVersion)",
             "device-family=\(UIDevice.current.model)",
             "app-build=\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") ?? "unknown")",
-            capability.sanitizedReport]
+            capability.sanitizedReport,
+            "tci-guest-status=\(interpreter.error)",
+            "tci-guest-rax=\(interpreter.guest_rax)",
+            "tci-instruction-hooks=\(interpreter.instruction_hooks)",
+            "tci-test-is-sap=false"]
         do {
             let identity = try KeychainMachineIdentity.loadOrCreate()
             let repeated = try KeychainMachineIdentity.loadOrCreate()
