@@ -38,6 +38,7 @@ Relative to original d508e53 / upstream-wafflestore-2.2.2.
 - `README.md`
 - `TESTING.md`
 - `THIRD_PARTY_NOTICES.md`
+- `WaffleStore-Info.plist`
 - `WaffleStore.xcodeproj/project.pbxproj`
 - `WaffleStore/App/AppSearchView.swift`
 - `WaffleStore/App/NavigationButtons.swift`

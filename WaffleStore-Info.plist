@@ -21,5 +21,7 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>UIFileSharingEnabled</key>
 	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 </dict>
 </plist>
