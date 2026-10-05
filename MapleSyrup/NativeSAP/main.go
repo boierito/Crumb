@@ -10,8 +10,10 @@ package main
 import "C"
 import (
 	"context"
+	"encoding/json"
 	"github.com/majd/ipatool/v2/internal/sap/assets"
 	"github.com/majd/ipatool/v2/internal/sap/machine"
+	"github.com/majd/ipatool/v2/wafflebridge/packageipa"
 	"sync"
 	"time"
 	"unsafe"
@@ -109,6 +111,50 @@ func WaffleSAPSign(handle C.uint64_t, input *C.uchar, length C.size_t, output **
 	data, err := g.machine.Sign(g.context, C.GoBytes(unsafe.Pointer(input), C.int(length)))
 	if err != nil || len(data) == 0 {
 		return 6
+	}
+	*output = (*C.uchar)(C.CBytes(data))
+	*outputLength = C.size_t(len(data))
+	return 0
+}
+
+//export WaffleSAPKBSync
+func WaffleSAPKBSync(cache *C.char, hardware *C.uchar, length C.size_t, dsid C.uint64_t, output **C.uchar, outputLength *C.size_t) C.int {
+	mutex.Lock()
+	defer mutex.Unlock()
+	if cache == nil || hardware == nil || length != 6 || dsid == 0 || output == nil || outputLength == nil {
+		return 1
+	}
+	assets.CacheRoot = C.GoString(cache)
+	if assets.CacheRoot == "" {
+		return 1
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	bundle, err := assets.Load(ctx)
+	if err != nil {
+		return 2
+	}
+	data, err := machine.GenerateKBSync(ctx, bundle, C.GoBytes(unsafe.Pointer(hardware), 6), uint64(dsid))
+	if err != nil || len(data) == 0 || len(data) > 16<<20 {
+		return 8
+	}
+	*output = (*C.uchar)(C.CBytes(data))
+	*outputLength = C.size_t(len(data))
+	return 0
+}
+
+//export WafflePrepareIPA
+func WafflePrepareIPA(source *C.char, destination *C.char, input *C.uchar, length C.size_t, output **C.uchar, outputLength *C.size_t) C.int {
+	if source == nil || destination == nil || input == nil || length == 0 || length > 16<<20 || output == nil || outputLength == nil {
+		return 1
+	}
+	var parameters packageipa.Input
+	if json.Unmarshal(C.GoBytes(unsafe.Pointer(input), C.int(length)), &parameters) != nil {
+		return 20
+	}
+	data, err := packageipa.Prepare(C.GoString(source), C.GoString(destination), parameters)
+	if err != nil {
+		return 21
 	}
 	*output = (*C.uchar)(C.CBytes(data))
 	*outputLength = C.size_t(len(data))

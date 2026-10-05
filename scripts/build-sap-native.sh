@@ -18,6 +18,8 @@ tar -xzf "$WORK/ipatool.tar.gz" -C "$WORK"
 SOURCE="$WORK/ipatool-3411d57f451f5111ae115641c22f7ed17bbd5fbe"
 mkdir -p "$SOURCE/wafflebridge"
 cp "$ROOT/MapleSyrup/NativeSAP/main.go" "$SOURCE/wafflebridge/main.go"
+mkdir -p "$SOURCE/wafflebridge/packageipa"
+cp "$ROOT/MapleSyrup/NativeSAP/packageipa/"*.go "$SOURCE/wafflebridge/packageipa/"
 python3 - "$SOURCE" <<'PY'
 import pathlib,sys
 root=pathlib.Path(sys.argv[1])

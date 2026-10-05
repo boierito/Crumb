@@ -92,7 +92,8 @@ struct ContentView: View {
         .sheet(isPresented: $showFavouritesView) {
             FavouritesView()
         }
-        .onAppear { appData.restoreStoreAccount() }
+        .sheet(isPresented: $appData.showStoreVersions) { StoreVersionsView() }
+        .onAppear { appData.restoreStoreAccount(); appData.restoreDownloadedIPA() }
     }
     
     private var LogsSection: some View {
@@ -178,13 +179,13 @@ struct ContentView: View {
     }
     
     private var InputAppSection: some View {
-        Section(header: HeaderLabel(text: "Downgrade App".localized, icon: "arrow.down.app"), footer: Text("To downgrade an app, it must have been purchased on your account at some point in the past (when the app has a cloud icon next to it). It must also not be installed on your device currently, but you can offload it.".localized)) {
+        Section(header: HeaderLabel(text: "Downgrade App".localized, icon: "arrow.down.app"), footer: Text("Download the latest or a specific App Store version and export its IPA. Installation depends on iOS and the receiving app.")) {
             VStack(spacing: 12) {
                 if !appData.storeDownloadsAvailable {
                     Text("This development build validates login and 2FA. Versions, purchase and download are pending migration.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                TextField("App Store Link".localized, text: $appData.appLink)
+                TextField("App Store link, ID or bundle ID", text: $appData.appLink)
                     .modifier(TextFieldBackground())
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
@@ -233,9 +234,7 @@ struct AppMenu: View {
             .disabled(!appData.isAuthenticated || appData.isAuthenticating)
             
             Button(action: {
-                let tempDir = FileManager.default.temporaryDirectory
-                let tempIPAURL = tempDir.appendingPathComponent("app.ipa")
-                presentShareSheet(with: tempIPAURL)
+                if let url = appData.downloadedIPAURL { presentShareSheet(with: url) }
             }) {
                 Label("Export IPA".localized, systemImage: "arrow.up.doc")
             }
@@ -249,7 +248,7 @@ struct AppMenu: View {
             }) {
                 ButtonLabel(text: "Log Out".localized, icon: "arrow.right")
             }
-            .disabled(!appData.isAuthenticated || appData.isAuthenticating)
+            .disabled(!appData.isAuthenticated || appData.isAuthenticating || appData.isDowngrading)
         } label: {
             Image(systemName: "line.horizontal.3")
         }

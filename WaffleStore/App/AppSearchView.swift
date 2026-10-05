@@ -1,5 +1,6 @@
 import SwiftUI
 import PartyUI
+import MapleSAP
 
 struct ITunesSearchResponse: Codable {
     let resultCount: Int
@@ -122,6 +123,7 @@ struct AppSearchView: View {
                 }
             }
         }
+        .onDisappear { searchTask?.cancel() }
     }
     
     private func triggerSearch(for term: String) {
@@ -140,12 +142,13 @@ struct AppSearchView: View {
             try? await Task.sleep(nanoseconds: 300_000_000)
             if Task.isCancelled { return }
             
-            guard let encodedTerm = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-                  let url = URL(string: "https://itunes.apple.com/search?term=\(encodedTerm)&entity=software&limit=25") else {
-                isSearching = false
-                return
+            var components = URLComponents(string: "https://itunes.apple.com/search")!
+            var items = [URLQueryItem(name: "term", value: trimmed), URLQueryItem(name: "entity", value: "software"), URLQueryItem(name: "limit", value: "25")]
+            if let account = appData.ipaTool?.account, let country = try? Storefront.country(account.storefront) {
+                items.append(URLQueryItem(name: "country", value: country))
             }
-            
+            components.queryItems = items
+            guard let url = components.url else { isSearching = false; return }
             do {
                 let (data, _) = try await URLSession.shared.data(from: url)
                 if Task.isCancelled { return }
@@ -157,7 +160,8 @@ struct AppSearchView: View {
                     self.isSearching = false
                 }
             } catch {
-                print("Search error: \(error)")
+                guard !Task.isCancelled, (error as? URLError)?.code != .cancelled else { return }
+                print("Search failed (code \((error as NSError).code)).")
                 await MainActor.run {
                     self.isSearching = false
                 }

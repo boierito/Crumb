@@ -79,9 +79,7 @@ struct SettingsView: View {
                 Section(header: HeaderLabel(text: "Data".localized, icon: "loupe"), footer: Text("Storage Warning".localized)) {
                     VStack {
                         Button(action: {
-                            let tempDir = FileManager.default.temporaryDirectory
-                            let tempIPAURL = tempDir.appendingPathComponent("app.ipa")
-                            presentShareSheet(with: tempIPAURL)
+                            if let url = appData.downloadedIPAURL { presentShareSheet(with: url) }
                         }) {
                             ButtonLabel(text: "Export IPA".localized, icon: "arrow.up.doc")
                         }

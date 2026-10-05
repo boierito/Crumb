@@ -41,7 +41,12 @@ final class AppData: ObservableObject {
     var didRestoreStoreAccount = false
     var pendingAuthenticationCookies: [StoreCookie] = []
     // Enable only after the separate modern Store/download migration is verified.
-    let storeDownloadsAvailable = false
+    let storeDownloadsAvailable = true
+    @Published var showStoreVersions = false
+    @Published var downloadedIPAURL: URL?
+    @Published var storeError = ""
+    @Published var storeDiagnostic = "No Store operation attempted."
+    var storeTask: Task<Void, Never>?
     @Published var isDowngrading: Bool = false
     
     @Published var appLink: String = ""

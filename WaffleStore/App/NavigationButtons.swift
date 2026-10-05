@@ -32,59 +32,17 @@ struct NavigationButtons: View {
                 .disabled(appData.hasSent2FACode ? appData.code.isEmpty : false)
             } else {
                 if appData.isDowngrading {
-                    Button(action: {
-                        Haptic.shared.play(.soft)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-#if canImport(UIKit)
-    if let url = URL(string: "wafflestore://open") {
-        UIApplication.shared.open(url, options: [:], completionHandler: nil)
-    } else if let appStoreURL = URL(string: "itms-apps://itunes.apple.com/app/id") {
-        UIApplication.shared.open(appStoreURL, options: [:], completionHandler: nil)
-    }
-#endif
-                        }
-                    }) {
-                        ButtonLabel(text: "Open App".localized, icon: "arrow.up.forward.app")
-                    }
-                    .buttonStyle(FancyButtonStyle(color: .blue))
-                    .disabled(!appData.hasAppBeenServed)
-                    
-                    Button(action: {
-                        Haptic.shared.play(.heavy)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                            exitinator()
-                        }
-                    }) {
-                        ButtonLabel(text: "Go to Home Screen".localized, icon: "house")
-                    }
-                    .buttonStyle(FancyButtonStyle())
-                    .disabled(!appData.hasAppBeenServed)
+                    Button("Cancel download") { appData.storeTask?.cancel() }
+                        .buttonStyle(FancyButtonStyle())
                 } else {
-                    Button(action: {
-                        Haptic.shared.play(.soft)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                            if appData.appLink.isEmpty {
-                                return
-                            }
-                            var appLinkParsed = appData.appLink
-                            appLinkParsed = appLinkParsed.components(separatedBy: "id").last ?? ""
-                            for char in appLinkParsed {
-                                if !char.isNumber {
-                                    appLinkParsed = String(appLinkParsed.prefix(upTo: appLinkParsed.firstIndex(of: char)!))
-                                    break
-                                }
-                            }
-                            print("App ID: \(appLinkParsed)")
-                            appData.isDowngrading = true
-                            appData.hasAppBeenServed = false
-                            downgradeApp(appId: appLinkParsed, ipaTool: appData.ipaTool!)
-                        }
-                    }) {
-                        ButtonLabel(text: "Downgrade App".localized, icon: "square.and.arrow.down")
+                    Button(action: { appData.showStoreVersions = true }) {
+                        ButtonLabel(text: "Choose version / download IPA", icon: "square.and.arrow.down")
                     }
                     .buttonStyle(FancyButtonStyle())
-                    .disabled(appData.appLink.isEmpty || !appData.storeDownloadsAvailable)
-                    
+                    .disabled(appData.appLink.isEmpty)
+                    if let url = appData.downloadedIPAURL {
+                        ShareLink(item: url) { Label("Export IPA", systemImage: "square.and.arrow.up") }
+                    }
                     let currentAppId = extractAppId(from: appData.appLink)
                     let existingFav = appData.favourites.first { extractAppId(from: $0.appLink) == currentAppId }
                     let isFavourited = existingFav != nil

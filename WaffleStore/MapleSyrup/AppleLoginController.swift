@@ -101,11 +101,12 @@ extension AppData {
     }
 
     func logoutStoreAccount() {
-        guard !isAuthenticating else { return }
+        guard !isAuthenticating, storeTask == nil else { return }
         do {
+            try KeychainKBSync().clear()
             try KeychainStoreAccount().clear()
             try LegacyCredentials.remove()
-            ipaTool?.storeClient.close()
+            ipaTool?.close()
             ipaTool = nil
             isAuthenticated = false
             hasSent2FACode = false
@@ -133,7 +134,7 @@ extension AppData {
         pendingAuthenticationCookies = []
         ipaTool = IPATool(account: account)
         isAuthenticated = true
-        applicationStatus = restored ? "Saved session loaded; Apple validity not checked." : "Signed in. Store download migration pending."
+        applicationStatus = restored ? "Saved session loaded; Apple validity not checked." : "Signed in. Choose an app/version to download."
         applicationIcon = "checkmark.circle.fill"
         applicationIconColor = .primary
         print("Apple authentication: \(restored ? "saved session loaded" : "DSID/token/storefront received and saved in Keychain") [values withheld]")
