@@ -35,6 +35,7 @@ struct DownloadedAppsView: View {
                             } label: {
                                 Image(systemName: "ellipsis").frame(minWidth: 44, minHeight: 44)
                             }
+                            .buttonStyle(.borderless)
                             .accessibilityLabel("Options for \(record.appName), version \(record.version)")
                         }
                         HStack(spacing: 10) {

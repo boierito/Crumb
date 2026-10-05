@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 // Drain stdout even while the terminal is collapsed. Never let an invisible
 // view leave a full pipe blocking login/download. UI updates stay on MainActor.
