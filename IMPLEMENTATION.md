@@ -265,3 +265,35 @@ account-country behavior. Free acquisition remains once per operation after
 license denial; paid/unknown-price apps are never automatically purchased.
 These fixes allow genuine attempts, not invented licenses or claimed live Apple
 acceptance. Real cross-region download/install remains a device test.
+
+## Build 23014: explicit purchase-2059 recovery and centered confirmations
+
+A physical 23013 report for Venmo returned Apple failureType 2059 and "Purchase
+could not be completed." That is an explicit acquisition rejection, not proof
+that all regional downloads are forbidden. It exposed a missing reference flow:
+ipatool's purchaseWithParams/Purchase maps 2059 to ErrTemporarilyUnavailable and
+tries pricingParameters GAME after STDQ for iOS. DLiPA v1.4 does the same: its
+purchase branch compares 2059 at 0x10004abd8, then replaces pricingParameters with
+GAME at 0x10004abfc–0x10004ac08, and reports failure if rejected again.
+
+23014 implements this bounded reference behavior: after a missing license, a
+verified free app receives STDQ; only an explicit 2059 enables one GAME request.
+The price remains zero, with the same app ID, GUID, account token/storefront and
+pod. This is not an account-country change, subscription purchase or entitlement
+bypass. Another 2059, subscription/terms/session denial, timeout or ambiguous HTTP
+failure is not retried through GAME. Ambiguous purchase errors still require the
+existing read-only access verification; success still requires a validated Apple
+reply and the requested externalVersionId. Paid/unknown-price apps remain blocked
+from automatic acquisition. The user's live Venmo acceptance is still pending.
+
+The 23013 reference investigation missed this 2059 branch; its conclusion about
+DLiPA/ipatool acquisition parity was incomplete. The new tests cover successful
+alternate acquisition, repeated denial with no loop, and subscription rejection.
+The existing no-replay fixture now uses a non-2059 Apple denial, since 2059 has a
+specific alternate-request meaning in both references.
+
+The supplied sign-out/delete screenshots show iOS 27 adapting confirmationDialog
+into a popover anchored far above the action. Both use native alert instead, with
+an explicit Cancel and destructive button and shorter copy. Alert presentation
+is centered and does not depend on row/menu geometry. No custom glass UI or API
+is added. Physical-device appearance remains a manual verification.

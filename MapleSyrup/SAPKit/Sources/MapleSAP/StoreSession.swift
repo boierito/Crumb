@@ -186,20 +186,33 @@ public actor StoreSession {
         components.query = nil
         if let pod = account.pod, !pod.isEmpty { components.host = "p\(pod)-buy.itunes.apple.com" }
         guard let purchaseURL = components.url else { throw SAPError.invalidEndpoint }
-        let body: [String: Any] = ["appExtVrsId": "0", "hasAskedToFulfillPreorder": "true", "buyWithoutAuthorization": "true",
+        var body: [String: Any] = ["appExtVrsId": "0", "hasAskedToFulfillPreorder": "true", "buyWithoutAuthorization": "true",
             "hasDoneAgeCheck": "true", "guid": identity.guid, "needDiv": "0", "origPage": "Software-\(app.id)",
             "origPageLocation": "Buy", "price": "0", "pricingParameters": "STDQ", "productType": "C", "salableAdamId": NSNumber(value: UInt64(app.id) ?? 0)]
-        await progress(.purchase)
-        await diagnostic("purchase-route=MZFinance; guid-query=false")
-        let result = try await post(purchaseURL, body: body, token: true, retry: false, guidQuery: false)
-        if StoreParsing.identifier(result["failureType"]) == "5002" {
-            await diagnostic("purchase-outcome=already-owned")
+        // ipatool and DLiPA use GAME after an explicit STDQ/2059 rejection.
+        // This is one alternate pricing request, never a replay after timeout,
+        // ambiguous HTTP failure, session rejection or another Apple denial.
+        for pricing in ["STDQ", "GAME"] {
+            body["pricingParameters"] = pricing
+            await progress(.purchase)
+            await diagnostic("purchase-route=MZFinance; guid-query=false; pricing=\(pricing)")
+            let result = try await post(purchaseURL, body: body, token: true, retry: false, guidQuery: false)
+            if StoreParsing.identifier(result["failureType"]) == "2059", pricing == "STDQ" {
+                await diagnostic("purchase-recovery=2059-STDQ-to-GAME; max-alternates=1")
+                continue
+            }
+            if StoreParsing.identifier(result["failureType"]) == "5002" {
+                await diagnostic("purchase-outcome=already-owned")
+                return
+            }
+            try StoreParsing.failure(result)
+            guard result["jingleDocType"] as? String == "purchaseSuccess", StoreParsing.identifier(result["status"]) == "0" else { throw StoreError.licenseRequired }
+            await diagnostic("purchase-outcome=confirmed")
             return
         }
-        try StoreParsing.failure(result)
-        guard result["jingleDocType"] as? String == "purchaseSuccess", StoreParsing.identifier(result["status"]) == "0" else { throw StoreError.licenseRequired }
-        await diagnostic("purchase-outcome=confirmed")
+        throw StoreError.invalidResponse
     }
+
     private func dispatchURL(_ text: String, path: String) throws -> URL {
         guard let c = URLComponents(string: text), let url = c.url, c.scheme == "https", c.host == "downloaddispatch.itunes.apple.com",
               c.port == nil, c.user == nil, c.password == nil, c.query == nil, c.fragment == nil,

@@ -55,12 +55,14 @@ struct ContentView: View {
             }
             .navigationTitle("Apple account")
             .navigationBarTitleDisplayMode(.inline)
-            .confirmationDialog("Sign out of Apple account?", isPresented: $confirmLogout, titleVisibility: .visible) {
+            .alert("Sign out of Apple account?", isPresented: $confirmLogout) {
                 Button("Sign out", role: .destructive) {
                     appData.openVersionsAfterLogin = false
                     appData.logoutStoreAccount()
                 }
                 Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Your favourites and downloaded IPAs will stay on this device.")
             }
         }
     }

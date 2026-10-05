@@ -169,12 +169,12 @@ extension StoreTests {
     func testPurchaseFailureIsNotReplayedAndNextOperationChecksAccessFirst() async throws {
         let transport = StoreFixtureTransport([.init(status: 200, data: try bag()),
             .init(status: 200, data: try plist(["failureType": "9610"])),
-            .init(status: 200, data: try plist(["failureType": "2059", "customerMessage": "Requires App Store interaction"])),
+            .init(status: 200, data: try plist(["failureType": "2058", "customerMessage": "Requires App Store interaction"])),
             .init(status: 200, data: try reply())])
         let store = try session(transport)
         let free = StoreApp(id: app.id, bundleID: app.bundleID, name: app.name, price: 0)
         do { _ = try await store.descriptor(app: free, externalVersionID: "999"); XCTFail("unconfirmed license") }
-        catch { XCTAssertEqual(error as? StoreError, .apple("2059", "Requires App Store interaction")) }
+        catch { XCTAssertEqual(error as? StoreError, .apple("2058", "Requires App Store interaction")) }
         var requests = await transport.requests; XCTAssertEqual(requests.count, 3)
         _ = try await store.descriptor(app: free, externalVersionID: "999")
         requests = await transport.requests
@@ -361,5 +361,52 @@ extension StoreTests {
         catch { XCTAssertEqual(error as? StoreError, .unsupportedStorefront) }
         let requests = await transport.requests
         XCTAssertTrue(requests.isEmpty)
+    }
+}
+
+extension StoreTests {
+    func testPurchase2059UsesOneGAMEAlternateAndKeepsRegionalAppAndOldVersion() async throws {
+        let transport = StoreFixtureTransport([.init(status: 200, data: try bag()),
+            .init(status: 200, data: try plist(["failureType": "9610"])),
+            .init(status: 200, data: try plist(["failureType": "2059", "customerMessage": "Purchase could not be completed."])),
+            .init(status: 200, data: try plist(["jingleDocType": "purchaseSuccess", "status": 0])),
+            .init(status: 200, data: try reply(version: "888"))])
+        let regional = StoreApp(id: "123", bundleID: "test.app", name: "Test", price: 0, catalogCountry: "us")
+        let result = try await session(transport).descriptor(app: regional, externalVersionID: "888")
+        XCTAssertEqual(result.externalVersionID, "888")
+        let requests = await transport.requests
+        let purchases = requests.filter { $0.url?.path.hasSuffix("buyProduct") == true }
+        XCTAssertEqual(purchases.count, 2)
+        var pricing: [String] = []
+        for request in purchases {
+            let body = try PropertyListSerialization.propertyList(from: request.httpBody!, format: nil) as! [String: Any]
+            pricing.append(body["pricingParameters"] as! String)
+            XCTAssertEqual(body["price"] as? String, "0")
+            XCTAssertEqual(StoreParsing.identifier(body["salableAdamId"]), "123")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Apple-Store-Front"), "143505-1,29")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Token"), "fixture-token")
+        }
+        XCTAssertEqual(pricing, ["STDQ", "GAME"])
+    }
+    func testRepeated2059StopsAfterTwoPricingRequestsAndPreservesAppleMessage() async throws {
+        let denial = try plist(["failureType": "2059", "customerMessage": "Purchase could not be completed."])
+        let transport = StoreFixtureTransport([.init(status: 200, data: try bag()), .init(status: 200, data: try plist(["failureType": "9610"])),
+            .init(status: 200, data: denial), .init(status: 200, data: denial)])
+        let free = StoreApp(id: "123", bundleID: "test.app", name: "Test", price: 0)
+        do { _ = try await session(transport).descriptor(app: free, externalVersionID: "888"); XCTFail("Rejected acquisition accepted") }
+        catch { XCTAssertEqual(error as? StoreError, .apple("2059", "Purchase could not be completed.")) }
+        let requests = await transport.requests
+        XCTAssertEqual(requests.count, 4)
+        XCTAssertEqual(requests.filter { $0.url?.path.hasSuffix("buyProduct") == true }.count, 2)
+    }
+    func testGAMEAlternateDoesNotIgnoreSubscriptionRejection() async throws {
+        let transport = StoreFixtureTransport([.init(status: 200, data: try bag()), .init(status: 200, data: try plist(["failureType": "9610"])),
+            .init(status: 200, data: try plist(["failureType": "2059"])),
+            .init(status: 200, data: try plist(["customerMessage": "Subscription required"]))])
+        let free = StoreApp(id: "123", bundleID: "test.app", name: "Test", price: 0)
+        do { _ = try await session(transport).descriptor(app: free, externalVersionID: "888"); XCTFail("Subscription denial accepted") }
+        catch { XCTAssertEqual(error as? StoreError, .apple("", "Subscription required")) }
+        let requests = await transport.requests
+        XCTAssertEqual(requests.count, 4)
     }
 }

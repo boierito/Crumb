@@ -166,3 +166,25 @@ Fixtures check foreign lookup + latest-version lookup reach authenticated downlo
 unchanged account token/storefront, one license request with original external ID,
 and invalid country rejection before network. They do not establish live Apple
 eligibility. Physical iOS 27/26 cross-region acceptance is pending.
+
+## Build 23014: purchase 2059 and destructive confirmations
+
+- With a normally signed Release IPA, try the same Venmo/US listing using the AR
+  account. After missing license, STDQ may yield 2059; expect at most one GAME
+  alternate (fundamental diagnostic: purchase-recovery=2059-STDQ-to-GAME).
+  A second rejection must stop with Apple's actual error. Do not mark regional
+  download working without a verified IPA and actual installation/export.
+- Test an owned app (no purchase), a never-obtained free app, known older version,
+  paid/unknown-price app and subscription denial. No automatic paid/subscription
+  purchase, generic replay, fabricated ownership or logout after regional denial.
+- Tap Sign out on Account: centered alert, Cancel leaves account intact; confirm
+  removes session while downloads/favourites remain. Existing sign-in unchanged.
+- Downloads: delete via menu and swipe, including a row low in the list. Centered
+  alert should identify the deletion action, show Cancel, and retain the IPA on
+  cancellation. Confirm removes saved IPA/record only, not installed app/data.
+- Check confirmations on iOS 27/26, iPad, large text and VoiceOver; physical visual
+  verification remains pending, and a successful Xcode build does not establish it.
+
+Fixtures cover STDQ/2059 -> GAME -> success then exact older ID download, second
+2059 termination and Apple message retention, subscription denial after GAME,
+and existing non-2059/session/ambiguous failure/no-paid acquisition paths.

@@ -91,7 +91,7 @@ struct DownloadedAppsView: View {
             }
             .sheet(isPresented: $showHistory) { DowngradeHistoryView() }
             .sheet(item: $installation) { OTAInstallationView(record: $0, startImmediately: true) }
-            .confirmationDialog("Delete downloaded IPA?", isPresented: $confirmDeletion, titleVisibility: .visible) {
+            .alert("Delete downloaded IPA?", isPresented: $confirmDeletion) {
                 if let record = deletion {
                     Button("Delete IPA", role: .destructive) {
                         do { try appData.deleteDownload(record) }
@@ -104,7 +104,7 @@ struct DownloadedAppsView: View {
                 }
                 Button("Cancel", role: .cancel) { deletion = nil }
             } message: {
-                Text("This removes the saved IPA and its download record. It does not uninstall the app or delete its data.")
+                Text("The saved IPA will be removed. The installed app and its data will stay on this device.")
             }
             .alert("Could not delete download", isPresented: Binding(
                 get: { !deletionError.isEmpty }, set: { if !$0 { deletionError = "" } })) {
