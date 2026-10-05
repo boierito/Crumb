@@ -25,3 +25,5 @@ jobs:
       - run: python3 -m pip install unicorn==2.1.4
       - name: Demonstrate Unicorn failure with executable mappings denied
         run: bash scripts/test-no-exec.sh
+      - name: Verify TCI guest stack and hooks with executable mappings denied
+        run: bash scripts/test-tci-host.sh

@@ -8,6 +8,12 @@ trap 'rm -rf "$WORK"' EXIT
 # Reuse the current SAP guest, loader and shims only, with an isolated C ABI.
 # All downloaded source and generated modifications are retained for review.
 curl -fL --retry 3 https://github.com/majd/ipatool/archive/3411d57f451f5111ae115641c22f7ed17bbd5fbe.tar.gz -o "$WORK/ipatool.tar.gz"
+python3 - "$WORK/ipatool.tar.gz" <<'PY'
+import sys,hashlib
+with open(sys.argv[1], 'rb') as f: digest=hashlib.sha256(f.read()).hexdigest()
+if digest != '5c940788df3b619b07ead5e592b5a06beecd96ccdb7570f4fbd09a02b41785b7':
+    raise SystemExit('ipatool source integrity mismatch')
+PY
 tar -xzf "$WORK/ipatool.tar.gz" -C "$WORK"
 SOURCE="$WORK/ipatool-3411d57f451f5111ae115641c22f7ed17bbd5fbe"
 mkdir -p "$SOURCE/wafflebridge"
