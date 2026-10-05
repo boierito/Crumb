@@ -49,6 +49,9 @@ struct SettingsView: View {
                 
                 Section(header: HeaderLabel(text: "Settings".localized, icon: "gearshape")) {
                     Button("SAP diagnostic") { showSAPDiagnostic = true }
+                    ShareLink(item: appData.authenticationDiagnostic) {
+                        Label("Export authentication diagnostic", systemImage: "square.and.arrow.up")
+                    }
                     Toggle(isOn: $autoCleanApp) {
                         Text("Auto-Clean App".localized)
                         Text("Auto-Clean Description".localized)

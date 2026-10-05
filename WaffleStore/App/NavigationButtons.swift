@@ -17,37 +17,18 @@ struct NavigationButtons: View {
             if !appData.isAuthenticated {
                 Button(action: {
                     Haptic.shared.play(.soft)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                        if appData.appleId.isEmpty || appData.password.isEmpty {
-                            Alertinator.shared.alert(title: "No Apple ID details were input!".localized, body: "Login prompt description".localized)
-                        } else {
-                            if appData.code.isEmpty {
-                                appData.ipaTool = IPATool(appleId: appData.appleId, password: appData.password)
-                                appData.ipaTool?.authenticate(requestCode: true)
-                                //appData.hasSent2FACode = true
-                                return
-                            }
-                            let finalPassword = appData.password + appData.code
-                            appData.ipaTool = IPATool(appleId: appData.appleId, password: finalPassword)
-                            let ret = appData.ipaTool?.authenticate()
-                            appData.isAuthenticated = ret ?? false
-                            
-                            if appData.isAuthenticated {
-                                appData.applicationStatus = "Ready to Downgrade!".localized
-                                appData.applicationIcon = "checkmark.circle.fill"
-                                appData.applicationIconColor = .secondary
-                            }
-                        }
-                    }
+                    appData.startAppleLogin()
                 }) {
-                    if appData.hasSent2FACode {
+                    if appData.isAuthenticating {
+                        ButtonLabel(text: "Signing in…", icon: "hourglass")
+                    } else if appData.hasSent2FACode {
                         ButtonLabel(text: "Log In".localized, icon: "arrow.right")
                     } else {
                         ButtonLabel(text: "Send 2FA Code".localized, icon: "key")
                     }
                 }
                 .buttonStyle(FancyButtonStyle())
-                .disabled(appData.appleId.isEmpty || appData.password.isEmpty)
+                .disabled(appData.appleId.isEmpty || appData.password.isEmpty || appData.isAuthenticating)
                 .disabled(appData.hasSent2FACode ? appData.code.isEmpty : false)
             } else {
                 if appData.isDowngrading {
@@ -102,7 +83,7 @@ struct NavigationButtons: View {
                         ButtonLabel(text: "Downgrade App".localized, icon: "square.and.arrow.down")
                     }
                     .buttonStyle(FancyButtonStyle())
-                    .disabled(appData.appLink.isEmpty)
+                    .disabled(appData.appLink.isEmpty || !appData.storeDownloadsAvailable)
                     
                     let currentAppId = extractAppId(from: appData.appLink)
                     let existingFav = appData.favourites.first { extractAppId(from: $0.appLink) == currentAppId }

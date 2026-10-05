@@ -92,30 +92,7 @@ struct ContentView: View {
         .sheet(isPresented: $showFavouritesView) {
             FavouritesView()
         }
-        .onAppear {
-            appData.isAuthenticated = EncryptedKeychainWrapper.hasAuthInfo()
-            print("Found \(appData.isAuthenticated ? "auth" : "no auth") info in keychain")
-            if appData.isAuthenticated {
-                appData.applicationStatus = "Ready to Downgrade!".localized
-                appData.applicationIcon = "checkmark.circle.fill"
-                appData.applicationIconColor = .primary
-                guard let authInfo = EncryptedKeychainWrapper.getAuthInfo() else {
-                    print("Failed to get auth info from keychain, logging out")
-                    appData.isAuthenticated = false
-                    EncryptedKeychainWrapper.nuke()
-                    EncryptedKeychainWrapper.generateAndStoreKey()
-                    return
-                }
-                appData.appleId = authInfo["appleId"]! as! String
-                appData.password = authInfo["password"]! as! String
-                appData.ipaTool = IPATool(appleId: appData.appleId, password: appData.password)
-                let ret = appData.ipaTool?.authenticate()
-                print("Re-authenticated \(ret! ? "successfully" : "unsuccessfully")")
-            } else {
-                print("No auth info found in keychain, setting up by generating a key in SEP")
-                EncryptedKeychainWrapper.generateAndStoreKey()
-            }
-        }
+        .onAppear { appData.restoreStoreAccount() }
     }
     
     private var LogsSection: some View {
@@ -147,7 +124,7 @@ struct ContentView: View {
                 VStack {
                     TextField("Apple ID".localized, text: $appData.appleId)
                         .modifier(TextFieldBackground())
-                        .disabled(appData.hasSent2FACode)
+                        .disabled(appData.hasSent2FACode || appData.isAuthenticating)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                     
@@ -155,13 +132,13 @@ struct ContentView: View {
                         if appData.showPassword {
                             TextField("Password".localized, text: $appData.password)
                                 .modifier(TextFieldBackground())
-                                .disabled(appData.hasSent2FACode)
+                                .disabled(appData.hasSent2FACode || appData.isAuthenticating)
                                 .autocorrectionDisabled()
                                 .textInputAutocapitalization(.never)
                         } else {
                             SecureField("Password".localized, text: $appData.password)
                                 .modifier(TextFieldBackground())
-                                .disabled(appData.hasSent2FACode)
+                                .disabled(appData.hasSent2FACode || appData.isAuthenticating)
                                 .autocorrectionDisabled()
                                 .textInputAutocapitalization(.never)
                         }
@@ -177,11 +154,24 @@ struct ContentView: View {
                 }
             }
             
+            if !appData.authenticationError.isEmpty {
+                Section { Text(appData.authenticationError).foregroundStyle(.red).textSelection(.enabled) }
+            }
+            if appData.isAuthenticating {
+                Section {
+                    ProgressView(appData.applicationStatus)
+                    Button("Cancel sign-in") { appData.cancelAppleLogin() }
+                }
+            }
             if appData.hasSent2FACode {
                 Section(header: HeaderLabel(text: "Verification Code".localized, icon: "key.viewfinder")) {
                     TextField("2FA Code".localized, text: $appData.code)
                         .modifier(TextFieldBackground())
                         .keyboardType(.numberPad)
+                        .textContentType(.oneTimeCode)
+                        .disabled(appData.isAuthenticating)
+                    Button("Use another Apple ID / restart sign-in") { appData.cancelAppleLogin() }
+                        .disabled(appData.isAuthenticating)
                 }
             }
         }
@@ -190,6 +180,10 @@ struct ContentView: View {
     private var InputAppSection: some View {
         Section(header: HeaderLabel(text: "Downgrade App".localized, icon: "arrow.down.app"), footer: Text("To downgrade an app, it must have been purchased on your account at some point in the past (when the app has a cloud icon next to it). It must also not be installed on your device currently, but you can offload it.".localized)) {
             VStack(spacing: 12) {
+                if !appData.storeDownloadsAvailable {
+                    Text("This development build validates login and 2FA. Versions, purchase and download are pending migration.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 TextField("App Store Link".localized, text: $appData.appLink)
                     .modifier(TextFieldBackground())
                     .autocorrectionDisabled()
@@ -229,14 +223,14 @@ struct AppMenu: View {
             }) {
                 Label("Favourites".localized, systemImage: "star.fill")
             }
-            .disabled(!appData.isAuthenticated)
+            .disabled(!appData.isAuthenticated || appData.isAuthenticating)
             
             Button(action: {
                 showHistoryView.toggle()
             }) {
                 Label("Downgrade History".localized, systemImage: "clock.arrow.circlepath")
             }
-            .disabled(!appData.isAuthenticated)
+            .disabled(!appData.isAuthenticated || appData.isAuthenticating)
             
             Button(action: {
                 let tempDir = FileManager.default.temporaryDirectory
@@ -250,15 +244,12 @@ struct AppMenu: View {
             Button(action: {
                 Haptic.shared.play(.heavy)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                    EncryptedKeychainWrapper.nuke()
-                    EncryptedKeychainWrapper.generateAndStoreKey()
-                    sleep(3)
-                    exitinator()
+                    appData.logoutStoreAccount()
                 }
             }) {
                 ButtonLabel(text: "Log Out".localized, icon: "arrow.right")
             }
-            .disabled(!appData.isAuthenticated)
+            .disabled(!appData.isAuthenticated || appData.isAuthenticating)
         } label: {
             Image(systemName: "line.horizontal.3")
         }
