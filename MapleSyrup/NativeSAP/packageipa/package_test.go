@@ -20,7 +20,7 @@ func fixture(t *testing.T, dir string, malformed bool) (string, Input) {
 		t.Fatal(e)
 	}
 	z := zip.NewWriter(f)
-	info, _ := plist.Marshal(Info{BundleID: "test.app", Version: "1.2.3", Executable: "Test", Platforms: []string{"iPhoneOS"}}, plist.BinaryFormat)
+	info, _ := plist.Marshal(Info{Build: "12345", BundleID: "test.app", Version: "1.2.3", Executable: "Test", Platforms: []string{"iPhoneOS"}}, plist.BinaryFormat)
 	entries := map[string][]byte{"Payload/Test.app/Info.plist": info, "Payload/Test.app/Test": bytes.Repeat([]byte{42}, 4096), "Payload/Test.app/SC_Info/Test.sinf": []byte("old")}
 	if malformed {
 		entries["../bad"] = []byte("bad")
@@ -49,7 +49,7 @@ func TestPreparePreservesPayloadAndReplacesLicense(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if !bytes.Contains(result, []byte("1.2.3")) {
+	if !bytes.Contains(result, []byte("1.2.3")) || !bytes.Contains(result, []byte("12345")) {
 		t.Fatal("version not verified")
 	}
 	z, e := zip.OpenReader(dest)

@@ -1,6 +1,7 @@
 import SwiftUI
 import SafariServices
 import Telegraph
+import MapleSAP
 
 // Original WaffleStore OTA mechanism, confined to loopback and one verified IPA.
 // Opening Safari, or serving bytes, never proves that iOS installed the app.
@@ -40,7 +41,23 @@ final class OTAInstaller: ObservableObject {
             let literal = String(data: try JSONSerialization.data(withJSONObject: target, options: .fragmentsAllowed), encoding: .utf8)!
             let html = "<html><meta name='viewport' content='width=device-width'><body><h3>Install selected version</h3><p>Confirm the iOS installation prompt. This page does not report installation success.</p><button id='install'>Install</button><script>const target=\(literal);document.getElementById('install').onclick=()=>location.href=target;location.href=target;</script></body></html>"
             let server = Server()
-            server.serveDirectory(root, path + "/ipa", index: nil)
+            server.concurrency = 2
+            let fileHandler: HTTPRequest.Handler = { request in
+                // Read-only mapping avoids allocating a full multi-GB IPA body.
+                let mapped = try Data(contentsOf: ipa, options: .alwaysMapped)
+                let range: Range<Int>
+                do { range = try OTAByteRange.resolve(request.headers.range, size: mapped.count) }
+                catch { return HTTPResponse(.rangeNotSatisfiable, headers: ["Content-Range": "bytes */\(mapped.count)"]) }
+                let response = HTTPResponse(request.headers.range == nil ? .ok : .partialContent,
+                    headers: ["Content-Type": "application/octet-stream", "Accept-Ranges": "bytes", "Cache-Control": "no-store"],
+                    body: mapped[range])
+                if request.headers.range != nil {
+                    response.headers.contentRange = "bytes \(range.lowerBound)-\(range.upperBound - 1)/\(mapped.count)"
+                }
+                return response
+            }
+            server.route(.GET, path + "/ipa/signed.ipa", fileHandler)
+            server.route(.HEAD, path + "/ipa/signed.ipa", fileHandler)
             server.route(.GET, path + "/install") { _ in HTTPResponse(.ok, headers: ["Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store"], content: html) }
             try server.start(port: 9090, interface: "127.0.0.1")
             self.server = server

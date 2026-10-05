@@ -441,7 +441,8 @@ Apple. El generador devolvió HTTP 200 y plist válido con metadata y software-p
 para un fixture sin credenciales. Esto no prueba instalación en iOS 27.
 
 El usuario confirma el request de instalación en una pantalla explícita. El
-servidor soporta rangos mediante HTTPFileHandler, evita cargar toda la IPA en RAM,
+servidor usa una ruta exacta con mapeo de lectura y rangos simples validados,
+evita reservar un buffer de lectura del tamaño de la IPA,
 se cierra al salir o tras 10 minutos, y usa un tiempo de background permitido por
 iOS que puede expirar antes. La descarga original permanece en Documents.
 No se declara instalada ni se agrega historial de instalación al abrir Safari o

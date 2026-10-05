@@ -23,6 +23,7 @@ Relative to original d508e53 / upstream-wafflestore-2.2.2.
 - `MapleSyrup/SAPKit/Sources/MapleSAP/KeychainIdentity.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/KeychainKBSync.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/MemoryCapability.swift`
+- `MapleSyrup/SAPKit/Sources/MapleSAP/OTAByteRange.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/ResponseDiagnostic.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/SAPSession.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/StoreAccount.swift`
@@ -35,6 +36,7 @@ Relative to original d508e53 / upstream-wafflestore-2.2.2.
 - `MapleSyrup/SAPKit/Sources/MemoryProbe/include/MemoryProbe.h`
 - `MapleSyrup/SAPKit/Tests/MapleSAPTests/AuthenticationTests.swift`
 - `MapleSyrup/SAPKit/Tests/MapleSAPTests/AuthenticationTransportTests.swift`
+- `MapleSyrup/SAPKit/Tests/MapleSAPTests/OTARangeTests.swift`
 - `MapleSyrup/SAPKit/Tests/MapleSAPTests/SAPTests.swift`
 - `MapleSyrup/SAPKit/Tests/MapleSAPTests/StoreTests.swift`
 - `README.md`
