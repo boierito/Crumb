@@ -22,7 +22,7 @@ extension AppData {
         guard storeTask == nil else { return }
         isDowngrading = true; showsDowngradeProgress = true; downgradeProgress = 0
         storeError = ""
-        storeDiagnostic = "WaffleStore Store probe v6\nkbsync-runtime=tci-no-jit\ninstallation=not-attempted\nsecret-values=withheld"
+
         storeTask = Task {
             defer { storeTask = nil; isDowngrading = false; showsDowngradeProgress = false }
             let fm = FileManager.default
@@ -86,20 +86,14 @@ extension AppData {
                 downloadedIPAURL = destination; hasAppBeenServed = true
                 appBundleID = info.bundleID; appVersion = info.version
                 storeStage("IPA verified and saved. Export to Files or another app.")
-                storeDiagnostic += "\noutcome=downloaded-and-verified\nexternalVersionId=\(descriptor.externalVersionID)\nversion-source=IPA-Info.plist\nexport=ready\ninstallation=not-attempted"
+
                 downgradeProgress = 1; applicationIcon = "checkmark.circle.fill"
             } catch {
                 if error is CancellationError || Task.isCancelled {
-                    applicationStatus = "Download cancelled."; storeDiagnostic += "\noutcome=cancelled"
+                    applicationStatus = "Download cancelled."
                 } else {
                     storeError = (error as? CDNHTTPFailure).map { "CDN request failed (HTTP \($0.status))." } ?? (error as? StoreError)?.localizedDescription ?? (error as? SAPError)?.localizedDescription ?? "Store operation failed (code \((error as NSError).code))."
                     applicationStatus = "Download failed."; applicationIcon = "xmark.circle.fill"
-                    let category: String
-                    if let error = error as? StoreError, case .native(let stage) = error { category = "native-stage-\(stage)" }
-                    else if let error = error as? StoreError, case .http(let status) = error { category = "HTTP-\(status)" }
-                    else { category = "operation-\((error as NSError).code)" }
-                    storeDiagnostic += "\noutcome=failed; category=\(category)"
-                    print("Store download failed: \(category)")
                     Alertinator.shared.alert(title: "Download failed", body: storeError)
                 }
             }
@@ -107,7 +101,7 @@ extension AppData {
     }
     private func storeStage(_ stage: String) {
         applicationStatus = stage; downgradeProgressDetail = stage
-        storeDiagnostic += "\nstage=\(stage)"
+
         print("Apple Store stage: \(stage)")
     }
     func restoreDownloadedIPA() {

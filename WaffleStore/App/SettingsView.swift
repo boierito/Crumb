@@ -10,7 +10,6 @@ struct SettingsView: View {
     @AppStorage("autoCleanApp") var autoCleanApp: Bool = true
     @StateObject private var localizationManager = LocalizationManager.shared
     @State private var showFileImporter = false
-    @State private var showSAPDiagnostic = false
     
     private var appVersionString: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
@@ -48,13 +47,6 @@ struct SettingsView: View {
                 }
                 
                 Section(header: HeaderLabel(text: "Settings".localized, icon: "gearshape")) {
-                    Button("SAP diagnostic") { showSAPDiagnostic = true }
-                    ShareLink(item: appData.authenticationDiagnostic) {
-                        Label("Export authentication diagnostic", systemImage: "square.and.arrow.up")
-                    }
-                    ShareLink(item: appData.storeDiagnostic) {
-                        Label("Export Store/download diagnostic", systemImage: "square.and.arrow.up")
-                    }
                     Toggle(isOn: $autoCleanApp) {
                         Text("Auto-Clean App".localized)
                         Text("Auto-Clean Description".localized)
@@ -146,9 +138,10 @@ struct SettingsView: View {
                     LinkCreditCell(image: Image("lunginspector"), name: "lunginspector", description: "Original creator of PancakeStore.".localized, url: "https://github.com/lunginspector")
                     LinkCreditCell(image: Image("skadz"), name: "skadz", description: "Original creator of PancakeStore.".localized, url: "https://github.com/skadz108")
                     LinkCreditCell(image: Image("nxtcoreee3"), name: "nxtcoreee3", description: "UI changes and feature improvements.".localized, url: "https://github.com/nxtcoreee3")
+                    LinkCreditCell(image: Image(systemName: "person.crop.circle"), name: "boierito", description: "Revival coordination and iOS 27 device testing.", url: "https://github.com/boierito")
+                    LinkCreditCell(image: Image(systemName: "shippingbox"), name: "majd / ipatool", description: "MIT-licensed reference for SAP, Apple authentication and App Store downloads.", url: "https://github.com/majd/ipatool")
                 }
             }
-            .sheet(isPresented: $showSAPDiagnostic) { SAPDiagnosticView() }
             .navigationTitle("Settings".localized)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

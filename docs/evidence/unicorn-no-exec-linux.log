@@ -1,6 +1,0 @@
-Unicorn-2.1.4: restricted=0 status=0 (OK (UC_ERR_OK)) RAX=42
-ipatool-iOS-RW-to-RX: status=-1 errno=1
-Could not allocate dynamic translator buffer
-Unicorn terminated the process while allocating its dynamic translator buffer (exit 1).
-PASS: Unicorn works with executable memory and fails when new executable mappings are denied.
-This reproduces a runtime dependency; it does not substitute for iOS 26/27 device validation.

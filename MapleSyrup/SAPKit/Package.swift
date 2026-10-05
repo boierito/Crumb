@@ -6,8 +6,8 @@ let package = Package(
     platforms: [.iOS(.v16), .macOS(.v13)],
     products: [.library(name: "MapleSAP", targets: ["MapleSAP"])],
     targets: [
-        .target(name: "MemoryProbe", publicHeadersPath: "include"),
-        .target(name: "MapleSAP", dependencies: ["MemoryProbe"]),
-        .testTarget(name: "MapleSAPTests", dependencies: ["MapleSAP"])
+        .target(name: "MemoryProbe", path: "Tests/MemoryProbe", publicHeadersPath: "include"),
+        .target(name: "MapleSAP"),
+        .testTarget(name: "MapleSAPTests", dependencies: ["MapleSAP", "MemoryProbe"])
     ]
 )

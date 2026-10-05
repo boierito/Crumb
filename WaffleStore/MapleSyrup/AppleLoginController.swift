@@ -15,10 +15,6 @@ extension AppData {
         isAuthenticating = true
         authenticationError = ""
         authenticationRecovery = ""
-        authenticationDiagnostic = ["WaffleStore authentication probe v6",
-            "iOS=\(UIDevice.current.systemVersion)",
-            "app-build=\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") ?? "unknown")",
-            "password-persistence=false", "signer=tci-no-jit"].joined(separator: "\n")
         authenticationTask = Task {
             defer { isAuthenticating = false; authenticationTask = nil }
             let sapTransport = AppleSAPTransport()
@@ -43,8 +39,7 @@ extension AppData {
                             if event.hasPrefix("authentication-recovery-attempt=") {
                                 self.authenticationRecovery = "Automatic attempt " + event.replacingOccurrences(of: "authentication-recovery-attempt=", with: "")
                             }
-                            self.authenticationDiagnostic += "\n\(event)"
-                            print("Apple authentication diagnostic: \(event)")
+
                         }
                     }, automaticRecovery: true)
                 let outcome = try await authentication.login(email: email, password: secret, code: verification,
@@ -55,17 +50,17 @@ extension AppData {
                 switch outcome {
                 case .twoFactorRequired(let cookies):
                     pendingAuthenticationCookies = cookies
-                    authenticationDiagnostic += "\noutcome=2FA-required"
+
                     hasSent2FACode = true
                     code = ""
                     applicationStatus = AuthenticationStage.twoFactor.rawValue
                 case .authenticated(let account):
-                    authenticationDiagnostic += "\ntwo-factor=\(verification.isEmpty ? "not-requested-in-this-login" : "submitted")"
+
                     applyStoreAccount(account, restored: false)
                 }
             } catch let error where error is CancellationError || Task.isCancelled {
                 applicationStatus = "Sign-in cancelled."
-                authenticationDiagnostic += "\noutcome=cancelled"
+
             } catch {
                 if hasSent2FACode { pendingAuthenticationCookies = await loginTransport.cookies() }
                 // Apple/SAP errors have sanitized, bounded descriptions. Arbitrary
@@ -75,10 +70,8 @@ extension AppData {
                 else { authenticationError = "Sign-in failed (code \((error as NSError).code))." }
                 code = ""
                 applicationStatus = "Sign-in failed."
-                print("Apple authentication failed: \(diagnosticCategory(error))")
-                // Customer messages belong in the UI; exported logs contain fixed
-                // stage/category information, not arbitrary Apple response text.
-                authenticationDiagnostic += "\noutcome=failed; error-category=\(diagnosticCategory(error))"
+                print("Apple sign-in failed (code \((error as NSError).code)).")
+
             }
             if let sap = sap { await sap.close() }
         }
@@ -135,7 +128,7 @@ extension AppData {
 
     private func setAuthenticationStage(_ stage: AuthenticationStage) {
         applicationStatus = stage.rawValue
-        authenticationDiagnostic += "\nstage=\(stage.rawValue)"
+
         print("Apple authentication stage: \(stage.rawValue)")
     }
     private func applyStoreAccount(_ account: StoreAccount, restored: Bool) {
@@ -148,36 +141,9 @@ extension AppData {
         applicationIcon = "checkmark.circle.fill"
         applicationIconColor = .primary
         print("Apple authentication: \(restored ? "saved session loaded" : "DSID/token/storefront received and saved in Keychain") [values withheld]")
-        authenticationDiagnostic += "\noutcome=\(restored ? "saved-session-loaded-not-validated" : "authenticated")\nDSID=present\npasswordToken=present\nstorefront=present\npod=\(account.pod == nil ? "absent" : "present")\nsecret-values=withheld"
+
     }
-    private func diagnosticCategory(_ error: Error) -> String {
-        if let error = error as? AuthenticationError {
-            switch error {
-            case .apple: return "Apple-account-response"
-            case .http(let status), .invalidResponse(let status): return "HTTP-\(status)"
-            case .network(let code): return "network-\(code)"
-            case .invalidCode: return "invalid-2FA-format"
-            case .invalidCredentials: return "invalid-credentials"
-            case .twoFactorRequired: return "2FA-required"
-            case .verificationRejected: return "2FA-rejected-or-expired"
-            case .accountDisabled: return "account-disabled"
-            case .rateLimited: return "rate-limit"
-            case .retryLater: return "retry-after-over-budget"
-            case .invalidRedirect: return "endpoint-or-redirect-rejected"
-            case .tooManyRedirects: return "redirect-limit"
-            case .invalidSession: return "invalid-session"
-            }
-        }
-        if let error = error as? SAPError {
-            switch error {
-            case .nativeRuntime(let stage): return "SAP-native-stage-\(stage)"
-            case .keychain(let status): return "keychain-\(status)"
-            case .http(let status): return "SAP-HTTP-\(status)"
-            default: return "SAP-protocol"
-            }
-        }
-        return "operation-\((error as NSError).code)"
-    }
+
 }
 
 private enum LegacyCredentials {

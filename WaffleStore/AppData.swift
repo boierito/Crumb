@@ -37,7 +37,6 @@ final class AppData: ObservableObject {
     @Published var isAuthenticating: Bool = false
     @Published var authenticationError: String = ""
     @Published var authenticationRecovery: String = ""
-    @Published var authenticationDiagnostic: String = "No authentication attempted."
     var authenticationTask: Task<Void, Never>?
     var didRestoreStoreAccount = false
     var pendingAuthenticationCookies: [StoreCookie] = []
@@ -45,7 +44,6 @@ final class AppData: ObservableObject {
     @Published var downloadedIPAURL: URL?
     @Published var completedDownloads: [DownloadRecord] = []
     @Published var storeError = ""
-    @Published var storeDiagnostic = "No Store operation attempted."
     var storeTask: Task<Void, Never>?
     @Published var isDowngrading: Bool = false
     

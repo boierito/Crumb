@@ -1,6 +1,6 @@
 # Modified files
 
-Relative to original d508e53 / upstream-wafflestore-2.2.2.
+Relative to upstream main d508e53.
 
 - `.github/workflows/build-ipa.yml`
 - `.github/workflows/sap-tests.yml`
@@ -22,7 +22,6 @@ Relative to original d508e53 / upstream-wafflestore-2.2.2.
 - `MapleSyrup/SAPKit/Sources/MapleSAP/KeychainAccount.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/KeychainIdentity.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/KeychainKBSync.swift`
-- `MapleSyrup/SAPKit/Sources/MapleSAP/MemoryCapability.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/OTAByteRange.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/ResponseDiagnostic.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/SAPSession.swift`
@@ -32,13 +31,14 @@ Relative to original d508e53 / upstream-wafflestore-2.2.2.
 - `MapleSyrup/SAPKit/Sources/MapleSAP/StoreRetry.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/StoreSession.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/Storefront.swift`
-- `MapleSyrup/SAPKit/Sources/MemoryProbe/MemoryProbe.c`
-- `MapleSyrup/SAPKit/Sources/MemoryProbe/include/MemoryProbe.h`
 - `MapleSyrup/SAPKit/Tests/MapleSAPTests/AuthenticationTests.swift`
 - `MapleSyrup/SAPKit/Tests/MapleSAPTests/AuthenticationTransportTests.swift`
+- `MapleSyrup/SAPKit/Tests/MapleSAPTests/MemoryCapability.swift`
 - `MapleSyrup/SAPKit/Tests/MapleSAPTests/OTARangeTests.swift`
 - `MapleSyrup/SAPKit/Tests/MapleSAPTests/SAPTests.swift`
 - `MapleSyrup/SAPKit/Tests/MapleSAPTests/StoreTests.swift`
+- `MapleSyrup/SAPKit/Tests/MemoryProbe/MemoryProbe.c`
+- `MapleSyrup/SAPKit/Tests/MemoryProbe/include/MemoryProbe.h`
 - `README.md`
 - `TESTING.md`
 - `THIRD_PARTY_NOTICES.md`
@@ -57,34 +57,19 @@ Relative to original d508e53 / upstream-wafflestore-2.2.2.
 - `WaffleStore/Functions/IPATool.swift`
 - `WaffleStore/Functions/OTAInstaller.swift`
 - `WaffleStore/MapleSyrup/AppleLoginController.swift`
+- `WaffleStore/MapleSyrup/Native/SAP-Bridging-Header.h`
 - `WaffleStore/MapleSyrup/Native/SAPGuestBridge.h`
-- `WaffleStore/MapleSyrup/Native/SAPProbe-Bridging-Header.h`
-- `WaffleStore/MapleSyrup/Native/TCIProbe.c`
-- `WaffleStore/MapleSyrup/Native/TCIProbe.h`
 - `WaffleStore/MapleSyrup/NativeSAPGuest.swift`
 - `WaffleStore/MapleSyrup/NativeStoreGuest.swift`
-- `WaffleStore/MapleSyrup/SAPDiagnosticView.swift`
 - `WaffleStore/Resources/ThirdPartyNotices.txt`
 - `docs/BACKEND_AUDIT.md`
 - `docs/IPATOOL_AUDIT.md`
-- `docs/evidence/ios27-authentication-user-report.md`
-- `docs/evidence/ios27-ksign-user-report.md`
-- `docs/evidence/ios27-store-dev3-user-report.md`
-- `docs/evidence/ios27-store-dev4-user-report.md`
-- `docs/evidence/ios27-store-dev5-user-report.md`
-- `docs/evidence/original-build-linux.log`
-- `docs/evidence/original-ci-xcode16.log`
-- `docs/evidence/original-ci-xcode26.log`
-- `docs/evidence/tci-guest-tests-linux.log`
-- `docs/evidence/tci-kbsync-linux.log`
-- `docs/evidence/tci-no-exec-linux.log`
-- `docs/evidence/tci-sap-reproducible-linux.log`
-- `docs/evidence/tci-sap-smoke-linux.log`
-- `docs/evidence/unicorn-no-exec-linux.log`
 - `scripts/build-sap-native.sh`
 - `scripts/build-unicorn-tci.sh`
 - `scripts/deny-exec.h`
 - `scripts/ensure-native.sh`
+- `scripts/fixtures/tci/TCIProbe.c`
+- `scripts/fixtures/tci/TCIProbe.h`
 - `scripts/kbsync-host-probe_test.go`
 - `scripts/prepare-unicorn-tci.py`
 - `scripts/sap-host-probe_test.go`

@@ -66,3 +66,12 @@
 - Login, 2FA, purchase y download modernos pendientes de validar SAP jailed.
 
 No es una release estable ni una afirmación de recuperación de WaffleStore.
+
+## Upstream integration / build 23007
+
+- Reports boierito's successful installation on iOS 27.0.1 without visible errors.
+- Keeps all login/versions/download/export/OTA fixes while removing app probe UI,
+  exported trace buffers and shipping memory/TCI smoke code.
+- Retains error messages/progress and moves interpreter/memory probes to tests.
+- Adds boierito and majd/ipatool credits, preserving original contributors.
+- Consolidates documentation for upstream review; AI-generated contribution is disclosed.

@@ -1,7 +1,7 @@
 name: SAP protocol tests
 on:
   push:
-    branches: [main, 'feature/**', 'release/**']
+    branches: [main, 'feature/**', 'release/**', 'fix/**']
   pull_request:
 permissions:
   contents: read

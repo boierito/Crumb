@@ -126,7 +126,7 @@ struct StoreVersionsView: View {
             .onDisappear { labels.stop() }
             .task {
                 guard let tool = appData.ipaTool else { loading = false; return }
-                appData.storeDiagnostic = "WaffleStore Store probe v6\napp-build=23006\nkbsync-runtime=tci-no-jit\nsecret-values=withheld"
+
                 do {
                     let resolved = try await tool.lookup(appData.appLink)
                     app = resolved; appData.appBundleID = resolved.bundleID
@@ -135,8 +135,8 @@ struct StoreVersionsView: View {
                     latest = descriptor.externalVersionID; versions = descriptor.availableVersionIDs
                 } catch {
                     guard !Task.isCancelled else { return }
-                    appData.storeDiagnostic += "\noutcome=versions-request-failed; category=\(ResponseDiagnostic.category(error))"
-                    self.error = (error as? StoreError)?.localizedDescription ?? "Store lookup failed. Copy the Store diagnostic."
+
+                    self.error = (error as? StoreError)?.localizedDescription ?? "Store lookup failed. Please try again."
                 }
                 loading = false
             }

@@ -1,7 +1,7 @@
 name: Build IPA
 on:
   push:
-    branches: [main, 'feature/**', 'release/**']
+    branches: [main, 'feature/**', 'release/**', 'fix/**']
     tags: ['v*']
   pull_request:
   workflow_dispatch:

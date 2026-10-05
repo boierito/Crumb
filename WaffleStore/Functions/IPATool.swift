@@ -18,13 +18,7 @@ final class IPATool {
             transport: transport, generator: NativeKBSyncGenerator(), persistence: KeychainKBSync(), progress: { stage in
                 await MainActor.run {
                     AppData.shared.applicationStatus = stage.rawValue
-                    AppData.shared.storeDiagnostic += "\nstage=\(stage.rawValue)"
                     print("Apple Store stage: \(stage.rawValue)")
-                }
-            }, diagnostic: { event in
-                await MainActor.run {
-                    AppData.shared.storeDiagnostic += "\n\(event)"
-                    print("Apple Store diagnostic: \(event)")
                 }
             })
         self.transport = transport; self.store = store

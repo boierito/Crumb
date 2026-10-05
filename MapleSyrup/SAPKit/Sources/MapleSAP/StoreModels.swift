@@ -16,7 +16,7 @@ public enum StoreError: Error, LocalizedError, Equatable {
         case .unavailable: return "Apple cannot serve this app/version in your account's storefront."
         case .invalidResponse: return "Apple returned an incomplete Store response."
         case .versionMismatch: return "Apple returned a different app or externalVersionId. Download refused."
-        case .sessionExpired: return "Apple Store requires sign-in for this request. The saved account was retained. Copy the Store diagnostic if a fresh login gives the same error."
+        case .sessionExpired: return "Apple Store requires sign-in for this request. The saved account was retained. Please try again later if a fresh login gives the same error."
         case .licenseRequired: return "This account needs a license. Acquire the app in the App Store, then retry."
         case .paidPurchase: return "Only verified free apps can be acquired automatically. Use the App Store for paid apps or subscriptions."
         case .http(let code): return "Store request failed (HTTP \(code))."
