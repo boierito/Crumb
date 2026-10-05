@@ -15,13 +15,34 @@ struct DownloadedAppsView: View {
         NavigationStack {
             List {
                 if appData.isDowngrading {
-                    Section("Downloading") {
-                        HStack(spacing: 12) { ProgressView(); Text(appData.applicationStatus) }
-                        if appData.showsDowngradeProgress {
-                            ProgressView(value: appData.downgradeProgress)
-                            Text(appData.downgradeProgressDetail).font(.caption).foregroundStyle(.secondary)
+                    Section {
+                        VStack(alignment: .leading, spacing: 14) {
+                            HStack(alignment: .top, spacing: 12) {
+                                Image(systemName: "arrow.down.app").font(.title2).foregroundStyle(.tint)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(appData.activeDownloadName.isEmpty ? "Downloading app" : appData.activeDownloadName)
+                                        .font(.headline)
+                                    Text(appData.downloadPhaseLabel).font(.subheadline).foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 0)
+                                Button { appData.storeTask?.cancel() } label: {
+                                    Image(systemName: "xmark.circle.fill").font(.title2).foregroundStyle(.secondary)
+                                        .frame(minWidth: 44, minHeight: 44)
+                                }
+                                .buttonStyle(.borderless).accessibilityLabel("Cancel download")
+                            }
+                            if appData.showsDowngradeProgress {
+                                ProgressView(value: appData.downgradeProgress)
+                                HStack {
+                                    Text(appData.downgradeProgressDetail)
+                                    Spacer()
+                                    Text("\(Int(appData.downgradeProgress * 100))%")
+                                        .monospacedDigit()
+                                }
+                                .font(.caption).foregroundStyle(.secondary)
+                            }
                         }
-                        Button("Cancel download", role: .destructive) { appData.storeTask?.cancel() }
+                        .padding(.vertical, 8)
                     }
                 }
 
@@ -34,6 +55,7 @@ struct DownloadedAppsView: View {
                     }
                 }
                 ForEach(appData.completedDownloads) { record in
+                    Section {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack(alignment: .top, spacing: 12) {
                             VStack(alignment: .leading, spacing: 4) {
@@ -73,6 +95,7 @@ struct DownloadedAppsView: View {
                     .padding(.vertical, 4)
                     .swipeActions(allowsFullSwipe: false) {
                         Button(role: .destructive) { requestDeletion(record) } label: { Label("Delete", systemImage: "trash") }
+                    }
                     }
                 }
                 Section {

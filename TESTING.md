@@ -188,3 +188,22 @@ eligibility. Physical iOS 27/26 cross-region acceptance is pending.
 Fixtures cover STDQ/2059 -> GAME -> success then exact older ID download, second
 2059 termination and Apple message retention, subscription denial after GAME,
 and existing non-2059/session/ambiguous failure/no-paid acquisition paths.
+
+## Build 23015: DLiPA request parity and three UI fixes
+
+- Retest the same failed regional app with current account, then compare the same
+  app/account/ownership in DLiPA v1.4. Expected fixed diagnostics: profile dlipa-v1.4,
+  plist-keys=9, unchanged account storefront, STDQ then GAME only after 2059.
+  Capture both numeric responses if still rejected. Do not claim success from a
+  different app/account or a pre-existing license. Login/default acquisitions
+  must regress cleanly; paid and unknown-price acquisitions remain refused.
+- Search: tap icon, text, chevron and blank space across each result rectangle.
+  All should open the same app once. Try long names, large text and VoiceOver.
+- Active transfer: one compact card showing app name, short phase, real progress,
+  bytes and percent; cancel accessible. Verify switching tabs, reconnect/validation
+  phases and cancellation. Each saved download gets its own card.
+- Installation: same app/version appears in an adaptive dark/light page; automatic
+  iOS prompt still works, Install app retries, close/export still available. Test
+  full actual install and inspect its version. Safari controls remain native.
+- iOS 27 physical iPhone screenshots/tap targets and iOS 26/iPad remain pending.
+  Protocol/template tests do not prove live Apple eligibility or visual fidelity.

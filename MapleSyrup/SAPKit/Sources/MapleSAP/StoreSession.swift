@@ -189,6 +189,18 @@ public actor StoreSession {
         var body: [String: Any] = ["appExtVrsId": "0", "hasAskedToFulfillPreorder": "true", "buyWithoutAuthorization": "true",
             "hasDoneAgeCheck": "true", "guid": identity.guid, "needDiv": "0", "origPage": "Software-\(app.id)",
             "origPageLocation": "Buy", "price": "0", "pricingParameters": "STDQ", "productType": "C", "salableAdamId": NSNumber(value: UInt64(app.id) ?? 0)]
+        let regional = app.catalogCountry.map { $0 != (try? Storefront.country(account.storefront)) } ?? false
+        if regional {
+            // DLiPA v1.4's verified nine-key request, without ipatool's page flags.
+            body.removeValue(forKey: "needDiv")
+            body.removeValue(forKey: "origPage")
+            body.removeValue(forKey: "origPageLocation")
+            body["salableAdamId"] = app.id // DLiPA carries its NSString appId unchanged.
+        }
+        let purchaseAgent = regional
+            ? "Configurator/2.20 (Macintosh; OS X 26.5.1; 25F80) AppleWebKit/1624.2.5.11.4"
+            : SAPProtocol.userAgent
+        await diagnostic("purchase-profile=\(regional ? "dlipa-v1.4" : "ipatool"); plist-keys=\(body.count); account-storefront=retained")
         // ipatool and DLiPA use GAME after an explicit STDQ/2059 rejection.
         // This is one alternate pricing request, never a replay after timeout,
         // ambiguous HTTP failure, session rejection or another Apple denial.
@@ -196,7 +208,7 @@ public actor StoreSession {
             body["pricingParameters"] = pricing
             await progress(.purchase)
             await diagnostic("purchase-route=MZFinance; guid-query=false; pricing=\(pricing)")
-            let result = try await post(purchaseURL, body: body, token: true, retry: false, guidQuery: false)
+            let result = try await post(purchaseURL, body: body, token: true, retry: false, guidQuery: false, userAgent: purchaseAgent)
             if StoreParsing.identifier(result["failureType"]) == "2059", pricing == "STDQ" {
                 await diagnostic("purchase-recovery=2059-STDQ-to-GAME; max-alternates=1")
                 continue
@@ -219,7 +231,7 @@ public actor StoreSession {
               c.percentEncodedPath == path else { throw SAPError.invalidEndpoint }
         return url
     }
-    private func post(_ url: URL, body: [String: Any], token: Bool, ent: Bool = false, retry: Bool = true, guidQuery: Bool = true) async throws -> [String: Any] {
+    private func post(_ url: URL, body: [String: Any], token: Bool, ent: Bool = false, retry: Bool = true, guidQuery: Bool = true, userAgent: String? = nil) async throws -> [String: Any] {
         var c = URLComponents(url: url, resolvingAgainstBaseURL: false)!
         if guidQuery { c.queryItems = [URLQueryItem(name: "guid", value: identity.guid)] }
         var request = URLRequest(url: c.url!)
@@ -232,7 +244,7 @@ public actor StoreSession {
             request.setValue(account.storefront, forHTTPHeaderField: "X-Apple-Store-Front")
             request.setValue(account.passwordToken, forHTTPHeaderField: "X-Token")
         }
-        let data = try await send(request, retry: retry, secrets: [body["kbsync"] as? String ?? ""])
+        let data = try await send(request, retry: retry, userAgent: userAgent, secrets: [body["kbsync"] as? String ?? ""])
         guard var root = try ApplePlist.dictionary(data) else { throw StoreError.invalidResponse }
         if var message = root["customerMessage"] as? String {
             let secrets = [account.passwordToken, account.dsid, account.guid, account.email, body["kbsync"] as? String ?? ""]
@@ -248,10 +260,10 @@ public actor StoreSession {
         c.queryItems = query.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
         return try await send(URLRequest(url: c.url!))
     }
-    private func send(_ request: URLRequest, retry: Bool = true, secrets: [String] = []) async throws -> Data {
+    private func send(_ request: URLRequest, retry: Bool = true, userAgent: String? = nil, secrets: [String] = []) async throws -> Data {
         var request = request
         let ent = request.url?.path == "/WebObjects/DownloadDispatch.woa/wa/ent/download"
-        request.setValue(ent ? "Configurator/2.18 (Macintosh; OS X 15.3.2; 24D81) AppleWebKit/0620.2.4.11.6" : SAPProtocol.userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue(userAgent ?? (ent ? "Configurator/2.18 (Macintosh; OS X 15.3.2; 24D81) AppleWebKit/0620.2.4.11.6" : SAPProtocol.userAgent), forHTTPHeaderField: "User-Agent")
         for attempt in 0..<(retry ? 3 : 1) {
             try Task.checkCancellation()
             do {

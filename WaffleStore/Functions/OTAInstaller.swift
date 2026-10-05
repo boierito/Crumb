@@ -37,10 +37,7 @@ final class OTAInstaller: ObservableObject {
             var install = URLComponents(string: "itms-services://")!
             install.queryItems = [URLQueryItem(name: "action", value: "download-manifest"),
                 URLQueryItem(name: "url", value: manifest.url!.absoluteString)]
-            let target = install.url!.absoluteString
-            // JSON escaping prevents metadata from becoming HTML/script content.
-            let literal = String(data: try JSONSerialization.data(withJSONObject: target, options: .fragmentsAllowed), encoding: .utf8)!
-            let html = "<html><meta name='viewport' content='width=device-width'><body><h3>Install selected version</h3><p>Confirm the iOS installation prompt. This page does not report installation success.</p><button id='install'>Install</button><script>const target=\(literal);document.getElementById('install').onclick=()=>location.href=target;location.href=target;</script></body></html>"
+            let html = try InstallationPage.html(name: record.appName, version: record.version, target: install.url!)
             let server = Server()
             server.concurrency = 2
             let fileHandler: HTTPRequest.Handler = { request in
@@ -115,7 +112,8 @@ struct OTAInstallationView: View {
                     }
                 }
             }
-            .navigationTitle(started ? "Installation requested" : "Install downloaded IPA")
+            .navigationTitle("Install app")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { installer.stop(); dismiss() } } }
             .task { if startImmediately && !started { requestInstallation() } }
             .onDisappear { installer.stop() }
@@ -128,6 +126,12 @@ struct OTAInstallationView: View {
 }
 private struct InstallationSafari: UIViewControllerRepresentable {
     let url: URL
-    func makeUIViewController(context: Context) -> SFSafariViewController { SFSafariViewController(url: url) }
+    func makeUIViewController(context: Context) -> SFSafariViewController {
+        let controller = SFSafariViewController(url: url)
+        controller.preferredBarTintColor = .systemBackground
+        controller.preferredControlTintColor = .systemBlue
+        controller.dismissButtonStyle = .close
+        return controller
+    }
     func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}
 }

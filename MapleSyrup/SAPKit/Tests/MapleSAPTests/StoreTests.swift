@@ -122,6 +122,7 @@ extension StoreTests {
         XCTAssertEqual(requests[1].url?.path, "/WebObjects/DownloadDispatch.woa/wa/ent/download")
         XCTAssertEqual(requests[2].url?.path, "/WebObjects/MZFinance.woa/wa/buyProduct")
         XCTAssertEqual(requests[2].url?.host, "p42-buy.itunes.apple.com")
+        XCTAssertEqual(requests[2].value(forHTTPHeaderField: "User-Agent"), SAPProtocol.userAgent)
         XCTAssertNil(requests[2].url?.query)
         XCTAssertEqual(requests[2].value(forHTTPHeaderField: "X-Token"), "fixture-token")
         XCTAssertEqual(requests[2].value(forHTTPHeaderField: "X-Apple-Store-Front"), "143505-1,29")
@@ -385,6 +386,12 @@ extension StoreTests {
             XCTAssertEqual(StoreParsing.identifier(body["salableAdamId"]), "123")
             XCTAssertEqual(request.value(forHTTPHeaderField: "X-Apple-Store-Front"), "143505-1,29")
             XCTAssertEqual(request.value(forHTTPHeaderField: "X-Token"), "fixture-token")
+        }
+        for request in purchases {
+            let body = try PropertyListSerialization.propertyList(from: request.httpBody!, format: nil) as! [String: Any]
+            XCTAssertEqual(body["salableAdamId"] as? String, "123")
+            XCTAssertEqual(Set(body.keys), Set(["appExtVrsId", "hasAskedToFulfillPreorder", "buyWithoutAuthorization", "hasDoneAgeCheck", "guid", "price", "pricingParameters", "productType", "salableAdamId"]))
+            XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), "Configurator/2.20 (Macintosh; OS X 26.5.1; 25F80) AppleWebKit/1624.2.5.11.4")
         }
         XCTAssertEqual(pricing, ["STDQ", "GAME"])
     }

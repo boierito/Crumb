@@ -20,6 +20,7 @@ func resetDowngradeProgress() {
 extension AppData {
     func download(app: StoreApp, version: String, tool: IPATool, expectedVersion: String? = nil, installWhenReady: Bool = false) {
         guard storeTask == nil else { return }
+        activeDownloadName = app.name
         isDowngrading = true; showsDowngradeProgress = true; downgradeProgress = 0
         storeError = ""
         downloadReady = nil; installationRequest = nil

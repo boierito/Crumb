@@ -297,3 +297,29 @@ into a popover anchored far above the action. Both use native alert instead, wit
 an explicit Cancel and destructive button and shorter copy. Alert presentation
 is centered and does not depend on row/menu geometry. No custom glass UI or API
 is added. Physical-device appearance remains a manual verification.
+
+## Build 23015: deeper DLiPA parity and download/installation presentation
+
+23014 still returned 2059 in the user's device test. The completed caller/body
+inspection is in docs/DLIPA_BINARY_AUDIT.md; the earlier pricing fallback alone
+was insufficient. Regional acquisition now uses the nine-field/string-ID/2.20
+request profile observed in DLiPA's binary. The default ipatool purchase profile
+and login/SAP are preserved. This is a compatibility attempt whose live result
+must be checked, not a confirmed cross-region fix. No extra replay or unvalidated
+Location forwarding is introduced. A same-app/same-account DLiPA comparison is
+needed to distinguish client differences from current Apple eligibility.
+
+Search result labels now fill their row and use a Rectangle contentShape, so
+blank space/icon/text all select the app. The active download section becomes one
+VStack row: app name, short phase, actual progress/bytes/percentage and accessible
+cancel control. This avoids List inserting dividers between every progress item.
+Saved IPAs use separate sections/cards. No invented throughput/completion is shown.
+
+The installation page now uses a responsive system-font card, actual app/version,
+large Install button and adaptive dark/light colors. Metadata is HTML-escaped and
+the itms-services target remains JSON-escaped and unchanged. The automatic handoff,
+manual retry button, original HTTPS manifest service, loopback-only server and IPA
+serving remain intact. Safari retains its native controls with adaptive tint; the
+outer title is inline to avoid double large headers. Displaying the page still
+never claims installation success. New template tests cover metadata injection
+and target preservation. Visual/tap/real transfer checks require device validation.

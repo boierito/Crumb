@@ -48,6 +48,16 @@ final class AppData: ObservableObject {
     @Published var applicationStatus: String = "Not logged in!".localized
     @Published var downgradeProgress: Double = 0
     @Published var downgradeProgressDetail: String = ""
+    @Published var activeDownloadName = ""
+    var downloadPhaseLabel: String {
+        switch applicationStatus {
+        case "Downloading IPA from CDN": return "Downloading"
+        case "Validating ZIP, app identity and purchase data": return "Checking download"
+        case "Requesting selected externalVersionId": return "Preparing download"
+        case "Retrying CDN download": return "Reconnecting"
+        default: return "Preparing download"
+        }
+    }
     @Published var showsDowngradeProgress: Bool = false
     
     @Published var appBundleID: String = ""
