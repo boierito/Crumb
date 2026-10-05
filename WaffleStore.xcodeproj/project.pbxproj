@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B00100000000000000000001 /* MapleSAP in Frameworks */ = {isa = PBXBuildFile; productRef = B00100000000000000000002 /* MapleSAP */; };
 		E6F5D491301692B600FEEC8A /* PartyUI in Frameworks */ = {isa = PBXBuildFile; productRef = 63A7EF12A4ADD015377FF7FF /* PartyUI */; };
 		E6F5D492301692B600FEEC8A /* Telegraph in Frameworks */ = {isa = PBXBuildFile; productRef = 4B51818CFD6F6A0FD21DFB33 /* Telegraph */; };
 		E6F5D493301692B600FEEC8A /* Zip in Frameworks */ = {isa = PBXBuildFile; productRef = C5185BB0AED7DC860043BA42 /* Zip */; };
@@ -29,6 +30,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B00100000000000000000001 /* MapleSAP in Frameworks */,
 				E6F5D493301692B600FEEC8A /* Zip in Frameworks */,
 				E6F5D492301692B600FEEC8A /* Telegraph in Frameworks */,
 				E6F5D491301692B600FEEC8A /* PartyUI in Frameworks */,
@@ -74,6 +76,7 @@
 			);
 			name = WaffleStore;
 			packageProductDependencies = (
+				B00100000000000000000002 /* MapleSAP */,
 				63A7EF12A4ADD015377FF7FF /* PartyUI */,
 				4B51818CFD6F6A0FD21DFB33 /* Telegraph */,
 				C5185BB0AED7DC860043BA42 /* Zip */,
@@ -112,6 +115,7 @@
 			mainGroup = E6F5D40A30168FCC00FEEC8A;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				B00100000000000000000003 /* XCLocalSwiftPackageReference "MapleSyrup/SAPKit" */,
 				7FA68C9A5DCE94F7088B1AC7 /* XCRemoteSwiftPackageReference "PartyUI" */,
 				D8D4B724CB6FBC9A7913D52B /* XCRemoteSwiftPackageReference "Telegraph" */,
 				145A16138ECC23B7B003929E /* XCRemoteSwiftPackageReference "Zip" */,
@@ -274,7 +278,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 23001;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -290,7 +294,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.2;
+				MARKETING_VERSION = 2.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.nxtcoreee3.WaffleStore;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -314,7 +318,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 23001;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -330,7 +334,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.2;
+				MARKETING_VERSION = 2.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.nxtcoreee3.WaffleStore;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -398,7 +402,12 @@
 		};
 /* End XCRemoteSwiftPackageReference section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		B00100000000000000000003 = {isa = XCLocalSwiftPackageReference; relativePath = MapleSyrup/SAPKit; };
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
+		B00100000000000000000002 /* MapleSAP */ = {isa = XCSwiftPackageProductDependency; productName = MapleSAP; };
 		4B51818CFD6F6A0FD21DFB33 /* Telegraph */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = D8D4B724CB6FBC9A7913D52B /* XCRemoteSwiftPackageReference "Telegraph" */;

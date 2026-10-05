@@ -10,6 +10,7 @@ struct SettingsView: View {
     @AppStorage("autoCleanApp") var autoCleanApp: Bool = true
     @StateObject private var localizationManager = LocalizationManager.shared
     @State private var showFileImporter = false
+    @State private var showSAPDiagnostic = false
     
     private var appVersionString: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
@@ -47,6 +48,7 @@ struct SettingsView: View {
                 }
                 
                 Section(header: HeaderLabel(text: "Settings".localized, icon: "gearshape")) {
+                    Button("SAP diagnostic") { showSAPDiagnostic = true }
                     Toggle(isOn: $autoCleanApp) {
                         Text("Auto-Clean App".localized)
                         Text("Auto-Clean Description".localized)
@@ -128,6 +130,7 @@ struct SettingsView: View {
                     LinkCreditCell(image: Image("nxtcoreee3"), name: "nxtcoreee3", description: "UI changes and feature improvements.".localized, url: "https://github.com/nxtcoreee3")
                 }
             }
+            .sheet(isPresented: $showSAPDiagnostic) { SAPDiagnosticView() }
             .navigationTitle("Settings".localized)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

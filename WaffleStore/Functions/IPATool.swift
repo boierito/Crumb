@@ -316,7 +316,7 @@ class StoreClient {
         request.httpBody = bodyString.data(using: .utf8)
         print("Setting headers")
         for (key, value) in self.authHeaders! {
-            print("Setting header \(key): \(value)")
+            print("Setting authenticated header: \(key) [redacted]")
             request.addValue(value, forHTTPHeaderField: key)
         }
         print("Setting cookies")
@@ -436,7 +436,7 @@ class IPATool {
         }
         let downInfo = songList[0]
         let url = downInfo["URL"] as! String
-        print("Got download URL: \(url)")
+        print("Received download URL [redacted]")
         let fm = FileManager.default
         let tempDir = fm.temporaryDirectory
         let path = tempDir.appendingPathComponent("app.ipa").path

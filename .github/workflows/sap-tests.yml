@@ -1,0 +1,27 @@
+name: SAP protocol tests
+on:
+  push:
+    branches: [main, 'feature/**', 'release/**']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  protocol:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.0'
+      - name: Test SAP protocol and native memory probe
+        run: swift test --package-path MapleSyrup/SAPKit
+  no-exec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install unicorn==2.1.4
+      - name: Demonstrate Unicorn failure with executable mappings denied
+        run: bash scripts/test-no-exec.sh
