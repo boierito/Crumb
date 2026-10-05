@@ -48,6 +48,7 @@ final class AppData: ObservableObject {
     @Published var installationRequest: DownloadRecord?
     @Published var completedDownloads: [DownloadRecord] = []
     @Published var storeError = ""
+    @Published var storeRequestCount = 0
     var storeTask: Task<Void, Never>?
     @Published var isDowngrading: Bool = false
     

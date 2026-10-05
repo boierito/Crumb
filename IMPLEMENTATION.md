@@ -123,7 +123,7 @@ python3 scripts/verify-ipa.py WaffleStore-Release.ipa
 GitHub Actions builds Debug/Release unsigned IPAs on macOS and tests Swift,
 Go package preparation and the no-executable-memory interpreter. Artifacts
 include corresponding native sources and license notices. Version remains
-numeric 2.3.0; the integration build is 23010. Sign with conventional sideloading,
+numeric 2.3.0; the integration build is 23011. Sign with conventional sideloading,
 keeping the same bundle ID/certificate when updating to preserve local state.
 
 ipatool is MIT; Unicorn/TCI includes GPL-derived code. Preserve notices and
@@ -131,7 +131,7 @@ corresponding sources. Original WaffleStore has no explicit redistribution
 license; upstream PR review does not establish permission to publish unrelated
 redistributed releases. See THIRD_PARTY_NOTICES.md.
 
-## Free-license preparation and UI recovery (23010)
+## Free-license preparation and UI recovery (23010, superseded below)
 
 A verified zero catalog price now triggers `buyProduct` from the validated Bag
 and authenticated pod before asking for version/download metadata. Purchase
@@ -159,3 +159,42 @@ style, and downloaded-file deletion remains in the item menu/swipe with confirma
 The clean integration line is based on build 23008; the optional investigation
 branch/build 23009 remains separate. See docs/UI_REVIEW_23010.md for screenshot
 findings and explicit visual/device validation gaps.
+
+## Purchase recovery and readable logs (23011)
+
+23010 made buyProduct a prerequisite for every known-free app. The user reported
+that both unowned and owned apps failed at that step; no version metadata was
+requested after a purchase rejection. 23011 restores download-first access checks.
+Only a missing-license response (9610), or unavailable metadata for a verified
+free app, leads to one acquisition per operation, followed by the original
+selected externalVersionId. Paid/unknown-price apps are never acquired. The
+accepted account-bound kbsync blob is retained after per-app license denial.
+
+Verified reference differences: ipatool's purchaseRequest uses MZFinance buyProduct
+with no guid URL query; the live anonymous Bag inspected on October 5 advertised
+MZBuy buyProduct. 23010 reused that Bag route and appended a guid query. 23011
+derives the MZFinance sibling from the strictly validated authentication URL and
+authenticated pod. It retains GUID in the plist payload and sends the same
+Configurator headers/body as ipatool. No fixed purchase host or speculative
+redirect/endpoint fallback is added. The route/format mismatch is verified; live
+Apple acceptance of its correction still requires device validation.
+
+Purchase is not automatically replayed after ambiguous failure. Unlike ipatool's
+HTTP-500-as-already-owned assumption, an empty purchase 500/incomplete plist
+triggers one read-only descriptor verification. Access is accepted only if a
+validated app/version response succeeds. Structured Apple denial, rate limits
+and session/cancellation errors remain actionable. Successful descriptors for
+owned apps never invoke purchase, so a broken purchase service cannot block them.
+
+Fundamental purchase diagnostics now expose fixed route labels, HTTP/body type
+and numeric failure codes, plus bounded error categories. They exclude body text,
+URLs, credentials, tokens, signed CDN links and cookie values. No probe/debugging
+screen is reintroduced. The Activity log remains optional, bounded and volatile.
+
+PartyUI TerminalPlatter forces a 250-point frame; the extra inner 140-point frame
+introduced in 23010 caused clipped/centered short content. Remove the inner frame,
+use the original platter symmetrically, increase reading font and add Expand/Copy.
+The expanded reader fills the sheet; automatic following is off by default so
+new output cannot drag away the portion being read. Remove generic blue app.fill
+placeholders. Use a spinner for active Store work and clear stale acquiring text
+on failure. Screenshot/device visual validation is pending.

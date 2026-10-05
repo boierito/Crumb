@@ -98,3 +98,15 @@ No es una release estable ni una afirmación de recuperación de WaffleStore.
 - Move external version input to Advanced and deletion to item menu/swipe.
 - Drain stdout independently of the visible log view, update it on MainActor and
   bound memory. Device validation of UI and previously unowned free apps is pending.
+
+## Store purchase regression and log reader / build 23011
+
+- Restore access/download checks before acquisition, so an owned app does not
+  depend on a successful buyProduct call. Acquire missing/unavailable free apps once.
+- Use ipatool's MZFinance purchase protocol derived from the authenticated route,
+  with GUID in the plist and no GUID URL query. Verify access after ambiguous 500
+  instead of assuming ownership; preserve per-app license errors and account kbsync.
+- Add fixed-field purchase HTTP/error diagnostics; retain secrets/URLs withheld.
+- Remove nested 140-point terminal frame; add expanded readable log, Copy and
+  optional Follow latest. Remove generic blue placeholders and stale status.
+- Live previously unowned-app acquisition and visual validation remain pending.

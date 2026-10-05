@@ -24,12 +24,23 @@ final class IPATool {
                     }
                     print("Apple Store stage: \(stage.rawValue)")
                 }
+            }, diagnostic: { event in
+                // SDK-generated fixed fields only: no URL, body, token or cookie values.
+                if event.hasPrefix("scope=purchase;") || event.hasPrefix("purchase-") || event.hasPrefix("recovery=") {
+                    print("Apple Store diagnostic: \(event)")
+                }
             })
         self.transport = transport; self.store = store
         return store
     }
     func lookup(_ input: String) async throws -> StoreApp { try await session().lookup(input) }
     func descriptor(app: StoreApp, version: String = "") async throws -> StoreDownload {
-        try await session().descriptor(app: app, externalVersionID: version)
+        AppData.shared.storeRequestCount += 1
+        defer { AppData.shared.storeRequestCount -= 1 }
+        do { return try await session().descriptor(app: app, externalVersionID: version) }
+        catch {
+            print("Apple Store failure: category=\(ResponseDiagnostic.category(error))")
+            throw error
+        }
     }
 }

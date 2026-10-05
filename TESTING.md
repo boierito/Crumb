@@ -91,3 +91,31 @@ Fixture coverage: acquisition before download, exact older ID retained, already
 owned only once, failed acquisition not cached/no download, missing license after
 purchase has no loop, structured 9610 propagation and opt-out, no paid acquisition.
 These fixtures do not prove live Apple purchase acceptance or iOS installation.
+
+## Build 23011: recover purchase/download and log reading
+
+These cases supersede 23010's acquisition-first expectation. Pending physical
+iOS 27 verification, use normally signed Release IPA, preserving bundle/identity.
+
+1. Owned free app (e.g. the previously working Pinlist): request versions and an
+   older known version. Expected no Acquiring free app license before a successful
+   descriptor, actual IPA version/build preserved, install/export unchanged.
+2. Never-obtained free app: initial missing-license/unavailable response, then
+   exactly one MZFinance/no-query purchase; confirm purchase response and selected
+   version descriptor. Copy the complete log if it fails. Do not infer license
+   success merely from the stage or from HTTP 500.
+3. Owned paid app: download allowed. Unowned paid/unknown-price app: no purchase.
+   Structured denial, invalid session, subscription/terms restrictions and rate
+   limits: no automatic acquisition replay and no invented success.
+4. Open Activity log: no 140-point clipping inside the original 250-point platter.
+   Expand to full reading view; Copy; read older entries while output arrives;
+   enable Follow latest and verify scrolling only when requested. Test Dynamic
+   Type, VoiceOver, dark/light, small iPhone and iPad; not visually verified here.
+5. Version app summary/download cards: no blue generic placeholder. Failure ends
+   spinner and stale Obtaining free app text. Retrying starts with an access check.
+
+Fixtures cover owned free/paid download without purchase, one acquisition after
+9610/unavailable, reference MZFinance route/headers/no query, exact older ID,
+5002 followed by verified download, failed/ambiguous purchase without replay or
+fake ownership, opt-out and retention of accepted account kbsync after license denial.
+Earlier device success is not validation of the new purchase path.

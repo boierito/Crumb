@@ -66,8 +66,6 @@ struct StoreVersionsView: View {
                 if let app {
                     Section {
                         HStack(spacing: 12) {
-                            Image(systemName: "app.fill")
-                                .font(.title2).foregroundStyle(.tint)
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(app.name).font(.headline)
                                 Text(app.bundleID).font(.caption).foregroundStyle(.secondary)
@@ -178,6 +176,8 @@ struct StoreVersionsView: View {
                     guard !Task.isCancelled else { return }
 
                     self.error = (error as? StoreError)?.localizedDescription ?? "Store lookup failed. Please try again."
+                    appData.applicationStatus = "Could not load versions."
+                    appData.applicationIcon = "exclamationmark.circle"
                 }
                 loading = false
             }

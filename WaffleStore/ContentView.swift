@@ -104,9 +104,11 @@ struct ContentView: View {
     private var LogsSection: some View {
         Section {
             if appData.isAuthenticated {
-                Label(appData.applicationStatus, systemImage: appData.applicationIcon)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 12) {
+                    if appData.storeRequestCount > 0 || appData.isDowngrading { ProgressView() }
+                    else { Image(systemName: appData.applicationIcon) }
+                    Text(appData.applicationStatus).font(.subheadline).foregroundStyle(.secondary)
+                }
                 if appData.showsDowngradeProgress {
                     VStack(alignment: .leading, spacing: 6) {
                         ProgressView(value: appData.downgradeProgress)
@@ -123,7 +125,6 @@ struct ContentView: View {
             }
             DisclosureGroup("Activity log", isExpanded: $showLogs) {
                 LogView()
-                    .frame(height: 140)
                     .modifier(TerminalPlatter())
             }
         }

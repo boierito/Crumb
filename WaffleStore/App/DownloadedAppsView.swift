@@ -22,7 +22,6 @@ struct DownloadedAppsView: View {
                 ForEach(appData.completedDownloads) { record in
                     VStack(alignment: .leading, spacing: 12) {
                         HStack(alignment: .top, spacing: 12) {
-                            Image(systemName: "app.fill").font(.title2).foregroundStyle(.tint)
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(record.appName).font(.headline)
                                 Text("Version \(record.version)").font(.subheadline).foregroundStyle(.secondary)

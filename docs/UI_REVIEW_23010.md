@@ -32,3 +32,14 @@ and touch targets still need device/simulator validation (TESTING.md). No claim
 of complete accessibility compliance or verified screenshot fidelity is made.
 
 No broad redesign, web prototype, private UI API or new visual framework.
+
+## Follow-up user screenshots, corrected in 23011
+
+The user reported 23010's main log clipped within a large platter and a meaningless
+blue block in the version summary. Source inspection confirmed TerminalPlatter's
+250-point outer frame combined with an inner 140-point frame. Remove the inner
+frame, preserve original centered container/padding, add full reader with Copy
+and optional Follow latest, and remove generic app.fill placeholders.
+The screenshot also showed a stale checkmark/acquiring status after rejection;
+active Store work now shows a spinner and failures clear that stale state.
+The native after-state is still pending device visual verification.
