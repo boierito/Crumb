@@ -30,12 +30,21 @@ public final class AppleAuthenticationTransport: NSObject, AuthenticationTranspo
     }
 
     public func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        let (file, response) = try await session.download(for: request)
-        defer { try? FileManager.default.removeItem(at: file) }
+        // Login replies contain tokens. Keep them in bounded RAM, never a
+        // URLSession download file, URLCache, or a persistent cookie jar.
+        #if canImport(FoundationNetworking)
+        let (data, response) = try await session.data(for: request)
+        guard data.count <= SAPProtocol.maximumBodySize else { throw SAPError.oversizedResponse }
+        #else
+        let (bytes, response) = try await session.bytes(for: request)
+        var data = Data()
+        for try await byte in bytes {
+            guard data.count < SAPProtocol.maximumBodySize else { throw SAPError.oversizedResponse }
+            data.append(byte)
+        }
+        #endif
         guard let response = response as? HTTPURLResponse else { throw AuthenticationError.invalidResponse(0) }
-        let length = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-        guard length <= SAPProtocol.maximumBodySize else { throw SAPError.oversizedResponse }
-        return (try Data(contentsOf: file), response)
+        return (data, response)
     }
     public func cookies() async -> [StoreCookie] {
         (configuration.httpCookieStorage?.cookies ?? []).map(StoreCookie.init).filter { $0.cookie() != nil }
