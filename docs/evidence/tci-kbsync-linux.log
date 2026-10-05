@@ -1,0 +1,10 @@
+2026-10-05 — Linux x86_64, ipatool 3411d57, Unicorn 2.1.4 + TCI interpreter
+TestTCIKBSyncSmoke
+assets.Load + machine.GenerateKBSync(hardwareID fixture, DSID synthetic 1)
+kbsync generated: 196 bytes; contents withheld
+PASS (49.50 seconds, cold StoreAgent asset/cache)
+
+This validates interpreted guest execution on the host, not Apple account
+acceptance or physical iOS kbsync. No credentials, license or download request.
+The seccomp no-PROT_EXEC test is a separate TCI guest test; this kbsync smoke
+was not run under seccomp.

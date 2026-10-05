@@ -154,7 +154,7 @@ func WafflePrepareIPA(source *C.char, destination *C.char, input *C.uchar, lengt
 	}
 	data, err := packageipa.Prepare(C.GoString(source), C.GoString(destination), parameters)
 	if err != nil {
-		return 21
+		return C.int(packageipa.FailureCode(err))
 	}
 	*output = (*C.uchar)(C.CBytes(data))
 	*outputLength = C.size_t(len(data))

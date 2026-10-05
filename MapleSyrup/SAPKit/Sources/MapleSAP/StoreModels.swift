@@ -20,7 +20,9 @@ public enum StoreError: Error, LocalizedError, Equatable {
         case .licenseRequired: return "This account needs a license. Acquire the app in the App Store, then retry."
         case .paidPurchase: return "Only verified free apps can be acquired automatically. Use the App Store for paid apps or subscriptions."
         case .http(let code): return "Store request failed (HTTP \(code))."
-        case .native(let stage): return "Native Store operation failed at stage \(stage) (8 kbsync; 20 package input; 21 package validation/preparation)."
+        case .native(let stage):
+            let reason: [Int32: String] = [2: "Apple asset loading", 8: "interpreted StoreAgent kbsync", 20: "package parameters", 21: "ZIP preparation", 22: "CDN range inspection", 31: "invalid ZIP or size/path limit", 32: "MD5 mismatch", 33: "IPA bundle/platform mismatch", 34: "metadata app/version mismatch", 35: "SINF data/path mismatch", 36: "ZIP checksum failure", 37: "sandbox storage access or space"]
+            return "Native Store operation failed (stage \(stage): \(reason[stage] ?? "unknown"))."
         case .packageInvalid: return "IPA validation failed. No completed IPA was saved."
         case .apple(let code, let message): return "Apple Store \(code): \(message)"
         }
@@ -110,4 +112,16 @@ public enum CDNPolicy {
         else { throw SAPError.invalidEndpoint }
         return url
     }
+}
+
+public enum StoreStage: String, Sendable {
+    case bag = "Resolving Store Bag"
+    case latest = "Resolving latest iOS externalVersionId"
+    case kbsync = "Generating account-bound kbsync"
+    case ent = "Requesting ent/download"
+    case legacy = "Trying Store pod fallback"
+    case redownload = "Trying Bag redownload"
+    case update = "Trying pinned Bag update"
+    case purchase = "Acquiring free app license"
+    case validated = "Store app and externalVersionId validated"
 }

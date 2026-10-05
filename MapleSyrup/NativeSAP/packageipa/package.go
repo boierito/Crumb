@@ -254,3 +254,33 @@ func Prepare(source, destination string, input Input) (result []byte, err error)
 	}
 	return json.Marshal(info)
 }
+
+// Fixed diagnostic codes for the C ABI; never expose raw error strings.
+func FailureCode(err error) int {
+	if err == nil {
+		return 0
+	}
+	switch err.Error() {
+	case "checksum mismatch":
+		return 32
+	case "package identity mismatch", "not an iOS device package", "multiple apps":
+		return 33
+	case "metadata mismatch":
+		return 34
+	case "SINF count mismatch", "invalid SINF", "duplicate SINF":
+		return 35
+	case "invalid or duplicate ZIP path", "too many entries", "expanded package too large", "package too large", "oversized plist":
+		return 31
+	}
+	if errors.Is(err, zip.ErrChecksum) {
+		return 36
+	}
+	if errors.Is(err, zip.ErrFormat) {
+		return 31
+	}
+	var fileError *os.PathError
+	if errors.As(err, &fileError) {
+		return 37
+	}
+	return 21
+}

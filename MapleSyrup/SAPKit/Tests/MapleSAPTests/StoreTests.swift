@@ -134,3 +134,20 @@ extension StoreTests {
         XCTAssertEqual(try StoreRetry.delay(nil, attempt: 1), 10)
     }
 }
+#if canImport(Security)
+extension StoreTests {
+    func testAcceptedKBSyncKeychainIsBoundToAccountAndIdentity() throws {
+        let cache = KeychainKBSync(service: "com.wafflestore.tests.kbsync." + UUID().uuidString)
+        defer { try? cache.clear() }
+        XCTAssertNil(try cache.load(dsid: "1", guid: "020000000001"))
+        try cache.save(Data("fixture".utf8), dsid: "1", guid: "020000000001")
+        XCTAssertEqual(try cache.load(dsid: "1", guid: "020000000001"), Data("fixture".utf8))
+        XCTAssertNil(try cache.load(dsid: "2", guid: "020000000001"))
+        XCTAssertNil(try cache.load(dsid: "1", guid: "020000000002"))
+        try cache.save(Data("updated".utf8), dsid: "1", guid: "020000000001")
+        XCTAssertEqual(try cache.load(dsid: "1", guid: "020000000001"), Data("updated".utf8))
+        try cache.clear(); try cache.clear()
+        XCTAssertNil(try cache.load(dsid: "1", guid: "020000000001"))
+    }
+}
+#endif

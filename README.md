@@ -1,16 +1,19 @@
 # WaffleStore
 
-## Experimental revival — 2.3.0-dev.2
+## Experimental revival — 2.3.0-dev.3
 
-This fork implements a no-JIT SAP guest and connects signed Apple login/2FA to
-a Keychain session. The user reported SAP setup and signature generation on an
-iPhone running iOS 27.0.1, signed with ksign and a certificate without JIT.
-**Real Apple login acceptance still needs device validation. Versions, purchase,
-kbsync and download are pending; downgrade is disabled in this development build.**
-Passwords/2FA codes are not persisted. Legacy account/key files are discarded;
-a new login is required. See [IMPLEMENTATION.md](IMPLEMENTATION.md),
-[TESTING.md](TESTING.md), [changed files](CHANGED_FILES.md), and
-[license notices](THIRD_PARTY_NOTICES.md).
+The user confirmed signed SAP login, 2FA and session restoration on iPhone
+running iOS 27.0.1, signed with ksign/certificate without JIT (build 23002).
+Dev.3 (23003) adds interpreted kbsync, dynamic Store endpoints, version selection,
+free-license acquisition when required, validated IPA download and export to
+Files/Share Sheet. **Download still needs real-device Apple validation.**
+Choose an app link/ID/bundle ID → Choose version / download IPA → selected
+externalVersionId → verified IPA version → Export IPA. Installing or downgrading
+a protected App Store IPA is a separate capability and is not claimed here.
+
+Passwords/2FA codes are not persisted; session and accepted kbsync use Keychain.
+See [IMPLEMENTATION.md](IMPLEMENTATION.md), [TESTING.md](TESTING.md),
+[changed files](CHANGED_FILES.md), and [license notices](THIRD_PARTY_NOTICES.md).
 
 The upstream instructions below are preserved as historical documentation and
 are not a claim that their legacy login/install flow works in this branch.

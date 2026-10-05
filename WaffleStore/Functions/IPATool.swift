@@ -15,7 +15,13 @@ final class IPATool {
         if let store = store { return store }
         let transport = AppleAuthenticationTransport(cookies: account.cookies)
         let store = try StoreSession(account: account, identity: KeychainMachineIdentity.loadOrCreate(),
-            transport: transport, generator: NativeKBSyncGenerator(), persistence: KeychainKBSync())
+            transport: transport, generator: NativeKBSyncGenerator(), persistence: KeychainKBSync(), progress: { stage in
+                await MainActor.run {
+                    AppData.shared.applicationStatus = stage.rawValue
+                    AppData.shared.storeDiagnostic += "\nstage=\(stage.rawValue)"
+                    print("Apple Store stage: \(stage.rawValue)")
+                }
+            })
         self.transport = transport; self.store = store
         return store
     }

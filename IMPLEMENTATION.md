@@ -1,34 +1,31 @@
-# WaffleStore 2.3.0-dev.2 — login firmado experimental
+# WaffleStore 2.3.0-dev.3 — Store/download experimental
 
-Este fork conserva el proyecto Xcode, la UI, favoritos, historial y búsqueda de
-WaffleStore. Implementa SAP sin JIT y conecta el login/2FA moderno con sesión en
-Keychain. **La aceptación del login por Apple todavía requiere prueba real.**
-Versions, purchase, kbsync, download y exportación del flujo nuevo siguen
-pendientes; el botón de downgrade queda deshabilitado en esta build.
+El proyecto original se conserva. El usuario confirmó login, 2FA,
+DSID/passwordToken/storefront y restauración al reabrir en iPhone iOS 27.0.1,
+firmado con ksign y certificado sin JIT (build 23002). Esa prueba real valida
+la aceptación de SAP para login en esa instalación; no valida todavía download.
 
-El usuario reportó dos inicializaciones SAP exitosas en un iPhone iOS 27.0.1,
-firmado con ksign y certificado, sin JIT: TCI status=0, RAX=42, hooks=4,
-SAP v200 setup completo y ActionSignature Base64 de 668 caracteres.
-Ver [evidencia de dispositivo](docs/evidence/ios27-ksign-user-report.md).
-Es una prueba de ejecución del signer, no de login aceptado por Apple.
+Dev.3 / build 23003 sustituye el StoreClient antiguo por StoreSession Swift,
+kbsync interpretado y descarga/exportación de IPA. La selección admite la última
+versión, IDs históricos devueltos por Apple y un externalVersionId manual.
+La versión visible se comprueba leyendo Info.plist de la IPA, por rangos cuando
+la CDN lo permite y siempre después de descargar. No se confía en el número de
+versión de metadata de Apple ni en el servidor externo de versiones.
 
-## Estado verificable
-
-| Hito | Resultado |
+| Hito | Evidencia actual |
 |---|---|
-| 1. Build original | Debug y Release con Xcode 26, IPA original generada |
-| 2. SAP dentro de iOS jailed | Ejecución TCI/SAP reportada por usuario en iPhone iOS 27.0.1, ksign sin JIT |
-| 3. ActionSignature | Setup y generación de firma reportados en iOS 27.0.1; aceptación de login pendiente |
-| 4–6. Login, 2FA, DSID/token/storefront | Implementados y conectados; pruebas fixture/Keychain y aceptación física de Apple se distinguen en TESTING.md |
-| 7–8. Búsqueda/versiones | Código original conservado; recuperación autenticada pendiente |
-| 9–10. Descargar última/antigua | Pendiente de validar login y portar kbsync/download |
-| 11. Exportar IPA descargada | Share Sheet original conservado; flujo nuevo de download/export no validado |
-| 12. IPA normal en iOS 27 | Signer reportado funcional con firma convencional; flujo Store completo pendiente |
+| 1. Build original | Debug/Release con Xcode 26; IPA de referencia preservada |
+| 2–3. SAP/ActionSignature jailed | Reportes del usuario, build 23001, iPhone iOS 27.0.1, ksign sin JIT |
+| 4–6. Login/2FA/DSID/token/storefront | Login aceptado por Apple reportado en 23002; reapertura confirmada |
+| 7. Search | UI conservada; cancelación por debounce silenciada y país de la cuenta aplicado |
+| 8. Versions | Implementado; fixtures y consulta ZIP por rangos; pendiente Apple real en dev.3 |
+| 9–10. IPA última/antigua | Implementado; kbsync TCI Linux y fixtures; pendiente descarga real en iOS |
+| 11. Export | Documents/Downloads, Files y Share Sheet; pendiente iOS real |
+| 12. Flujo completo jailed | Login reportado funcional; Store/download/export aún por probar en dispositivo |
 
-El log `docs/evidence/tci-sap-smoke-linux.log` registra una firma de 501 bytes.
-Es una firma de un cuerpo de prueba sin Apple ID; no prueba aceptación de una
-petición de login. Los tests con FakeGuest prueban protocolo y estados, nunca
-la validez criptográfica frente a Apple.
+Ver evidencia en docs/evidence y matriz en TESTING.md. No hay dispositivo ni
+credenciales de Apple conectados a este entorno. No se declara download como
+terminado sólo por compilar o generar un kbsync sintético.
 
 ## 1. Cómo funcionaba WaffleStore y qué se rompió
 
@@ -118,7 +115,7 @@ AfterFirstUnlockThisDeviceOnly. GUID y hardwareID se derivan de los mismos
 bytes. No depende del MAC físico ni del Apple ID. El logout nuevo no
 borra esta identidad. Una nueva firma/team/access group puede cambiar
 el acceso al item: no se promete identidad idéntica entre equipos de firma.
-La aceptación completa de esta identidad por login/download queda pendiente.
+La identidad fue aceptada para login según el reporte del usuario; download sigue pendiente.
 
 Los secretos SAP viven en memoria y se reconstruyen en cada login/validación 2FA.
 El bridge libera/limpia buffers y hace teardown. La cuenta se almacena como item
@@ -140,7 +137,7 @@ Document/Protocol y certificados del CDN mzstatic. Para la prueba SAP se acepta
 que un Bag aún anuncie el auth endpoint legacy; eso no activa login legacy en
 el módulo nuevo. Se rechazan endpoints HTTP, hosts ajenos y SAP distinto de 200.
 
-## 5. Login y 2FA implementados; download pendiente
+## 5. Login y 2FA
 
 ```text
 Formulario original → AppData.startAppleLogin (async)
@@ -151,7 +148,7 @@ Formulario original → AppData.startAppleLogin (async)
   → POST + X-Apple-ActionSignature
   → respuesta Apple / redirects / 2FA
   → DSID + passwordToken + storefront (+ pod opcional) → Keychain
-  → IPATool/StoreClient adapter (Store nuevo todavía no habilitado)
+  → IPATool facade → StoreSession moderno
 ```
 
 Se sigue el protocolo del commit ipatool 3411d57: Content-Type conserva
@@ -186,24 +183,97 @@ se interpreta directamente y no se trata como HTML transitorio. Cancelación
 interrumpe URLSession/backoff, pero una llamada C/Go/TCI en curso debe acabar
 antes del teardown; no se promete cancelar instantáneamente el guest.
 
-Queda por validar con Apple real: login, 2FA correcta/incorrecta/expirada,
-cuenta bloqueada, token recibido, restauración tras relaunch y logout en iOS.
-No hay cuentas/passwords disponibles en el entorno, ni se solicitan aquí.
+El usuario confirmó el camino correcto con 2FA y reapertura de la sesión en
+iOS 27.0.1. Password/código incorrectos, cuenta bloqueada, expiración y logout
+siguen pendientes de prueba física. No se provocan rate limits de Apple.
 
-Siguiente fase Store, después de esa prueba:
+## Store, versiones y kbsync
 
-1. Verificar versiones/externalVersionId contra metadata y la IPA real.
-2. Purchase exclusivamente gratuito/licencia existente, sin automatizar pagos.
-3. Portar StoreAgent/kbsync del mismo commit sobre TCI y cache por DSID/GUID.
-4. Resolver endpoints/download desde Bag y respetar redirects, retries y CDN.
-5. URLSession download con progreso, verificación HTTP/ZIP y exportación
-   sandbox/Files/Share Sheet separada de instalación.
+`StoreSession` carga el Bag actual para ent/download, buyProduct,
+redownloadProduct y updateProduct. El bootstrap Bag y el catálogo público MDM
+son los mismos de ipatool. La consulta por ID/bundle utiliza el país del
+storefront de la cuenta, no un país fijo. El latest externalVersionId se resuelve
+en MDM (enterprise → iphone → ipad), validando bundle y usando externalId o
+buyParams. Los IDs históricos proceden de softwareVersionExternalIdentifiers.
 
-Descargar un paquete App Store con SINF no lo desencripta. SideStore/AltStore
-pueden instalar esta **app WaffleStore** al resignarla, pero no se promete que
-puedan instalar cualquier IPA cifrada obtenida del App Store. El mecanismo
-original itms-services/Safari permanece sin certificar en iOS 26/27. No se
-introdujo jailbreak, AppSync, TrollStore ni entitlements privados para ello.
+kbsync se obtiene con el mismo hardwareID de seis bytes y DSID numérico del
+login. `WaffleSAPKBSync` usa machine.GenerateKBSync del commit 3411d57: carga
+StoreAgent y ejecuta su guest x86_64 en TCI. No abre una sesión de decryption.
+Los paths SC Info vistos por StoreAgent son virtuales de los shims del guest;
+no acceden al /Users/Shared o /var real del teléfono. El cache real se limita
+a Caches/MapleSAP dentro del sandbox. Se probó en Linux: 196 bytes para DSID
+sintético 1, sin enviar credenciales ni una compra a Apple. Eso no prueba
+aceptación para una cuenta real ni ejecución kbsync en iOS físico.
+
+La petición ent/download utiliza XML, kbsync Base64, serialNumber derivado del
+GUID, X-Token, storefront y DSID; no requiere otra ActionSignature. La respuesta
+debe tener exactamente un songList y coincidir en itemId, bundle ID y
+externalVersionId. Sólo entonces el blob se guarda en Keychain kbsync-v1,
+ligado a DSID+GUID. Un blob cached rechazado se invalida y se genera una sola
+vez uno nuevo; los fresh no generan un bucle. Logout borra cuenta y cache,
+conservando identidad. No se guardan secretos en UserDefaults.
+
+La cadena de recuperación sigue ipatool: ent → volumeStore del pod autenticado
+→ redownload del Bag si no hay ítems/No Longer Available → update del Bag para
+un ID fijado si redownload devuelve HTTP500 vacío/No Longer Available.
+El endpoint legacy se deriva del pod como en ipatool; no sustituye endpoints
+modernos que anuncie el Bag. Los endpoints dispatch sólo admiten las rutas
+esperadas, HTTPS y el host exacto. X-Token no sigue redirects. Los fallos de
+sesión/licencia mantienen mensajes específicos. Reintentos de transporte y
+HTTP204/404/429/5xx se limitan a tres; Retry-After hasta 30s se respeta y un plazo
+mayor detiene el flujo. Una compra no se reintenta automáticamente.
+
+Sólo se adquiere automáticamente una licencia cuando Apple la solicita y el
+catálogo confirma price=0. Paid/unknown/subscription requieren App Store; no
+se cambia a pricing Arcade ni se automatizan pagos. Las apps pagas ya poseídas
+pueden intentar descargarse sin ninguna compra nueva. buyProduct procede del
+Bag y se utiliza con el pod autenticado; 5002 significa licencia existente.
+
+## Download, validación y exportación
+
+La transferencia usa una URLSession independiente sin cookies, cache,
+Authorization, DSID, token o ActionSignature. Redirects HTTPS de CDN Apple están
+limitados a ocho. El progreso representa bytes recibidos, con tamaño real; la
+validación posterior se muestra como etapa independiente. Timeout de request
+60s, resource 1h, tamaño máximo 8 GiB. Reintentos CDN transitorios/429/5xx se
+limitan a tres, respetando Retry-After. A diferencia de la CLI, dev.3 reinicia
+la transferencia en vez de hacer resume: evita anexar rangos no verificados.
+Una URL caducada requiere repetir la operación para obtener otra descriptor.
+No se guarda la URL firmada en historial o diagnóstico.
+
+La consulta previa de Info.plist usa HTTP206 y Content-Range exacto, presupuestos
+de 8 MiB/2min y plists de 1 MiB. Si Range no está disponible se identifica la
+selección sólo por externalVersionId y se valida la versión tras la descarga.
+No se asigna un número visible inventado a un ID. La descarga final exige HTTP
+200, tamaño coherente, ZIP válido, CRCs y MD5 si Apple lo suministra, bundle ID,
+CFBundleSupportedPlatforms=iPhoneOS y metadata del ID solicitado. La asociación
+externalVersionId↔versión visible se basa en esa respuesta autenticada y en el
+Info.plist real; el Info.plist por sí solo no contiene ese ID del servidor.
+
+`packageipa` reescribe por streaming los bytes comprimidos, conserva los extras
+locales/centrales Apple y aplica iTunesMetadata/SINF como el ipatool moderno.
+No extrae payloads al filesystem, rechaza rutas inseguras/duplicadas, múltiples
+apps principales y tamaños excesivos; sin sinfs conserva los originales.
+Manifest.SinfPaths debe coincidir con la cantidad de SINF. iTunesMetadata
+incluye el Apple ID de la licencia como en ipatool: la IPA es un archivo personal,
+no un diagnóstico sanitizado. No se descarga artwork adicional ni se requiere
+para completar la IPA. Los tests verifican sustitución sin duplicados y CRC.
+
+El resultado se mueve atómicamente de staging a Documents/Downloads con nombre
+único; los temporales se borran incluso tras error/cancelación. Auto-Clean no
+borra Downloads al abrir. Files puede acceder vía UIFileSharingEnabled y
+LSSupportsOpeningDocumentsInPlace. Share Sheet y ShareLink exportan la IPA
+completada, incluida tras reabrir. La ficha JSON acompaña el archivo con ID,
+bundle, versión real, externalVersionId y fecha; no contiene token/DSID/URL.
+La UI original y favoritos/historial se conservan; la descarga no se registra
+como instalación exitosa en el historial antiguo.
+
+El instalador localhost/itms-services/manifest externo se retiró del camino
+activo. Descargar con SINF no desencripta, resigna ni garantiza instalación.
+SideStore/AltStore pueden instalar esta app WaffleStore al resignarla; aceptar
+otra IPA del App Store depende de sus protecciones y del sideloader. No se
+promete downgrade de una app instalada ni conservación de sus datos. No hay
+jailbreak, AppSync, TrollStore, JIT ni entitlements privados añadidos.
 
 ## 6. Compilar y generar IPA
 
@@ -230,10 +300,10 @@ El fingerprint detecta cambios del bridge, scripts y SDK; se puede eliminar
 GitHub Actions: push/PR → Debug y Release en macos-15/Xcode 26 + tests del
 protocolo en macOS y restricciones/interpreter en Linux → artifacts.
 workflow_dispatch permite compilar el tag original con el mismo workflow.
-Un tag `v2.3.0-dev.2` genera una prerelease **draft** con ambas IPAs. No publicar
+Un tag `v2.3.0-dev.3` genera una prerelease **draft** con ambas IPAs. No publicar
 una release hasta resolver las licencias y validar los hitos; ver notices.
-CFBundleShortVersionString debe ser numérico: 2.3.0, CFBundleVersion 23002;
-el sufijo dev.1 vive en el tag/changelog, no en el plist.
+CFBundleShortVersionString debe ser numérico: 2.3.0, CFBundleVersion 23003;
+el sufijo dev.3 vive en el tag/changelog, no en el plist.
 
 ## 7. Instalar y probar iOS 27
 
@@ -244,7 +314,7 @@ opción de red y exportar el resultado. Después activar Initialize SAP and sign
 a test body y repetir; se descargarán assets Apple al Caches del sandbox.
 Los resultados esperados y la matriz están en [TESTING.md](TESTING.md).
 
-Con dev.2 usar el formulario original para login: Apple ID/password → botón
+Con dev.3 usar el formulario original para login: Apple ID/password → botón
 Send 2FA Code → esperar respuesta → si aparece el campo, introducir un código
 actual → Log In. No concatenar manualmente el código al password. Tras éxito,
 esperar que el log indique DSID/token/storefront recibidos y guardados (sin valores).
@@ -262,7 +332,7 @@ fallar explícitamente. Se conservan los bounds del guest y timeouts, pero no
 hay botón de cancelación durante una llamada nativa; esto sigue experimental.
 Los permisos RW→RX por sí solos no prueban SAP ni autorización del backend.
 No hay iPhone/iPad conectado a este entorno. La evidencia jailed proviene del
-reporte del usuario con dev.1; dev.2 y la autenticación requieren nueva prueba.
+reporte del usuario con dev.1 y dev.2; Store/download dev.3 requiere nueva prueba.
 
 MIT de ipatool conservada. Unicorn/QEMU TCI incluyen GPL; cada artifact entrega
 sus fuentes modificadas correspondientes, y el source de WaffleStore está en

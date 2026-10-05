@@ -1,5 +1,18 @@
 # Development changelog
 
+## 2.3.0-dev.3
+
+- Registra login/2FA y reapertura confirmados por usuario en iOS 27.0.1 (23002).
+- Porta StoreAgent kbsync a TCI, sin decryption/JIT; cache aceptado en Keychain.
+- Store Swift async: Bag, storefront/country, ent/download y fallbacks del ipatool actual.
+- Versiones por externalVersionId; número visible leído del Info.plist de la IPA.
+- Adquisición exclusiva de apps verificadas gratuitas; no compras pagas/subscriptions.
+- CDN aislada sin secretos, progreso real, retries y validación ZIP/CRC/MD5/identidad.
+- Empaquetado streaming con extras Apple y metadata/SINF, sin force unwraps.
+- IPA persistente en Documents/Downloads, Files/Share Sheet; instalación separada.
+- Búsqueda: cancelación esperada silenciada, query bien codificada y país de la cuenta.
+- Tests Store/ZIP/Range y diagnóstico sanitizado; descarga física dev.3 aún pendiente.
+
 ## 2.3.0-dev.2
 
 - Registra prueba SAP en iPhone iOS 27.0.1, ksign/certificado sin JIT.

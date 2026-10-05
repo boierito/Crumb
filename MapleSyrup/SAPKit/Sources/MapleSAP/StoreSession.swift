@@ -13,12 +13,14 @@ public actor StoreSession {
     private var bag: [String: String]?
     private var busy = false
     private let sleep: (TimeInterval) async throws -> Void
+    private let progress: (StoreStage) async -> Void
     public init(account: StoreAccount, identity: MachineIdentity, transport: AuthenticationTransport,
                 generator: KBSyncGenerator, persistence: KBSyncPersistence = NoKBSyncPersistence(),
+                progress: @escaping (StoreStage) async -> Void = { _ in },
                 sleep: @escaping (TimeInterval) async throws -> Void = { try await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000)) }) throws {
         try account.validate(identity: identity)
         self.account = account; self.identity = identity; self.transport = transport
-        self.generator = generator; self.persistence = persistence; self.sleep = sleep
+        self.generator = generator; self.persistence = persistence; self.sleep = sleep; self.progress = progress
     }
     public func lookup(_ input: String) async throws -> StoreApp {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -53,6 +55,7 @@ public actor StoreSession {
         }
     }
     private func latestVersion(_ app: StoreApp) async throws -> String {
+        await progress(.latest)
         let country = try Storefront.country(account.storefront)
         for platform in ["enterprisestore", "iphone", "ipad"] {
             let data = try await get("https://uclient-api.itunes.apple.com/WebObjects/MZStorePlatform.woa/wa/lookup", query:
@@ -70,6 +73,7 @@ public actor StoreSession {
     }
     private func resolveBag() async throws {
         if bag != nil { return }
+        await progress(.bag)
         let data = try await get("https://init.itunes.apple.com/bag.xml", query: ["guid": identity.guid])
         guard let root = try ApplePlist.dictionary(data), let urls = root["urlBag"] as? [String: Any] else { throw SAPError.invalidBag }
         bag = urls.compactMapValues { $0 as? String }
@@ -85,6 +89,7 @@ public actor StoreSession {
                     catch { try Task.checkCancellation(); try persistence.clear() }
                 }
                 guard let dsid = UInt64(account.dsid), dsid > 0 else { throw AuthenticationError.invalidSession }
+                await progress(.kbsync)
                 let blob = try generator.generate(identity: identity, dsid: dsid)
                 try Task.checkCancellation()
                 let result = try await ent(url, app: app, version: version, blob: blob)
@@ -99,16 +104,19 @@ public actor StoreSession {
         let prefix = account.pod.map { "p\($0)-" } ?? ""
         let legacy = URL(string: "https://\(prefix)buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/volumeStoreDownloadProduct")!
         do {
+            await progress(.legacy)
             let root = try await post(legacy, body: payload(app, version: version, key: "externalVersionId"), token: false)
             return try StoreParsing.download(root, app: app, version: version, email: account.email)
         } catch StoreError.unavailable { }
         catch { throw error }
         guard let redownload = bag?["redownloadProduct"] else { throw preferredError ?? StoreError.unavailable }
         do {
+            await progress(.redownload)
             let root = try await post(dispatchURL(redownload, path: "/r/redownload"), body: payload(app, version: version, key: "appExtVrsId"), token: false)
             return try StoreParsing.download(root, app: app, version: version, email: account.email)
         } catch let error as StoreError where error == .unavailable || error == .emptyRedownload {
             guard let update = bag?["updateProduct"] else { throw error }
+            await progress(.update)
             let root = try await post(dispatchURL(update, path: "/up/updateProduct"), body: payload(app, version: version, key: "appExtVrsId"), token: false)
             return try StoreParsing.download(root, app: app, version: version, email: account.email)
         }
@@ -119,6 +127,7 @@ public actor StoreSession {
         body["salableAdamId"] = app.id
         body["kbsync"] = blob.base64EncodedString()
         body["serialNumber"] = (Data([0x54, 0xc8, 0xb0, 0xa9, 0x88]) + identity.hardwareID.suffix(3)).base64EncodedString()
+        await progress(.ent)
         let root = try await post(url, body: body, token: true, ent: true)
         return try StoreParsing.download(root, app: app, version: version, email: account.email)
     }
@@ -139,6 +148,7 @@ public actor StoreSession {
         let body: [String: Any] = ["appExtVrsId": "0", "hasAskedToFulfillPreorder": "true", "buyWithoutAuthorization": "true",
             "hasDoneAgeCheck": "true", "guid": identity.guid, "needDiv": "0", "origPage": "Software-\(app.id)",
             "origPageLocation": "Buy", "price": "0", "pricingParameters": "STDQ", "productType": "C", "salableAdamId": NSNumber(value: UInt64(app.id) ?? 0)]
+        await progress(.purchase)
         let result = try await post(purchaseURL, body: body, token: true, retry: false)
         if StoreParsing.identifier(result["failureType"]) == "5002" { return }
         try StoreParsing.failure(result)

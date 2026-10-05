@@ -12,6 +12,7 @@ curl -fL --retry 3 https://github.com/majd/ipatool/archive/3411d57f451f5111ae115
 tar -xzf "$WORK/ipatool.tar.gz" -C "$WORK"
 SOURCE="$WORK/ipatool-3411d57f451f5111ae115641c22f7ed17bbd5fbe"
 cp "$ROOT/scripts/sap-host-probe_test.go" "$SOURCE/internal/sap/tci_probe_test.go"
+cp "$ROOT/scripts/kbsync-host-probe_test.go" "$SOURCE/internal/sap/kbsync_tci_test.go"
 python3 - "$SOURCE" "$WORK/native/libunicorn.so.2" <<'PY'
 import pathlib,sys,json
 path=pathlib.Path(sys.argv[1])/'internal/sap/unicorn/library_unix.go'
@@ -24,5 +25,5 @@ PY
 cd "$SOURCE"
 XDG_CACHE_HOME="$WORK/cache" go test ./internal/sap/machine \
   -run 'TestHardwareBlock|TestGuestServiceDispatchAndStackArguments|TestUnknownGuestServiceFailsClosed|TestGuestAllocatorReusesAndClearsFreedMemory' -v
-XDG_CACHE_HOME="$WORK/cache" go test ./internal/sap -run TestTCIDynamicSAPSmoke -v -timeout 6m
+XDG_CACHE_HOME="$WORK/cache" go test ./internal/sap -run 'TestTCIDynamicSAPSmoke|TestTCIKBSyncSmoke' -v -timeout 6m
 echo 'Host SAP test passed. Physical jailed iOS execution and Apple login remain separate milestones.'

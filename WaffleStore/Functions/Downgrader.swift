@@ -75,7 +75,13 @@ extension AppData {
                 try fm.createDirectory(at: downloads, withIntermediateDirectories: true)
                 let filename = "\(app.id)-\(descriptor.externalVersionID)-\(UUID().uuidString).ipa"
                 let destination = downloads.appendingPathComponent(filename)
-                try fm.moveItem(at: staged, to: destination)
+                let record = DownloadRecord(filename: filename, appID: app.id, appName: app.name, bundleID: info.bundleID,
+                    version: info.version, externalVersionID: descriptor.externalVersionID, date: Date())
+                let sidecar = destination.deletingPathExtension().appendingPathExtension("json")
+                try JSONEncoder().encode(record).write(to: sidecar, options: .atomic)
+                do { try fm.moveItem(at: staged, to: destination) }
+                catch { try? fm.removeItem(at: sidecar); throw error }
+                completedDownloads = DownloadRecord.load()
                 downloadedIPAURL = destination; hasAppBeenServed = true
                 appBundleID = info.bundleID; appVersion = info.version
                 storeStage("IPA verified and saved. Export to Files or another app.")
@@ -104,6 +110,7 @@ extension AppData {
         print("Apple Store stage: \(stage)")
     }
     func restoreDownloadedIPA() {
+        completedDownloads = DownloadRecord.load()
         let fm = FileManager.default
         guard let docs = try? fm.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false),
               let files = try? fm.contentsOfDirectory(at: docs.appendingPathComponent("Downloads"),
@@ -113,5 +120,6 @@ extension AppData {
             ((try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast)
         }.first
         hasAppBeenServed = downloadedIPAURL != nil
+        if let record = completedDownloads.first { appBundleID = record.bundleID; appVersion = record.version }
     }
 }

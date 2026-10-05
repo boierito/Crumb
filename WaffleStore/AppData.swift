@@ -44,6 +44,7 @@ final class AppData: ObservableObject {
     let storeDownloadsAvailable = true
     @Published var showStoreVersions = false
     @Published var downloadedIPAURL: URL?
+    @Published var completedDownloads: [DownloadRecord] = []
     @Published var storeError = ""
     @Published var storeDiagnostic = "No Store operation attempted."
     var storeTask: Task<Void, Never>?
