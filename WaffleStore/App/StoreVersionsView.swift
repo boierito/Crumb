@@ -10,9 +10,14 @@ struct StoreVersionsView: View {
     @State private var error: String = ""
     @State private var loading = true
     @State private var manualID = ""
+    @State private var inspecting = false
+    @State private var selectedID = ""
+    @State private var confirmation = false
+    @State private var versionDetail = ""
     var body: some View {
         NavigationStack {
             List {
+                if inspecting { ProgressView("Reading selected IPA version…") }
                 if loading { ProgressView("Resolving app, kbsync and available versions…") }
                 if !error.isEmpty { Text(error).foregroundStyle(.red).textSelection(.enabled) }
                 if let app = app {
@@ -21,17 +26,26 @@ struct StoreVersionsView: View {
                         Text("Select an externalVersionId. The displayed app version is verified from the downloaded IPA's Info.plist.")
                             .font(.caption).foregroundStyle(.secondary)
                         ForEach(versions, id: \.self) { id in
-                            Button(id == latest ? "Latest iOS build — ID \(id)" : "Version ID \(id)") { start(app, version: id) }
+                            Button(id == latest ? "Latest iOS build — ID \(id)" : "Version ID \(id)") { inspect(app, version: id) }
                         }
                     }
                     Section("Specific externalVersionId") {
                         TextField("Numeric externalVersionId", text: $manualID).keyboardType(.numberPad)
-                        Button("Download selected ID") { start(app, version: manualID) }
+                        Button("Download selected ID") { inspect(app, version: manualID) }
                             .disabled(StoreParsing.identifier(manualID) == nil)
                     }
                     Text("The IPA retains App Store protection. Exporting it does not prove that another sideloader can install or downgrade it.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+            }
+            .disabled(inspecting)
+            .confirmationDialog(versionDetail, isPresented: $confirmation, titleVisibility: .visible) {
+                Button("Download IPA — ID \(selectedID)") {
+                    guard let app = app, let tool = appData.ipaTool else { return }
+                    appData.download(app: app, version: selectedID, tool: tool)
+                    dismiss()
+                }
+                Button("Cancel", role: .cancel) {}
             }
             .navigationTitle("Download a version")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
@@ -52,9 +66,21 @@ struct StoreVersionsView: View {
             }
         }
     }
-    private func start(_ app: StoreApp, version: String) {
-        guard let tool = appData.ipaTool else { return }
-        appData.download(app: app, version: version, tool: tool)
-        dismiss()
+    private func inspect(_ app: StoreApp, version: String) {
+        guard let tool = appData.ipaTool, !inspecting else { return }
+        inspecting = true; selectedID = version; error = ""
+        Task {
+            defer { inspecting = false }
+            do {
+                let descriptor = try await tool.descriptor(app: app, version: version)
+                let info = try? await Task.detached(priority: .userInitiated) {
+                    try NativePackage.inspect(url: descriptor.url, bundle: app.bundleID)
+                }.value
+                versionDetail = info.map { "Verified IPA version \($0.version) — externalVersionId \(version)" } ?? "externalVersionId \(version). CDN range inspection unavailable; version will be verified after download."
+                confirmation = true
+            } catch {
+                self.error = (error as? StoreError)?.localizedDescription ?? (error as? SAPError)?.localizedDescription ?? "Version request failed (code \((error as NSError).code))."
+            }
+        }
     }
 }

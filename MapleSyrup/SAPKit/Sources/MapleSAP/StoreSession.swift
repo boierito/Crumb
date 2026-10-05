@@ -12,11 +12,13 @@ public actor StoreSession {
     private let persistence: KBSyncPersistence
     private var bag: [String: String]?
     private var busy = false
+    private let sleep: (TimeInterval) async throws -> Void
     public init(account: StoreAccount, identity: MachineIdentity, transport: AuthenticationTransport,
-                generator: KBSyncGenerator, persistence: KBSyncPersistence = NoKBSyncPersistence()) throws {
+                generator: KBSyncGenerator, persistence: KBSyncPersistence = NoKBSyncPersistence(),
+                sleep: @escaping (TimeInterval) async throws -> Void = { try await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000)) }) throws {
         try account.validate(identity: identity)
         self.account = account; self.identity = identity; self.transport = transport
-        self.generator = generator; self.persistence = persistence
+        self.generator = generator; self.persistence = persistence; self.sleep = sleep
     }
     public func lookup(_ input: String) async throws -> StoreApp {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -105,7 +107,7 @@ public actor StoreSession {
         do {
             let root = try await post(dispatchURL(redownload, path: "/r/redownload"), body: payload(app, version: version, key: "appExtVrsId"), token: false)
             return try StoreParsing.download(root, app: app, version: version, email: account.email)
-        } catch let error as StoreError where error == .unavailable || error == .http(500) {
+        } catch let error as StoreError where error == .unavailable || error == .emptyRedownload {
             guard let update = bag?["updateProduct"] else { throw error }
             let root = try await post(dispatchURL(update, path: "/up/updateProduct"), body: payload(app, version: version, key: "appExtVrsId"), token: false)
             return try StoreParsing.download(root, app: app, version: version, email: account.email)
@@ -162,7 +164,14 @@ public actor StoreSession {
             request.setValue(account.passwordToken, forHTTPHeaderField: "X-Token")
         }
         let data = try await send(request, retry: retry)
-        guard let root = try ApplePlist.dictionary(data) else { throw StoreError.invalidResponse }
+        guard var root = try ApplePlist.dictionary(data) else { throw StoreError.invalidResponse }
+        if var message = root["customerMessage"] as? String {
+            let secrets = [account.passwordToken, account.dsid, account.guid, account.email, body["kbsync"] as? String ?? ""]
+            for secret in secrets.filter({ !$0.isEmpty }).sorted(by: { $0.count > $1.count }) {
+                message = message.replacingOccurrences(of: secret, with: "[redacted]")
+            }
+            root["customerMessage"] = String(String.UnicodeScalarView(message.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }.prefix(400)))
+        }
         return root
     }
     private func get(_ base: String, query: [String: String]) async throws -> Data {
@@ -177,14 +186,14 @@ public actor StoreSession {
             try Task.checkCancellation()
             do {
                 let (data, response) = try await transport.send(request)
-                if [401, 403].contains(response.statusCode) { throw StoreError.sessionExpired }
+                if response.statusCode == 401 { throw StoreError.sessionExpired }
                 if response.statusCode == 200 { return data }
+                if response.statusCode == 500 && data.isEmpty { throw StoreError.emptyRedownload }
                 guard retry, attempt < 2, [204, 404, 429, 500, 502, 503, 504].contains(response.statusCode) else { throw StoreError.http(response.statusCode) }
-                let delay = Double(response.value(forHTTPHeaderField: "Retry-After") ?? "") ?? Double((attempt + 1) * 5)
-                guard delay >= 0, delay <= 30 else { throw StoreError.http(response.statusCode) }
-                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                let delay = try StoreRetry.delay(response.value(forHTTPHeaderField: "Retry-After"), attempt: attempt)
+                try await sleep(delay)
             } catch let error as URLError where retry && attempt < 2 && [.timedOut, .networkConnectionLost, .cannotConnectToHost].contains(error.code) {
-                try await Task.sleep(nanoseconds: UInt64((attempt + 1) * 5) * 1_000_000_000)
+                try await sleep(Double((attempt + 1) * 5))
             }
         }
         throw StoreError.invalidResponse

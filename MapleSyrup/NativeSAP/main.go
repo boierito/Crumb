@@ -161,6 +161,20 @@ func WafflePrepareIPA(source *C.char, destination *C.char, input *C.uchar, lengt
 	return 0
 }
 
+//export WaffleInspectIPA
+func WaffleInspectIPA(url *C.char, bundle *C.char, output **C.uchar, outputLength *C.size_t) C.int {
+	if url == nil || bundle == nil || output == nil || outputLength == nil {
+		return 1
+	}
+	data, err := packageipa.InspectRemote(C.GoString(url), C.GoString(bundle))
+	if err != nil {
+		return 22
+	}
+	*output = (*C.uchar)(C.CBytes(data))
+	*outputLength = C.size_t(len(data))
+	return 0
+}
+
 //export WaffleSAPClose
 func WaffleSAPClose(handle C.uint64_t) {
 	mutex.Lock()

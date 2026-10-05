@@ -3,12 +3,16 @@ import CoreFoundation
 
 public enum StoreError: Error, LocalizedError, Equatable {
     case unsupportedStorefront, invalidApp, unavailable, invalidResponse, versionMismatch
+    case retryLater
+    case emptyRedownload
     case sessionExpired, licenseRequired, paidPurchase, http(Int), native(Int32), packageInvalid
     case apple(String, String)
     public var errorDescription: String? {
         switch self {
         case .unsupportedStorefront: return "This account's storefront is not recognized."
         case .invalidApp: return "Enter an App Store link, numeric App Store ID or bundle ID."
+        case .retryLater: return "Apple requested a longer retry delay. Wait and try again later."
+        case .emptyRedownload: return "Apple redownload endpoint returned an empty HTTP 500."
         case .unavailable: return "Apple cannot serve this app/version in your account's storefront."
         case .invalidResponse: return "Apple returned an incomplete Store response."
         case .versionMismatch: return "Apple returned a different app or externalVersionId. Download refused."

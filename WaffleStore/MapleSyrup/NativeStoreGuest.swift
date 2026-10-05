@@ -31,6 +31,19 @@ nonisolated enum NativePackage {
         let sinfs: [Data]
     }
     struct Info: Codable, Sendable { let bundleID: String; let version: String }
+    static func inspect(url: URL, bundle: String) throws -> Info {
+        var output: UnsafeMutablePointer<UInt8>?
+        var length = 0
+        let status = url.absoluteString.withCString { url in
+            bundle.withCString { bundle in
+                WaffleInspectIPA(UnsafeMutablePointer(mutating: url), UnsafeMutablePointer(mutating: bundle), &output, &length)
+            }
+        }
+        defer { WaffleSAPFree(output, length) }
+        guard status == 0 else { throw StoreError.native(Int32(status)) }
+        guard let output = output, length > 0, length < 4096 else { throw StoreError.packageInvalid }
+        return try JSONDecoder().decode(Info.self, from: Data(bytes: output, count: length))
+    }
     static func prepare(source: URL, destination: URL, app: StoreApp, descriptor: StoreDownload) throws -> Info {
         let input = try JSONEncoder().encode(Parameters(appID: app.id, bundleID: app.bundleID,
             externalVersionID: descriptor.externalVersionID, md5: descriptor.md5,

@@ -40,6 +40,7 @@ extension AppData {
                     do {
                         let downloader = CDNDownload(destination: source) { progress, written, expected in
                             Task { @MainActor in
+                                guard self.isDowngrading, self.downgradeProgress < 0.85 else { return }
                                 self.downgradeProgress = progress * 0.85
                                 self.downgradeProgressDetail = expected > 0 ? "\(written / 1_048_576) / \(expected / 1_048_576) MiB" : "\(written / 1_048_576) MiB"
                             }
@@ -50,12 +51,13 @@ extension AppData {
                         try Task.checkCancellation()
                         let retryable: Bool
                         if let error = error as? URLError { retryable = [.timedOut, .networkConnectionLost, .cannotConnectToHost].contains(error.code) }
-                        else if let error = error as? StoreError, case .http(let status) = error { retryable = [429, 500, 502, 503, 504].contains(status) }
+                        else if let error = error as? CDNHTTPFailure { retryable = [429, 500, 502, 503, 504].contains(error.status) }
                         else { retryable = false }
                         guard retryable, attempt < 2 else { throw error }
                         try? fm.removeItem(at: source)
                         storeStage("Retrying CDN download")
-                        try await Task.sleep(nanoseconds: UInt64((attempt + 1) * 5) * 1_000_000_000)
+                        let delay = try StoreRetry.delay((error as? CDNHTTPFailure)?.retryAfter, attempt: attempt)
+                        try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                     }
                 }
                 guard let source = received else { throw StoreError.packageInvalid }
@@ -83,7 +85,7 @@ extension AppData {
                 if error is CancellationError || Task.isCancelled {
                     applicationStatus = "Download cancelled."; storeDiagnostic += "\noutcome=cancelled"
                 } else {
-                    storeError = (error as? StoreError)?.localizedDescription ?? (error as? SAPError)?.localizedDescription ?? "Store operation failed (code \((error as NSError).code))."
+                    storeError = (error as? CDNHTTPFailure).map { "CDN request failed (HTTP \($0.status))." } ?? (error as? StoreError)?.localizedDescription ?? (error as? SAPError)?.localizedDescription ?? "Store operation failed (code \((error as NSError).code))."
                     applicationStatus = "Download failed."; applicationIcon = "xmark.circle.fill"
                     let category: String
                     if let error = error as? StoreError, case .native(let stage) = error { category = "native-stage-\(stage)" }

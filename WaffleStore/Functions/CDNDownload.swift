@@ -59,7 +59,7 @@ nonisolated final class CDNDownload: NSObject, URLSessionDownloadDelegate, @unch
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         do {
             guard let response = downloadTask.response as? HTTPURLResponse else { throw StoreError.invalidResponse }
-            guard response.statusCode == 200 else { throw StoreError.http(response.statusCode) }
+            guard response.statusCode == 200 else { throw CDNHTTPFailure(status: response.statusCode, retryAfter: response.value(forHTTPHeaderField: "Retry-After")) }
             let size = try location.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
             guard size > 0, size <= 8 << 30,
                   response.expectedContentLength < 0 || response.expectedContentLength == Int64(size) else { throw StoreError.packageInvalid }

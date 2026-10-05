@@ -1,4 +1,7 @@
 import XCTest
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 @testable import MapleSAP
 
 final class StoreTests: XCTestCase {
@@ -31,5 +34,103 @@ final class StoreTests: XCTestCase {
     func testLicenseAndSessionErrorsRemainSpecific() {
         XCTAssertThrowsError(try StoreParsing.failure(["failureType": "9610"])) { XCTAssertEqual($0 as? StoreError, .licenseRequired) }
         XCTAssertThrowsError(try StoreParsing.failure(["failureType": "2034"])) { XCTAssertEqual($0 as? StoreError, .sessionExpired) }
+    }
+}
+
+private actor StoreFixtureTransport: AuthenticationTransport {
+    struct Reply { let status: Int; let data: Data }
+    var replies: [Reply]
+    var requests: [URLRequest] = []
+    init(_ replies: [Reply]) { self.replies = replies }
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        requests.append(request)
+        guard !replies.isEmpty else { throw StoreError.invalidResponse }
+        let reply = replies.removeFirst()
+        return (reply.data, HTTPURLResponse(url: request.url!, statusCode: reply.status, httpVersion: nil, headerFields: nil)!)
+    }
+    func cookies() async -> [StoreCookie] { [] }
+}
+private final class StoreFixtureGenerator: KBSyncGenerator {
+    var calls = 0
+    func generate(identity: MachineIdentity, dsid: UInt64) throws -> Data { calls += 1; return Data("fresh-fixture-blob".utf8) }
+}
+private final class StoreFixtureCache: KBSyncPersistence {
+    var data: Data?; var clears = 0; var saves = 0
+    init(_ data: Data? = nil) { self.data = data }
+    func load(dsid: String, guid: String) throws -> Data? { data }
+    func save(_ data: Data, dsid: String, guid: String) throws { self.data = data; saves += 1 }
+    func clear() throws { data = nil; clears += 1 }
+}
+extension StoreTests {
+    private func plist(_ root: [String: Any]) throws -> Data { try PropertyListSerialization.data(fromPropertyList: root, format: .xml, options: 0) }
+    private var app: StoreApp { StoreApp(id: "123", bundleID: "test.app", name: "Test", price: 0) }
+    private func reply(version: String = "999") throws -> Data {
+        try plist(["songList": [["URL": "https://iosapps.itunes.apple.com/a.ipa", "metadata": ["itemId": "123", "softwareVersionExternalIdentifier": version,
+            "softwareVersionBundleId": "test.app", "softwareVersionExternalIdentifiers": ["999", "888"]]]]])
+    }
+    private func bag() throws -> Data { try plist(["urlBag": ["volumeStoreDownloadProduct": "https://downloaddispatch.itunes.apple.com/WebObjects/DownloadDispatch.woa/wa/ent/download",
+        "redownloadProduct": "https://downloaddispatch.itunes.apple.com/r/redownload", "updateProduct": "https://downloaddispatch.itunes.apple.com/up/updateProduct",
+        "buyProduct": "https://buy.itunes.apple.com/WebObjects/MZBuy.woa/wa/buyProduct"]]) }
+    private func session(_ transport: StoreFixtureTransport, cache: StoreFixtureCache = StoreFixtureCache(), generator: StoreFixtureGenerator = StoreFixtureGenerator()) throws -> StoreSession {
+        let identity = try MachineIdentity(hardwareID: Data([2, 1, 2, 3, 4, 5]))
+        let account = StoreAccount(email: "fixture@example.invalid", name: "Test", dsid: "12345", passwordToken: "fixture-token", storefront: "143505-1,29", pod: "42", guid: identity.guid,
+            authenticationURL: URL(string: "https://p42-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate")!)
+        return try StoreSession(account: account, identity: identity, transport: transport, generator: generator, persistence: cache)
+    }
+    func testEntUsesSameIdentityAndCachesOnlyAcceptedBlob() async throws {
+        let cache = StoreFixtureCache(); let generator = StoreFixtureGenerator()
+        let transport = StoreFixtureTransport([.init(status: 200, data: try bag()), .init(status: 200, data: try reply())])
+        _ = try await session(transport, cache: cache, generator: generator).descriptor(app: app, externalVersionID: "999")
+        let requests = await transport.requests
+        let request = requests[1]
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Token"), "fixture-token")
+        let body = try PropertyListSerialization.propertyList(from: request.httpBody!, format: nil) as! [String: Any]
+        XCTAssertEqual(body["externalVersionId"] as? String, "999")
+        XCTAssertEqual(body["guid"] as? String, "020102030405")
+        XCTAssertEqual(body["kbsync"] as? String, Data("fresh-fixture-blob".utf8).base64EncodedString())
+        XCTAssertEqual(cache.saves, 1); XCTAssertEqual(generator.calls, 1)
+    }
+    func testRejectedCachedKBSyncRegeneratesOnce() async throws {
+        let cache = StoreFixtureCache(Data("stale".utf8)); let generator = StoreFixtureGenerator()
+        let transport = StoreFixtureTransport([.init(status: 200, data: try bag()), .init(status: 403, data: Data()), .init(status: 200, data: try reply())])
+        _ = try await session(transport, cache: cache, generator: generator).descriptor(app: app, externalVersionID: "999")
+        XCTAssertEqual(cache.clears, 1); XCTAssertEqual(cache.saves, 1); XCTAssertEqual(generator.calls, 1)
+    }
+    func testPinnedRedownloadEmpty500UsesBagUpdateAndRetainsID() async throws {
+        let empty = try plist([:])
+        let transport = StoreFixtureTransport([.init(status: 200, data: try bag()), .init(status: 200, data: empty), .init(status: 200, data: empty),
+            .init(status: 500, data: Data()), .init(status: 200, data: try reply(version: "888"))])
+        _ = try await session(transport).descriptor(app: app, externalVersionID: "888")
+        let requests = await transport.requests
+        XCTAssertEqual(requests.last?.url?.path, "/up/updateProduct")
+        let root = try PropertyListSerialization.propertyList(from: requests.last!.httpBody!, format: nil) as! [String: Any]
+        XCTAssertEqual(root["appExtVrsId"] as? String, "888")
+        XCTAssertNil(requests.last?.value(forHTTPHeaderField: "X-Token"))
+    }
+    func testFreeLicenseUsesBagPurchaseAndAuthenticatedPod() async throws {
+        let transport = StoreFixtureTransport([.init(status: 200, data: try bag()), .init(status: 200, data: try plist(["failureType": "9610"])),
+            .init(status: 200, data: try plist(["jingleDocType": "purchaseSuccess", "status": 0])), .init(status: 200, data: try reply())])
+        _ = try await session(transport).descriptor(app: app, externalVersionID: "999")
+        let requests = await transport.requests
+        XCTAssertEqual(requests[2].url?.path, "/WebObjects/MZBuy.woa/wa/buyProduct")
+        XCTAssertEqual(requests[2].url?.host, "p42-buy.itunes.apple.com")
+        let root = try PropertyListSerialization.propertyList(from: requests[2].httpBody!, format: nil) as! [String: Any]
+        XCTAssertEqual(root["price"] as? String, "0")
+        XCTAssertEqual(root["pricingParameters"] as? String, "STDQ")
+    }
+    func testPaidAppCannotBePurchasedAutomatically() async throws {
+        let transport = StoreFixtureTransport([.init(status: 200, data: try bag()), .init(status: 200, data: try plist(["failureType": "9610"]))])
+        do { _ = try await session(transport).descriptor(app: StoreApp(id: "123", bundleID: "test.app", name: "Paid", price: 2), externalVersionID: "999"); XCTFail("paid acquisition") }
+        catch { XCTAssertEqual(error as? StoreError, .paidPurchase) }
+        let requests = await transport.requests; XCTAssertEqual(requests.count, 2)
+    }
+}
+extension StoreTests {
+    func testRetryAfterRejectsOverBudgetAndHonorsHTTPDate() throws {
+        XCTAssertEqual(try StoreRetry.delay("7", attempt: 0), 7)
+        XCTAssertThrowsError(try StoreRetry.delay("31", attempt: 0))
+        let date = Date(timeIntervalSince1970: 0)
+        XCTAssertEqual(try StoreRetry.delay("Thu, 01 Jan 1970 00:00:10 GMT", attempt: 0, now: date), 10)
+        XCTAssertEqual(try StoreRetry.delay(nil, attempt: 1), 10)
     }
 }
