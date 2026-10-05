@@ -11,9 +11,35 @@ import SwiftUI
 import Combine
 import MapleSAP
 
+enum AppTab: Hashable { case search, downloads, favourites, account, settings }
+
 @MainActor
 final class AppData: ObservableObject {
     static let shared = AppData()
+    @Published var selectedTab: AppTab = .search
+    var openVersionsAfterLogin = false
+    @Published var catalogRegion: String = UserDefaults.standard.string(forKey: "catalogRegion") ?? "" {
+        didSet { UserDefaults.standard.set(catalogRegion, forKey: "catalogRegion") }
+    }
+    var accountCountry: String {
+        guard let account = ipaTool?.account else { return "us" }
+        return (try? Storefront.country(account.storefront)) ?? "us"
+    }
+    var catalogCountry: String {
+        Storefront.catalogCountries.contains(catalogRegion) ? catalogRegion : accountCountry
+    }
+    func openAppSelection(_ input: String) {
+        guard !isDowngrading, storeRequestCount == 0, !showStoreVersions else { return }
+        appLink = input
+        if isAuthenticated {
+            selectedTab = .search
+            showStoreVersions = true
+        } else {
+            openVersionsAfterLogin = true
+            selectedTab = .account
+        }
+    }
+
     
     @Published var applicationIcon: String = "xmark.circle.fill"
     @Published var applicationIconColor: Color = .secondary

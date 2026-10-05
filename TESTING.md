@@ -119,3 +119,30 @@ Fixtures cover owned free/paid download without purchase, one acquisition after
 5002 followed by verified download, failed/ambiguous purchase without replay or
 fake ownership, opt-out and retention of accepted account kbsync after license denial.
 Earlier device success is not validation of the new purchase path.
+
+## Build 23012: navigation and catalog (device validation pending)
+
+Use a Release IPA signed with the same bundle ID/certificate as 23011.
+
+- Confirm five tabs, with Favourites in the center. Test small iPhone, iPad,
+  light/dark, large text and VoiceOver. Native tab placement adapts to iPad/iOS.
+- Search signed out, choose an app, sign in on Account; the chosen version sheet
+  should open. Cancel login, switch tabs, then retry. Existing 2FA and cancellation
+  behavior must remain intact. Sign out keeps saved downloads/favourites.
+- Enter an App Store link, numeric ID and bundle ID; choose a version. Star the
+  resolved app; open Favourites, return to its versions, swipe to remove.
+- Download an older version, switch tabs during transfer, inspect progress and
+  cancel from Downloads. Install directly after downloading and from Downloads;
+  export/delete, open history, and expand/copy the optional activity log.
+- Select Argentina, US and another supported catalog; results must use the chosen
+  country, survive relaunch, and return to account country when reset. Changing
+  region must never mutate account credentials/storefront. Retry network failure;
+  rapid typing/tab changes must not produce stale results or stuck spinners.
+- A foreign-only app may fail account lookup or license acquisition. Do not record
+  catalog search success as proof of regional download eligibility.
+
+| iOS | Device | Login/2FA | Search | Versions/purchase | Download/install/export | Tabs/region |
+| --- | --- | --- | --- | --- | --- | --- |
+| 27.0.1 | User iPhone, normally signed 23011 | User reports remaining minor login glitches | Reported working | User reports 23011 works well, exact cases unspecified | Earlier install/export confirmed | Not in 23011 |
+| 27 | Physical iPhone, Release 23012 | Pending regression | Pending | Pending regression | Pending regression | Pending |
+| 26 | Physical iPhone/iPad, Release 23012 | Pending | Pending | Pending | Pending | Pending |

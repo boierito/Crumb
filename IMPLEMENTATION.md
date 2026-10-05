@@ -198,3 +198,36 @@ The expanded reader fills the sheet; automatic following is off by default so
 new output cannot drag away the portion being read. Remove generic blue app.fill
 placeholders. Use a spinner for active Store work and clear stale acquiring text
 on failure. Screenshot/device visual validation is pending.
+
+## Build 23012: five tabs and catalog region
+
+The root uses a native SwiftUI TabView: Search, Downloads, Favourites (center),
+Apple Account and Settings. Search works before sign-in. Choosing a result, link,
+ID or bundle ID opens the existing version sheet; if signed out it routes to
+Account and resumes the selection after successful sign-in. Favourites stay
+available offline; adding/removing uses the star on the resolved app summary.
+Downloads keeps installation/export/deletion and now contains progress, cancel,
+history and the optional full activity reader. No hamburger or overlay action
+stack competes with the tab bar. Settings and credits retain their original content.
+The native bar adapts to the OS, device and accessibility size; this is not a
+pixel-for-pixel custom copy of DLipa. Login/SAP, license acquisition, version
+selection, IPA verification and installation protocols are unchanged from 23011.
+
+A globe in Search selects a public catalog country. The supported codes reuse
+the MIT-attributed ipatool storefront mapping; only this non-secret preference is
+stored in UserDefaults. Default is the authenticated account country (US when
+signed out). Region names are localized and searchable. Stale searches are
+cancelled when changing query/catalog or leaving Search; cancellation is not an
+error and HTTP search failure is shown with retry instead of an empty result.
+
+This is catalog browsing, not account-region migration. The current ipatool
+search derives country from the authenticated storefront and offers no search
+country override. Purchase/download eligibility still uses the saved Apple
+account storefront and existing StoreSession. Selecting a foreign catalog never
+rewrites that storefront, token, cookies or identity. A foreign-only app may be
+unavailable to this account. Downloading it requires access accepted by Apple
+with an eligible account; changing headers cannot establish that entitlement.
+No automatic Apple country change or cross-region license bypass is implemented.
+
+The user reports 23011 works well on their device. This supports preserving its
+backend, but is not evidence of 23012 navigation or foreign-region downloads.

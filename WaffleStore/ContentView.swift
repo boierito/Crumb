@@ -2,134 +2,69 @@ import SwiftUI
 import PartyUI
 
 struct ContentView: View {
-    @State private var hasShownWelcome: Bool = false
-    @State private var showLogs: Bool = false
-    @State private var showSettingsView: Bool = false
-    @State private var showSearchView: Bool = false
-    @State private var showHistoryView: Bool = false
-    @State private var showFavouritesView: Bool = false
-    @State private var showDownloadedView = false
-    
     @EnvironmentObject var appData: AppData
-    @StateObject private var localizationManager = LocalizationManager.shared
-    
+    @State private var confirmLogout = false
+    @State private var showLogs = false
+
     var body: some View {
-        Group {
-            if UIDevice.current.userInterfaceIdiom == .pad {
-                NavigationSplitView(sidebar: {
-                    List {
-                        LogsSection
-                        NavigationButtons()
-                    }
-                    .navigationTitle("WaffleStore")
-                }) {
-                    List {
-                        if !appData.isAuthenticated {
-                            LoginSection
-                        } else {
-                            if appData.isDowngrading {
-                                AppInfoSection
-                            } else {
-                                InputAppSection
-                            }
-                        }
-                    }
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            AppMenu(showHistoryView: $showHistoryView, showFavouritesView: $showFavouritesView, showDownloadedView: $showDownloadedView)
-                        }
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button(action: {
-                                showSettingsView.toggle()
-                            }) {
-                                Image(systemName: "gear")
-                            }
-                        }
-                    }
-                }
-            } else {
-                NavigationStack {
-                    List {
-                        if appData.isAuthenticated { LogsSection }
-                        if !appData.isAuthenticated {
-                            LoginSection
-                            LogsSection
-                        } else {
-                            if appData.isDowngrading {
-                                AppInfoSection
-                            } else {
-                                InputAppSection
-                            }
-                        }
-                    }
-                    .navigationTitle("WaffleStore")
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            AppMenu(showHistoryView: $showHistoryView, showFavouritesView: $showFavouritesView, showDownloadedView: $showDownloadedView)
-                        }
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button(action: {
-                                showSettingsView.toggle()
-                            }) {
-                                Image(systemName: "gear")
-                            }
-                        }
-                    }
-                    .safeAreaInset(edge: .bottom) {
-                        NavigationButtons()
-                            .modifier(OverlayBackground())
-                    }
-                }
-            }
+        TabView(selection: $appData.selectedTab) {
+            AppSearchView(embedded: true)
+                .tabItem { Label("Search", systemImage: "magnifyingglass") }.tag(AppTab.search)
+            DownloadedAppsView(embedded: true)
+                .tabItem { Label("Downloads", systemImage: "square.and.arrow.down") }.tag(AppTab.downloads)
+            FavouritesView(embedded: true)
+                .tabItem { Label("Favourites".localized, systemImage: "star") }.tag(AppTab.favourites)
+            account
+                .tabItem { Label("Account", systemImage: "person.crop.circle") }.tag(AppTab.account)
+            SettingsView(embedded: true)
+                .tabItem { Label("Settings".localized, systemImage: "gearshape") }.tag(AppTab.settings)
         }
-        .sheet(isPresented: $showSettingsView) {
-            SettingsView()
-        }
-        .sheet(isPresented: $showSearchView) {
-            AppSearchView()
-        }
-        .sheet(isPresented: $showHistoryView) {
-            DowngradeHistoryView()
-        }
-        .sheet(isPresented: $showFavouritesView) {
-            FavouritesView()
-        }
-        .sheet(isPresented: $showDownloadedView) { DownloadedAppsView() }
         .sheet(isPresented: $appData.showStoreVersions) { StoreVersionsView() }
         .sheet(item: $appData.downloadReady) { DownloadReadyView(record: $0) }
         .sheet(item: $appData.installationRequest) { OTAInstallationView(record: $0, startImmediately: true) }
         .onAppear { appData.restoreStoreAccount(); appData.restoreDownloadedIPA() }
-    }
-    
-    private var LogsSection: some View {
-        Section {
-            if appData.isAuthenticated {
-                HStack(spacing: 12) {
-                    if appData.storeRequestCount > 0 || appData.isDowngrading { ProgressView() }
-                    else { Image(systemName: appData.applicationIcon) }
-                    Text(appData.applicationStatus).font(.subheadline).foregroundStyle(.secondary)
-                }
-                if appData.showsDowngradeProgress {
-                    VStack(alignment: .leading, spacing: 6) {
-                        ProgressView(value: appData.downgradeProgress)
-                        HStack {
-                            Text(appData.downgradeProgressDetail)
-                            Spacer()
-                            Text("\(Int(appData.downgradeProgress * 100))%")
-                        }
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 2)
-                }
-            }
-            DisclosureGroup("Activity log", isExpanded: $showLogs) {
-                LogView()
-                    .modifier(TerminalPlatter())
+        .onChange(of: appData.isAuthenticated) { authenticated in
+            if authenticated, appData.openVersionsAfterLogin {
+                appData.openVersionsAfterLogin = false
+                appData.openAppSelection(appData.appLink)
             }
         }
     }
-    
+
+    private var account: some View {
+        NavigationStack {
+            List {
+                if appData.isAuthenticated {
+                    Section("Signed in") {
+                        Label(appData.appleId, systemImage: "person.crop.circle")
+                        LabeledContent("Account region", value: appData.accountCountry.uppercased())
+                    }
+                    Section {
+                        Button("Sign out", role: .destructive) { confirmLogout = true }
+                            .disabled(appData.isAuthenticating || appData.isDowngrading || appData.storeRequestCount > 0 || appData.showStoreVersions)
+                    } footer: {
+                        Text("Signing out keeps your favourites and downloaded IPAs.")
+                    }
+                } else {
+                    LoginSection
+                    Section { NavigationButtons() }
+                }
+                Section {
+                    DisclosureGroup("Activity log", isExpanded: $showLogs) { LogView() }
+                }
+            }
+            .navigationTitle("Apple account")
+            .navigationBarTitleDisplayMode(.inline)
+            .confirmationDialog("Sign out of Apple account?", isPresented: $confirmLogout, titleVisibility: .visible) {
+                Button("Sign out", role: .destructive) {
+                    appData.openVersionsAfterLogin = false
+                    appData.logoutStoreAccount()
+                }
+                Button("Cancel", role: .cancel) {}
+            }
+        }
+    }
+
     private var LoginSection: some View {
         Group {
             Section(header: HeaderLabel(text: "Login".localized, icon: "icloud"), footer: Text("Sign in to choose and download App Store versions.")) {
@@ -201,79 +136,6 @@ struct ContentView: View {
         }
     }
     
-    private var InputAppSection: some View {
-        Section(header: HeaderLabel(text: "Downgrade App".localized, icon: "arrow.down.app"), footer: Text("Choose a version to download or install. Your IPA remains available for export.")) {
-            VStack(spacing: 12) {
-                TextField("App Store link, ID or bundle ID", text: $appData.appLink)
-                    .modifier(TextFieldBackground())
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-                
-                Button(action: {
-                    Haptic.shared.play(.soft)
-                    showSearchView.toggle()
-                }) {
-                    ButtonLabel(text: "Search App Store".localized, icon: "magnifyingglass")
-                }
-                .buttonStyle(TranslucentButtonStyle())
-            }
-        }
-    }
-    
-    private var AppInfoSection: some View {
-        Section(header: HeaderLabel(text: "App Info".localized, icon: "info.circle")) {
-            ItemInfoCell(label: "App Link".localized, icon: "link", text: appData.appLink)
-            ItemInfoCell(label: "App Bundle ID".localized, icon: "shippingbox", text: appData.appBundleID)
-
-            ItemInfoCell(label: "Target App Version".localized, icon: "arrow.down.app", text: appData.appVersion)
-        }
-    }
-    
-}
-
-struct AppMenu: View {
-    @EnvironmentObject var appData: AppData
-    @Binding var showHistoryView: Bool
-    @Binding var showFavouritesView: Bool
-    @Binding var showDownloadedView: Bool
-    
-    var body: some View {
-        Menu {
-            Button("Downloaded apps", systemImage: "square.and.arrow.down") { showDownloadedView = true }
-            Button(action: {
-                showFavouritesView.toggle()
-            }) {
-                Label("Favourites".localized, systemImage: "star.fill")
-            }
-            .disabled(!appData.isAuthenticated || appData.isAuthenticating)
-            
-            Button(action: {
-                showHistoryView.toggle()
-            }) {
-                Label("Downgrade History".localized, systemImage: "clock.arrow.circlepath")
-            }
-            .disabled(!appData.isAuthenticated || appData.isAuthenticating)
-            
-            Button(action: {
-                if let url = appData.downloadedIPAURL { presentShareSheet(with: url) }
-            }) {
-                Label("Export IPA".localized, systemImage: "arrow.up.doc")
-            }
-            .disabled(!appData.hasAppBeenServed)
-            
-            Button(action: {
-                Haptic.shared.play(.heavy)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                    appData.logoutStoreAccount()
-                }
-            }) {
-                ButtonLabel(text: "Log Out".localized, icon: "arrow.right")
-            }
-            .disabled(!appData.isAuthenticated || appData.isAuthenticating || appData.isDowngrading || appData.showStoreVersions)
-        } label: {
-            Image(systemName: "line.horizontal.3")
-        }
-    }
 }
 
 struct DowngradeHistoryView: View {

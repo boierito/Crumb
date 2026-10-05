@@ -2,8 +2,11 @@ import SwiftUI
 import PartyUI
 
 struct DownloadedAppsView: View {
+    var embedded = false
     @EnvironmentObject var appData: AppData
     @Environment(\.dismiss) private var dismiss
+    @State private var showHistory = false
+    @State private var showLogs = false
     @State private var installation: DownloadRecord?
     @State private var deletion: DownloadRecord?
     @State private var confirmDeletion = false
@@ -11,6 +14,17 @@ struct DownloadedAppsView: View {
     var body: some View {
         NavigationStack {
             List {
+                if appData.isDowngrading {
+                    Section("Downloading") {
+                        HStack(spacing: 12) { ProgressView(); Text(appData.applicationStatus) }
+                        if appData.showsDowngradeProgress {
+                            ProgressView(value: appData.downgradeProgress)
+                            Text(appData.downgradeProgressDetail).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Button("Cancel download", role: .destructive) { appData.storeTask?.cancel() }
+                    }
+                }
+
                 if appData.completedDownloads.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Label("No downloads yet", systemImage: "square.and.arrow.down")
@@ -61,11 +75,21 @@ struct DownloadedAppsView: View {
                         Button(role: .destructive) { requestDeletion(record) } label: { Label("Delete", systemImage: "trash") }
                     }
                 }
+                Section {
+                    DisclosureGroup("Activity log", isExpanded: $showLogs) { LogView() }
+                }
             }
             .navigationTitle("Downloaded apps")
             .navigationBarTitleDisplayMode(.inline)
             .listStyle(.insetGrouped)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
+             .toolbar {
+                if !embedded { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showHistory = true } label: { Image(systemName: "clock.arrow.circlepath") }
+                        .accessibilityLabel("Downgrade history")
+                }
+            }
+            .sheet(isPresented: $showHistory) { DowngradeHistoryView() }
             .sheet(item: $installation) { OTAInstallationView(record: $0, startImmediately: true) }
             .confirmationDialog("Delete downloaded IPA?", isPresented: $confirmDeletion, titleVisibility: .visible) {
                 if let record = deletion {

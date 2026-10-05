@@ -70,6 +70,12 @@ struct StoreVersionsView: View {
                                 Text(app.name).font(.headline)
                                 Text(app.bundleID).font(.caption).foregroundStyle(.secondary)
                             }
+                            Spacer()
+                            Button { toggleFavourite(app) } label: {
+                                Image(systemName: appData.favourites.contains { $0.bundleId == app.bundleID } ? "star.fill" : "star")
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel(appData.favourites.contains { $0.bundleId == app.bundleID } ? "Remove from favourites" : "Add to favourites")
                         }
                     }
                 }
@@ -181,6 +187,13 @@ struct StoreVersionsView: View {
                 }
                 loading = false
             }
+        }
+    }
+    private func toggleFavourite(_ app: StoreApp) {
+        if let favourite = appData.favourites.first(where: { $0.bundleId == app.bundleID }) {
+            appData.favourites = FavouritesStore.remove(favourite)
+        } else {
+            appData.favourites = FavouritesStore.add(FavouriteApp(appLink: appData.appLink, bundleId: app.bundleID, appName: app.name))
         }
     }
     private func download(_ choice: VersionSelection, install: Bool) {

@@ -42,7 +42,7 @@ struct WaffleStoreApp: App {
                 .onOpenURL { schemedURL in
                     let rawURL = schemedURL.absoluteString.replacingOccurrences(of: "wafflestore:", with: "")
                     if let appLink = rawURL.removingPercentEncoding {
-                        appData.appLink = appLink
+                        appData.openAppSelection(appLink)
                         print("Successfully received app link! \(appLink)")
                     }
                 }

@@ -2,6 +2,7 @@ import SwiftUI
 import PartyUI
 
 struct FavouritesView: View {
+    var embedded = false
     @EnvironmentObject var appData: AppData
     @Environment(\.dismiss) private var dismiss
     
@@ -19,13 +20,12 @@ struct FavouritesView: View {
                         }
                     } else {
                         ForEach(appData.favourites) { favourite in
-                            FavouriteAppCell(favourite: favourite)
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    Haptic.shared.play(.soft)
-                                    appData.appLink = favourite.appLink
-                                    dismiss()
-                                }
+                            Button {
+                                Haptic.shared.play(.soft)
+                                if embedded { appData.openAppSelection(favourite.appLink) }
+                                else { appData.appLink = favourite.appLink; dismiss() }
+                            } label: { FavouriteAppCell(favourite: favourite) }
+                            .buttonStyle(.plain)
                         }
                         .onDelete { indexSet in
                             for index in indexSet {
@@ -38,13 +38,13 @@ struct FavouritesView: View {
             }
             .navigationTitle("Favourites".localized)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                if !embedded { ToolbarItem(placement: .topBarTrailing) {
                     Button(action: {
                         dismiss()
                     }) {
                         Image(systemName: "xmark")
                     }
-                }
+                } }
             }
         }
     }

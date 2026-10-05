@@ -1,6 +1,7 @@
 // Mapping derived from majd/ipatool (MIT), pinned in docs/IPATOOL_AUDIT.md.
 import Foundation
 public enum Storefront {
+ public static var catalogCountries: [String] { Array(Set(countries.values.map { $0.lowercased() })).sorted() }
  public static func country(_ storefront: String) throws -> String {
   guard let id = storefront.split(separator: "-").first, let country = countries[String(id)] else { throw StoreError.unsupportedStorefront }
   return country.lowercased()

@@ -3,6 +3,7 @@ import PartyUI
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
+    var embedded = false
     @EnvironmentObject var appData: AppData
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
@@ -144,13 +145,13 @@ struct SettingsView: View {
             }
             .navigationTitle("Settings".localized)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                if !embedded { ToolbarItem(placement: .topBarTrailing) {
                     Button(action: {
                         dismiss()
                     }) {
                         Image(systemName: "xmark")
                     }
-                }
+                } }
             }
         }
     }
