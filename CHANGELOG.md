@@ -1,5 +1,16 @@
 # Development changelog
 
+## 2.3.0-dev.5
+
+- Corrige serialNumber ent: prefijo de cinco bytes + GUID[2:] de cuatro bytes.
+- Igual a ipatool: UA Configurator 2.18 sólo en ent; 2.17 para los demás requests.
+- Aplica explícitamente cookies restauradas según dominio/path/Secure del destino.
+- Conserva cookies del dominio padre apple.com; rechaza dominios ajenos.
+- Probe v5 incluye cantidades de cookies aplicables y presencia de Location, sin valores.
+- 2042 se describe como sign-in requerido, sin afirmar que el token expiró.
+- Tests del serial binario, cookies enviadas y cookies restauradas por destino.
+- Login irregular y versions 401/2042 reportados en 23004; dev.5 pendiente en iOS.
+
 ## 2.3.0-dev.4
 
 - Corrige rechazo de ent/download: regenera caché rechazada y prueba pod validado.

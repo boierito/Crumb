@@ -80,6 +80,7 @@ public struct AppleAuthentication {
             try Task.checkCancellation()
             let (data, response) = try await send(body: body, endpoint: endpoint, progress: progress, secrets: [password, code, email])
             if (300..<400).contains(response.statusCode) {
+                await diagnostic("authentication-redirect=received; HTTP=\(response.statusCode); location-present=\(response.value(forHTTPHeaderField: "Location") != nil)")
                 guard [301, 302, 307, 308].contains(response.statusCode),
                       let location = response.value(forHTTPHeaderField: "Location") else {
                     throw AuthenticationError.invalidRedirect
@@ -153,6 +154,7 @@ public struct AppleAuthentication {
             request.setValue(signature, forHTTPHeaderField: "X-Apple-ActionSignature")
             await progress(.authenticating)
             do {
+                await diagnostic(await transport.cookieDiagnostic(for: endpoint))
                 let (data, response) = try await transport.send(request)
                 await diagnostic(ResponseDiagnostic.response(data, status: response.statusCode, scope: "authentication", attempt: attempt, secrets: secrets))
                 guard data.count <= SAPProtocol.maximumBodySize else { throw SAPError.oversizedResponse }

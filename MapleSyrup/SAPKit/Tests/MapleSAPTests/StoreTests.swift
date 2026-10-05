@@ -87,6 +87,9 @@ extension StoreTests {
         let body = try PropertyListSerialization.propertyList(from: request.httpBody!, format: nil) as! [String: Any]
         XCTAssertEqual(body["externalVersionId"] as? String, "999")
         XCTAssertEqual(body["guid"] as? String, "020102030405")
+        // Independent fixture from ipatool hardwareID[2:], four GUID bytes.
+        XCTAssertEqual(Data(base64Encoded: body["serialNumber"] as! String), Data([0x54, 0xc8, 0xb0, 0xa9, 0x88, 2, 3, 4, 5]))
+        XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), "Configurator/2.18 (Macintosh; OS X 15.3.2; 24D81) AppleWebKit/0620.2.4.11.6")
         XCTAssertEqual(body["kbsync"] as? String, Data("fresh-fixture-blob".utf8).base64EncodedString())
         XCTAssertEqual(cache.saves, 1); XCTAssertEqual(generator.calls, 1)
     }
@@ -197,6 +200,6 @@ extension StoreTests {
         XCTAssertTrue(diagnostic.contains("apple-failure=2034"))
         XCTAssertFalse(diagnostic.contains("fixture-token")); XCTAssertFalse(diagnostic.contains("https://"))
         XCTAssertFalse(diagnostic.contains("private"))
-        XCTAssertEqual(ResponseDiagnostic.category(StoreError.sessionExpired), "session-expired-confirmed-by-Apple-response")
+        XCTAssertEqual(ResponseDiagnostic.category(StoreError.sessionExpired), "Apple-sign-in-required")
     }
 }

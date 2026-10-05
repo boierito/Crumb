@@ -24,7 +24,7 @@ public enum ResponseDiagnostic {
     public static func category(_ error: Error) -> String {
         if let error = error as? StoreError {
             switch error {
-            case .sessionExpired: return "session-expired-confirmed-by-Apple-response"
+            case .sessionExpired: return "Apple-sign-in-required"
             case .http(let status): return "HTTP-\(status)"
             case .native(let stage): return "native-stage-\(stage)"
             case .licenseRequired: return "license-required"

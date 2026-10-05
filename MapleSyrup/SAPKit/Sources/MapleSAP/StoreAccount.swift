@@ -50,7 +50,7 @@ public struct StoreCookie: Codable, Equatable {
 
     public func cookie(now: Date = Date()) -> HTTPCookie? {
         let host = domain.trimmingCharacters(in: CharacterSet(charactersIn: ".")).lowercased()
-        guard (host == "itunes.apple.com" || host.hasSuffix(".itunes.apple.com")),
+        guard (host == "apple.com" || host == "itunes.apple.com" || host.hasSuffix(".itunes.apple.com")),
               expires == nil || expires! > now else { return nil }
         var properties: [HTTPCookiePropertyKey: Any] = [.name: name, .value: value, .domain: domain, .path: path]
         if secure { properties[.secure] = "TRUE" }

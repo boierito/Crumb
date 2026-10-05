@@ -14,7 +14,7 @@ extension AppData {
         let challengeCookies = hasSent2FACode ? pendingAuthenticationCookies : []
         isAuthenticating = true
         authenticationError = ""
-        authenticationDiagnostic = ["WaffleStore authentication probe v4",
+        authenticationDiagnostic = ["WaffleStore authentication probe v5",
             "iOS=\(UIDevice.current.systemVersion)",
             "app-build=\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") ?? "unknown")",
             "password-persistence=false", "signer=tci-no-jit"].joined(separator: "\n")

@@ -1,4 +1,4 @@
-# WaffleStore 2.3.0-dev.4 — Store/download experimental
+# WaffleStore 2.3.0-dev.5 — Store/download experimental
 
 El proyecto original se conserva. El usuario confirmó login, 2FA,
 DSID/passwordToken/storefront y restauración al reabrir en iPhone iOS 27.0.1,
@@ -371,3 +371,39 @@ es válido sin nuevo 2FA; sólo se guarda con DSID/token/storefront válidos.
 Actualizar con la misma identidad de firma y bundle ID y probar versiones
 primero sin logout. No se declara recuperada la consulta hasta la prueba real
 en iOS 27.0.1. Instalación/downgrade sigue separada de descargar/exportar.
+
+## Dev.5: identidad serial y transporte de cookies
+
+El usuario probó 23004: login terminó con HTTP 200, DSID/token/storefront y pod;
+no hubo nuevo challenge 2FA. ent/download devolvió 401 vacío, luego el pod devolvió
+2042 (SignInRequired). El fallback de dev.4 sí se ejecutó, pero no recuperó
+versiones. Hubo además 204/403/404/503 HTML o vacíos y un 301 rechazado antes
+de que otro intento de login funcionara. No se interpreta HTML como fallo de
+password ni se envían credenciales a redirects sin validar.
+
+La comparación exacta con ipatool 3411d57 reveló un bug del port: serialNumber
+se componía del prefijo 54 c8 b0 a9 88 + los últimos tres bytes del hardwareID.
+La referencia usa hardwareID[2:], cuatro bytes de una identidad de seis. Dev.5
+corrige ese byte omitido, con fixture binario independiente de nueve bytes.
+Es una diferencia demostrada en código; no una prueba de que cause todo 401.
+
+También se alinea User-Agent: Configurator 2.18 para ent, 2.17 por defecto,
+como ipatool. Las cookies del jar efímero se aplican explícitamente antes de
+crear/enviar la sesión, usando cookies(for: URL) y requestHeaderFields. La
+reconstrucción mantiene dominio/path/Secure/expiración. Se aceptan cookies
+itunes.apple.com y el dominio padre apple.com, nunca dominios arbitrarios.
+No se amplía el path o dominio de cookies de pod para forzarlas hacia dispatch.
+CDN sigue usando su transporte separado sin cookies ni headers de cuenta.
+
+Probe v5 registra únicamente el número total de cookies y el número aplicable
+a cada destino. El fixture URLProtocol verifica Cookie en la petición recibida,
+no sólo la presencia en el jar. Otros fixtures comprueban cookies restauradas
+del padre/pod, HTTPS y path. 2042 ahora se describe como Apple-sign-in-required:
+no prueba expiración de passwordToken. La cuenta sigue retenida y no se solicita
+logout repetitivo como única solución.
+
+El 301 registra presencia de Location sin su valor; no relajamos la allowlist
+por un redirect HTML desconocido. La inestabilidad HTTP del login aún debe
+medirse con el nuevo probe. Sólo una nueva prueba iOS puede confirmar aceptación
+de ent/kbsync y versiones. No se declara download, downgrade o instalación
+recuperados con estos cambios.

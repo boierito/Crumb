@@ -1,4 +1,4 @@
-# Testing — 2.3.0-dev.4 / build 23004
+# Testing — 2.3.0-dev.5 / build 23005
 
 Build/test success is not equivalent to Apple acceptance or installation.
 No physical device is connected to this environment. Device results below
@@ -46,9 +46,9 @@ missing sinfs and HTTP Range status/content-range/length enforcement.
 CI builds both unsigned Debug/Release arm64 IPAs with Xcode 26 on macOS.
 The complete app is not configured for Simulator. Build evidence is in GitHub Actions.
 
-## Install dev.4 and test downloads on iOS 27
+## Install dev.5 and test downloads on iOS 27
 
-1. Use **Release 23004 / v2.3.0-dev.4**. Sign using the same certificate and
+1. Use **Release 23005 / v2.3.0-dev.5**. Sign using the same certificate and
    bundle ID as 23002 to retain Keychain identity/session where the signing
    method supports it. Install with ksign, SideStore, AltStore, Sideloadly or a
    developer certificate, without JIT/debugger/TrollStore. Record device model,
@@ -133,3 +133,20 @@ error → pod success, pod expiry preservation, bare pod 401 classification,
 diagnostic redaction, ephemeral cookies across isolated URLSessions, and bare
 Document login requiring a complete session. These are protocol regressions,
 not tests against Apple's servers.
+
+## Dev.5 device validation (pending)
+
+Build 23004 was tested by the user: login succeeds after transient HTML/empty
+HTTP failures, without another 2FA challenge; ent returns empty HTTP 401, pod
+returns plist failureType 2042. Versions still does not work. Dev.5 corrects
+the serial bytes and makes restored cookie application explicit; no Apple
+acceptance is claimed from fixtures.
+
+Upgrade to Release 23005 with the same certificate/bundle ID and retained account.
+Request versions first. Copy Store probe v5 if it fails: request-cookie-count
+shows whether each destination actually has applicable cookies. A zero count
+can be legitimate for host/path-scoped cookies; do not broaden their domain.
+If a fresh login is necessary, copy authentication probe v5 as well, including
+cookie counts and redirect Location presence (values are withheld). Do not repeat
+logout automatically for 2042. Continue latest/old download and Share Sheet
+validation only if a valid descriptor is returned.

@@ -53,7 +53,7 @@ struct StoreVersionsView: View {
             .onDisappear { inspectionTask?.cancel() }
             .task {
                 guard let tool = appData.ipaTool else { loading = false; return }
-                appData.storeDiagnostic = "WaffleStore Store probe v4\napp-build=23004\nkbsync-runtime=tci-no-jit\nsecret-values=withheld"
+                appData.storeDiagnostic = "WaffleStore Store probe v5\napp-build=23005\nkbsync-runtime=tci-no-jit\nsecret-values=withheld"
                 do {
                     let resolved = try await tool.lookup(appData.appLink)
                     app = resolved

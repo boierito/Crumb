@@ -1,6 +1,6 @@
 # WaffleStore
 
-## Experimental revival — 2.3.0-dev.4
+## Experimental revival — 2.3.0-dev.5
 
 The user confirmed signed SAP login, 2FA and session restoration on iPhone
 running iOS 27.0.1, signed with ksign/certificate without JIT (build 23002).
@@ -12,6 +12,12 @@ validated pod fallback, and reports sanitized HTTP/Apple failure diagnostics.
 Authentication retries use separate URLSessions with the same ephemeral cookie
 jar. Apple may sign in without requesting 2FA again; no code is fabricated.
 Device confirmation of the versions recovery is pending.
+
+Dev.5 (23005) corrects the ent serial identity bytes, aligns endpoint User-Agents
+with ipatool, and explicitly applies restored cookies to their matching URLs.
+Probe v5 reports cookie counts and redirect Location presence without values.
+Versions in 23004 still failed with ent HTTP 401 and pod sign-in-required 2042.
+These changes require another physical-device check.
 
 Choose an app link/ID/bundle ID → Choose version / download IPA → selected
 externalVersionId → verified IPA version → Export IPA. Installing or downgrading

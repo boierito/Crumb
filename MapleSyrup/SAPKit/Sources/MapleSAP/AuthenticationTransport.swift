@@ -6,6 +6,10 @@ import FoundationNetworking
 public protocol AuthenticationTransport {
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse)
     func cookies() async -> [StoreCookie]
+    func cookieDiagnostic(for url: URL) async -> String
+}
+public extension AuthenticationTransport {
+    func cookieDiagnostic(for url: URL) async -> String { "cookie-transport=fixture-or-unspecified" }
 }
 
 // Each login owns an ephemeral cookie jar and connections. Never allow URLSession
@@ -40,6 +44,16 @@ public final class AppleAuthenticationTransport: NSObject, AuthenticationTranspo
     }
 
     public func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        var request = request
+        // Match the ephemeral jar to the destination, including domain/path/
+        // Secure rules, before session creation. Do not rely on a copied
+        // URLSessionConfiguration to carry restored authentication cookies.
+        if let url = request.url {
+            let cookies = configuration.httpCookieStorage?.cookies(for: url) ?? []
+            if let header = HTTPCookie.requestHeaderFields(with: cookies)["Cookie"], !header.isEmpty {
+                request.setValue(header, forHTTPHeaderField: "Cookie")
+            }
+        }
         // ipatool disables authentication connection pooling. HTTP/2 may ignore
         // Connection: close, so login retries own distinct sessions while sharing
         // the same ephemeral cookie jar. Store transport can still reuse sessions.
@@ -74,6 +88,11 @@ public final class AppleAuthenticationTransport: NSObject, AuthenticationTranspo
     }
     public func cookies() async -> [StoreCookie] {
         (configuration.httpCookieStorage?.cookies ?? []).map(StoreCookie.init).filter { $0.cookie() != nil }
+    }
+    public func cookieDiagnostic(for url: URL) async -> String {
+        let all = configuration.httpCookieStorage?.cookies ?? []
+        let matched = configuration.httpCookieStorage?.cookies(for: url) ?? []
+        return "cookie-jar-count=\(all.count); request-cookie-count=\(matched.count)"
     }
     public func urlSession(_ session: URLSession, task: URLSessionTask,
                            willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,

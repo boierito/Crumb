@@ -134,7 +134,7 @@ public actor StoreSession {
         var body = payload(app, version: version, key: "externalVersionId")
         body["salableAdamId"] = app.id
         body["kbsync"] = blob.base64EncodedString()
-        body["serialNumber"] = (Data([0x54, 0xc8, 0xb0, 0xa9, 0x88]) + identity.hardwareID.suffix(3)).base64EncodedString()
+        body["serialNumber"] = (Data([0x54, 0xc8, 0xb0, 0xa9, 0x88]) + identity.hardwareID.dropFirst(2)).base64EncodedString()
         await progress(.ent)
         let root = try await post(url, body: body, token: true, ent: true)
         return try StoreParsing.download(root, app: app, version: version, email: account.email)
@@ -199,10 +199,12 @@ public actor StoreSession {
     }
     private func send(_ request: URLRequest, retry: Bool = true, secrets: [String] = []) async throws -> Data {
         var request = request
-        request.setValue("Configurator/2.18 (Macintosh; OS X 15.3.2; 24D81) AppleWebKit/0620.2.4.11.6", forHTTPHeaderField: "User-Agent")
+        let ent = request.url?.path == "/WebObjects/DownloadDispatch.woa/wa/ent/download"
+        request.setValue(ent ? "Configurator/2.18 (Macintosh; OS X 15.3.2; 24D81) AppleWebKit/0620.2.4.11.6" : SAPProtocol.userAgent, forHTTPHeaderField: "User-Agent")
         for attempt in 0..<(retry ? 3 : 1) {
             try Task.checkCancellation()
             do {
+                if let url = request.url { await diagnostic(await transport.cookieDiagnostic(for: url)) }
                 let (data, response) = try await transport.send(request)
                 let scope: String
                 switch request.url?.path {
