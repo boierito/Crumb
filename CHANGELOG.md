@@ -1,5 +1,14 @@
 # Development changelog
 
+## 2.3.0-dev.2
+
+- Registra prueba SAP en iPhone iOS 27.0.1, ksign/certificado sin JIT.
+- Conecta login firmado y 2FA a la UI existente, con estados async/cancelación.
+- Adapta redirects/retries/Retry-After del ipatool moderno y errores Apple.
+- Sesión/cookies en Keychain; no persiste password ni código; descarta legacy.
+- Logout sin regenerar identidad ni terminar la app; diagnóstico sanitizado.
+- Login real todavía pendiente de validación. Store/download sigue pendiente.
+
 ## 2.3.0-dev.1
 
 - Conserva el upstream original y genera IPAs de referencia en macOS CI.

@@ -61,7 +61,7 @@ extension AppData {
                 else { authenticationError = "Sign-in failed (code \((error as NSError).code))." }
                 code = ""
                 applicationStatus = "Sign-in failed."
-                print("Apple authentication: \(authenticationError)")
+                print("Apple authentication failed: \(diagnosticCategory(error))")
                 // Customer messages belong in the UI; exported logs contain fixed
                 // stage/category information, not arbitrary Apple response text.
                 authenticationDiagnostic += "\noutcome=failed; error-category=\(diagnosticCategory(error))"
