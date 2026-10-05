@@ -60,6 +60,16 @@ public final class AppleAuthenticationTransport: NSObject, AuthenticationTranspo
         }
         #endif
         guard let response = response as? HTTPURLResponse else { throw AuthenticationError.invalidResponse(0) }
+        // Retain response cookies before retiring an isolated connection. Some
+        // URLSession response paths do not update the shared jar automatically.
+        if let url = response.url {
+            let headers = response.allHeaderFields.reduce(into: [String: String]()) { result, entry in
+                if let name = entry.key as? String, let value = entry.value as? String { result[name] = value }
+            }
+            let cookies = HTTPCookie.cookies(withResponseHeaderFields: headers, for: url)
+                .filter { StoreCookie($0).cookie() != nil }
+            configuration.httpCookieStorage?.setCookies(cookies, for: url, mainDocumentURL: nil)
+        }
         return (data, response)
     }
     public func cookies() async -> [StoreCookie] {

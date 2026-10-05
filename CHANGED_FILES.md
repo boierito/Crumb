@@ -23,6 +23,7 @@ Relative to original d508e53 / upstream-wafflestore-2.2.2.
 - `MapleSyrup/SAPKit/Sources/MapleSAP/KeychainIdentity.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/KeychainKBSync.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/MemoryCapability.swift`
+- `MapleSyrup/SAPKit/Sources/MapleSAP/ResponseDiagnostic.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/SAPSession.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/StoreAccount.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/StoreBag.swift`
@@ -33,6 +34,7 @@ Relative to original d508e53 / upstream-wafflestore-2.2.2.
 - `MapleSyrup/SAPKit/Sources/MemoryProbe/MemoryProbe.c`
 - `MapleSyrup/SAPKit/Sources/MemoryProbe/include/MemoryProbe.h`
 - `MapleSyrup/SAPKit/Tests/MapleSAPTests/AuthenticationTests.swift`
+- `MapleSyrup/SAPKit/Tests/MapleSAPTests/AuthenticationTransportTests.swift`
 - `MapleSyrup/SAPKit/Tests/MapleSAPTests/SAPTests.swift`
 - `MapleSyrup/SAPKit/Tests/MapleSAPTests/StoreTests.swift`
 - `README.md`
@@ -63,6 +65,7 @@ Relative to original d508e53 / upstream-wafflestore-2.2.2.
 - `docs/IPATOOL_AUDIT.md`
 - `docs/evidence/ios27-authentication-user-report.md`
 - `docs/evidence/ios27-ksign-user-report.md`
+- `docs/evidence/ios27-store-dev3-user-report.md`
 - `docs/evidence/original-build-linux.log`
 - `docs/evidence/original-ci-xcode16.log`
 - `docs/evidence/original-ci-xcode26.log`
@@ -83,5 +86,5 @@ Relative to original d508e53 / upstream-wafflestore-2.2.2.
 - `scripts/test-no-exec.sh`
 - `scripts/test-sap-host.sh`
 - `scripts/test-tci-host.sh`
-- `scripts/verify-ipa.py`
 - `scripts/unicorn-no-exec.c`
+- `scripts/verify-ipa.py`
