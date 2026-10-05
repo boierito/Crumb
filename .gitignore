@@ -1,0 +1,6 @@
+build/
+artifacts/
+*.ipa
+.build/
+.swiftpm/
+.DS_Store

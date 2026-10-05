@@ -1,0 +1,70 @@
+name: Build IPA
+on:
+  push:
+    branches: [main, 'feature/**', 'release/**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: 'Source revision (original: upstream-wafflestore-2.2.2)'
+        required: false
+        default: ''
+permissions:
+  contents: read
+jobs:
+  ipa:
+    name: Build ${{ matrix.configuration }} IPA
+    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
+      - name: Build and package unsigned IPA
+        env:
+          CONFIGURATION: ${{ matrix.configuration }}
+        run: |
+          set -o pipefail
+          mkdir -p artifacts
+          xcodebuild -version | tee artifacts/toolchain.txt
+          xcodebuild -project WaffleStore.xcodeproj -scheme WaffleStore \
+            -configuration "$CONFIGURATION" -sdk iphoneos \
+            -destination 'generic/platform=iOS' -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
+            build 2>&1 | tee artifacts/build.log
+          mkdir -p build/package/Payload
+          ditto "build/DerivedData/Build/Products/$CONFIGURATION-iphoneos/WaffleStore.app" \
+            build/package/Payload/WaffleStore.app
+          cd build/package
+          zip -qry "../../artifacts/WaffleStore-$CONFIGURATION.ipa" Payload
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: WaffleStore-${{ matrix.configuration }}-${{ github.run_id }}
+          path: artifacts/
+          if-no-files-found: error
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: ipa
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: WaffleStore-*
+          path: artifacts
+          merge-multiple: true
+      - name: Create draft prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          gh release create "$RELEASE_TAG" artifacts/*.ipa --repo "$REPOSITORY" \
+            --draft --prerelease --title "$RELEASE_TAG" \
+            --notes 'Unsigned development IPA; resign with a conventional sideloader. See IMPLEMENTATION.md and TESTING.md for verified milestones and limitations. Redistribution rights for the upstream project must be resolved before publication.'
