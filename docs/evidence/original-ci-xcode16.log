@@ -1,0 +1,134 @@
+Build Release IPA	Build and package unsigned IPA	﻿2026-10-05T10:57:34.5814760Z ##[group]Run set -o pipefail
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:34.5815130Z [36;1mset -o pipefail[0m
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:34.5815350Z [36;1mmkdir -p artifacts[0m
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:34.5815770Z [36;1mxcodebuild -version | tee artifacts/toolchain.txt[0m
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:34.5816190Z [36;1mxcodebuild -project WaffleStore.xcodeproj -scheme WaffleStore \[0m
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:34.5816640Z [36;1m  -configuration "$CONFIGURATION" -sdk iphoneos \[0m
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:34.5817080Z [36;1m  -destination 'generic/platform=iOS' -derivedDataPath build/DerivedData \[0m
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:34.5817570Z [36;1m  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \[0m
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:34.5817960Z [36;1m  build 2>&1 | tee artifacts/build.log[0m
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:34.5818250Z [36;1mmkdir -p build/package/Payload[0m
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:34.5818650Z [36;1mditto "build/DerivedData/Build/Products/$CONFIGURATION-iphoneos/WaffleStore.app" \[0m
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:34.5819090Z [36;1m  build/package/Payload/WaffleStore.app[0m
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:34.5819380Z [36;1mcd build/package[0m
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:34.5819690Z [36;1mzip -qry "../../artifacts/WaffleStore-$CONFIGURATION.ipa" Payload[0m
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:34.5857500Z shell: /bin/bash -e {0}
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:34.5857740Z env:
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:34.5857910Z   CONFIGURATION: Release
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:34.5858170Z ##[endgroup]
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:34.7002570Z Xcode 16.4
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:34.7003200Z Build version 16F6
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:35.8018870Z Command line invocation:
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:35.8020110Z     /Applications/Xcode_16.4.app/Contents/Developer/usr/bin/xcodebuild -project WaffleStore.xcodeproj -scheme WaffleStore -configuration Release -sdk iphoneos -destination generic/platform=iOS -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= build
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:35.8021370Z 
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:35.8021480Z Build settings from command line:
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:35.8021810Z     CODE_SIGN_IDENTITY = 
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:35.8023650Z     CODE_SIGNING_ALLOWED = NO
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:35.8024020Z     CODE_SIGNING_REQUIRED = NO
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:35.8024340Z     SDKROOT = iphoneos18.5
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:35.8024480Z 
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:37.2689280Z Resolve Package Graph
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:37.3181860Z 
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:37.3252510Z Fetching from https://github.com/Building42/HTTPParserC.git
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:38.2076420Z 
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:38.2130110Z Fetching from https://github.com/Building42/Telegraph
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:38.2141410Z 
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:38.2207650Z Fetching from https://github.com/marmelroy/Zip.git
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:39.2630080Z 
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:39.2631890Z Fetching from https://github.com/jailbreakdotparty/PartyUI.git
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:39.2633290Z 
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:39.2689890Z Fetching from https://github.com/robbiehanson/CocoaAsyncSocket.git
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:40.3347930Z 
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:40.3534580Z Creating working copy of package ‘PartyUI’
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:40.4287310Z 
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:40.4322090Z Checking out 1.1.3 of package ‘PartyUI’
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:40.4725650Z 
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:40.4916140Z Creating working copy of package ‘CocoaAsyncSocket’
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:40.5329170Z 
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:40.5359530Z Checking out 7.6.5 of package ‘CocoaAsyncSocket’
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:40.6345520Z 
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:40.6490150Z Creating working copy of package ‘HTTPParserC’
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:40.6828950Z 
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:40.6829840Z Checking out 9.2.0 of package ‘HTTPParserC’
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:40.7041520Z 
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:40.7183150Z Creating working copy of package ‘Telegraph’
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:40.7607580Z 
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:40.7608510Z Checking out 0.40.0 of package ‘Telegraph’
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:40.8135950Z 
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:40.8262520Z Creating working copy of package ‘Zip’
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:40.8730620Z 
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:40.8732190Z Checking out 2.1.2 of package ‘Zip’
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:40.9293010Z 
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:50.3583490Z package 'partyui' @ 1.1.3 is using Swift tools version 6.2.0 but the installed version is 6.1.0fatalError2026-10-05 10:57:50.355 xcodebuild[1160:6206] Writing error result bundle to /var/folders/nj/vtw8zd2j31d1gdrtntc5y4600000gn/T/ResultBundle_2026-05-10_10-57-0050.xcresult
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:50.4824070Z xcodebuild: error: Could not resolve package dependencies:
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:50.4929360Z   package 'partyui' @ 1.1.3 is using Swift tools version 6.2.0 but the installed version is 6.1.0
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:50.5047810Z   fatalError
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:50.5148990Z 
+Build Release IPA	Build and package unsigned IPA	2026-10-05T10:57:50.5204370Z ##[error]Process completed with exit code 74.
+Build Debug IPA	Build and package unsigned IPA	﻿2026-10-05T10:57:38.2255810Z ##[group]Run set -o pipefail
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:38.2256240Z [36;1mset -o pipefail[0m
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:38.2256580Z [36;1mmkdir -p artifacts[0m
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:38.2256980Z [36;1mxcodebuild -version | tee artifacts/toolchain.txt[0m
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:38.2257640Z [36;1mxcodebuild -project WaffleStore.xcodeproj -scheme WaffleStore \[0m
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:38.2258150Z [36;1m  -configuration "$CONFIGURATION" -sdk iphoneos \[0m
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:38.2258620Z [36;1m  -destination 'generic/platform=iOS' -derivedDataPath build/DerivedData \[0m
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:38.2259250Z [36;1m  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \[0m
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:38.2259670Z [36;1m  build 2>&1 | tee artifacts/build.log[0m
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:38.2260150Z [36;1mmkdir -p build/package/Payload[0m
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:38.2260710Z [36;1mditto "build/DerivedData/Build/Products/$CONFIGURATION-iphoneos/WaffleStore.app" \[0m
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:38.2261250Z [36;1m  build/package/Payload/WaffleStore.app[0m
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:38.2261520Z [36;1mcd build/package[0m
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:38.2261790Z [36;1mzip -qry "../../artifacts/WaffleStore-$CONFIGURATION.ipa" Payload[0m
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:38.2318050Z shell: /bin/bash -e {0}
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:38.2318310Z env:
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:38.2318470Z   CONFIGURATION: Debug
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:38.2318640Z ##[endgroup]
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:38.4184310Z Xcode 16.4
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:38.4185830Z Build version 16F6
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:39.7422490Z Command line invocation:
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:39.7443330Z     /Applications/Xcode_16.4.app/Contents/Developer/usr/bin/xcodebuild -project WaffleStore.xcodeproj -scheme WaffleStore -configuration Debug -sdk iphoneos -destination generic/platform=iOS -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= build
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:39.7447480Z 
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:39.7468580Z Build settings from command line:
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:39.7469290Z     CODE_SIGN_IDENTITY = 
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:39.7469620Z     CODE_SIGNING_ALLOWED = NO
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:39.7470090Z     CODE_SIGNING_REQUIRED = NO
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:39.7470430Z     SDKROOT = iphoneos18.5
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:39.7470680Z 
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:41.4126620Z Resolve Package Graph
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:41.4940900Z 
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:41.5045290Z Fetching from https://github.com/Building42/Telegraph
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:42.4640980Z 
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:42.4672920Z Fetching from https://github.com/Building42/HTTPParserC.git
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:42.4798830Z 
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:42.4903730Z Fetching from https://github.com/jailbreakdotparty/PartyUI.git
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:43.2154170Z 
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:43.2255930Z Fetching from https://github.com/marmelroy/Zip.git
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:43.6926620Z 
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:43.6928930Z Fetching from https://github.com/robbiehanson/CocoaAsyncSocket.git
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:44.3984650Z 
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:44.4177570Z Creating working copy of package ‘CocoaAsyncSocket’
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:44.5068810Z 
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:44.5075640Z Checking out 7.6.5 of package ‘CocoaAsyncSocket’
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:44.6860010Z 
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:44.7085570Z Creating working copy of package ‘HTTPParserC’
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:44.7628850Z 
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:44.7644060Z Checking out 9.2.0 of package ‘HTTPParserC’
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:44.7923560Z 
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:44.8160850Z Creating working copy of package ‘Telegraph’
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:45.0087940Z 
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:45.0089080Z Checking out 0.40.0 of package ‘Telegraph’
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:45.1022370Z 
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:45.1292150Z Creating working copy of package ‘PartyUI’
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:45.1961080Z 
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:45.1969300Z Checking out 1.1.3 of package ‘PartyUI’
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:45.2679000Z 
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:45.3050210Z Creating working copy of package ‘Zip’
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:45.3636260Z 
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:45.3652460Z Checking out 2.1.2 of package ‘Zip’
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:57:45.4758140Z 
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:58:00.5896800Z package 'partyui' @ 1.1.3 is using Swift tools version 6.2.0 but the installed version is 6.1.0fatalError2026-10-05 10:58:00.585 xcodebuild[1134:6172] Writing error result bundle to /var/folders/nj/vtw8zd2j31d1gdrtntc5y4600000gn/T/ResultBundle_2026-05-10_10-58-0000.xcresult
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:58:00.7342690Z xcodebuild: error: Could not resolve package dependencies:
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:58:00.7459590Z   package 'partyui' @ 1.1.3 is using Swift tools version 6.2.0 but the installed version is 6.1.0
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:58:00.7686220Z   fatalError
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:58:00.7849530Z 
+Build Debug IPA	Build and package unsigned IPA	2026-10-05T10:58:00.8007690Z ##[error]Process completed with exit code 74.
