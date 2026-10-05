@@ -103,7 +103,6 @@ final class AppData: ObservableObject {
     
     @Published var showFavouritesView: Bool = false
     
-    @Published var downgradeHistory: [DowngradeHistoryEntry] = DowngradeHistoryStore.load()
     
     @Published var favourites: [FavouriteApp] = FavouritesStore.load()
 }

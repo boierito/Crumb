@@ -207,3 +207,7 @@ and existing non-2059/session/ambiguous failure/no-paid acquisition paths.
   full actual install and inspect its version. Safari controls remain native.
 - iOS 27 physical iPhone screenshots/tap targets and iOS 26/iPad remain pending.
   Protocol/template tests do not prove live Apple eligibility or visual fidelity.
+
+## Build 23016 manual UI validation
+
+23015 user report: all tested features work except regional acquisition (still 2059). For 23016 verify History is absent from Downloads and Settings import/export, while downloads/favourites remain. Swipe a middle/last IPA row and tap red trash: it must remain present behind the centered confirmation. Cancel must preserve IPA/sidecar and list position. Confirm must remove only that row and its files with a short smooth collapse; repeat via ellipsis menu and with Reduce Motion enabled. Test deletion failure retains recoverable records and shows an error. Device animation checks remain pending; earlier safe file-deletion tests still apply.

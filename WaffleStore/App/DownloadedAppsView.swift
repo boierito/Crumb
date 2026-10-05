@@ -5,7 +5,7 @@ struct DownloadedAppsView: View {
     var embedded = false
     @EnvironmentObject var appData: AppData
     @Environment(\.dismiss) private var dismiss
-    @State private var showHistory = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showLogs = false
     @State private var installation: DownloadRecord?
     @State private var deletion: DownloadRecord?
@@ -94,7 +94,9 @@ struct DownloadedAppsView: View {
                     }
                     .padding(.vertical, 4)
                     .swipeActions(allowsFullSwipe: false) {
-                        Button(role: .destructive) { requestDeletion(record) } label: { Label("Delete", systemImage: "trash") }
+                        // A destructive swipe optimistically removes the row before confirmation.
+                        Button { requestDeletion(record) } label: { Label("Delete", systemImage: "trash") }
+                            .tint(.red)
                     }
                     }
                 }
@@ -107,17 +109,16 @@ struct DownloadedAppsView: View {
             .listStyle(.insetGrouped)
              .toolbar {
                 if !embedded { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showHistory = true } label: { Image(systemName: "clock.arrow.circlepath") }
-                        .accessibilityLabel("Downgrade history")
-                }
             }
-            .sheet(isPresented: $showHistory) { DowngradeHistoryView() }
             .sheet(item: $installation) { OTAInstallationView(record: $0, startImmediately: true) }
             .alert("Delete downloaded IPA?", isPresented: $confirmDeletion) {
                 if let record = deletion {
                     Button("Delete IPA", role: .destructive) {
-                        do { try appData.deleteDownload(record) }
+                        do {
+                            try withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) {
+                                try appData.deleteDownload(record)
+                            }
+                        }
                         catch {
                             appData.restoreDownloadedIPA()
                             deletionError = "Could not delete the download (code \((error as NSError).code))."

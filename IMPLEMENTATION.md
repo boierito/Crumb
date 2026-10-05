@@ -323,3 +323,7 @@ serving remain intact. Safari retains its native controls with adaptive tint; th
 outer title is inline to avoid double large headers. Displaying the page still
 never claims installation success. New template tests cover metadata injection
 and target preservation. Visual/tap/real transfer checks require device validation.
+
+## Build 23016 — remove unused history and confirm before deleting
+
+The user verified 23015 search/download/export/install/UI on device, but regional acquisition still returns Apple 2059 (the reported number varies in subsequent messages). No further auth or purchase changes are made. Remove the unpopulated Downgrade History screen, state/model and JSON import/export controls; existing downloaded IPA records remain the download list. Historical UserDefaults bytes are left untouched. A destructive-role swipe button caused SwiftUI to optimistically remove a row before the alert, then restore it. Use a red-tinted ordinary swipe action to request confirmation; only a successful confirmed file deletion changes the list inside a short animation, respecting Reduce Motion. Native animation still needs physical-device validation.

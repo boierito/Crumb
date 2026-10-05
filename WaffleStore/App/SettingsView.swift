@@ -1,6 +1,5 @@
 import SwiftUI
 import PartyUI
-import UniformTypeIdentifiers
 
 struct SettingsView: View {
     var embedded = false
@@ -10,7 +9,6 @@ struct SettingsView: View {
     
     @AppStorage("autoCleanApp") var autoCleanApp: Bool = true
     @StateObject private var localizationManager = LocalizationManager.shared
-    @State private var showFileImporter = false
     
     private var appVersionString: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
@@ -102,36 +100,6 @@ struct SettingsView: View {
                         }
                         .buttonStyle(TranslucentButtonStyle())
                         
-                        HStack {
-                            Button(action: {
-                                if let url = DowngradeHistoryStore.exportToJSON() {
-                                    presentShareSheet(with: url)
-                                }
-                            }) {
-                                ButtonLabel(text: "Export History".localized, icon: "square.and.arrow.up")
-                            }
-                            .buttonStyle(TranslucentButtonStyle())
-                            
-                            Button(action: {
-                                showFileImporter = true
-                            }) {
-                                ButtonLabel(text: "Import History".localized, icon: "square.and.arrow.down")
-                            }
-                            .buttonStyle(TranslucentButtonStyle())
-                        }
-                    }
-                }
-                .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [.json]) { result in
-                    switch result {
-                    case .success(let url):
-                        if url.startAccessingSecurityScopedResource() {
-                            defer { url.stopAccessingSecurityScopedResource() }
-                            if let importedHistory = DowngradeHistoryStore.importFromJSON(at: url) {
-                                appData.downgradeHistory = importedHistory
-                            }
-                        }
-                    case .failure(let error):
-                        print("Failed to import history: \(error)")
                     }
                 }
                 Section(header: HeaderLabel(text: "Credits".localized, icon: "star")) {
