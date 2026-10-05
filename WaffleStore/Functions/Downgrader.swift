@@ -18,11 +18,11 @@ func resetDowngradeProgress() {
     appData.isDowngrading = false; appData.showsDowngradeProgress = false
 }
 extension AppData {
-    func download(app: StoreApp, version: String, tool: IPATool) {
+    func download(app: StoreApp, version: String, tool: IPATool, expectedVersion: String? = nil) {
         guard storeTask == nil else { return }
         isDowngrading = true; showsDowngradeProgress = true; downgradeProgress = 0
         storeError = ""
-        storeDiagnostic = "WaffleStore Store probe v5\nkbsync-runtime=tci-no-jit\ninstallation=not-attempted\nsecret-values=withheld"
+        storeDiagnostic = "WaffleStore Store probe v6\nkbsync-runtime=tci-no-jit\ninstallation=not-attempted\nsecret-values=withheld"
         storeTask = Task {
             defer { storeTask = nil; isDowngrading = false; showsDowngradeProgress = false }
             let fm = FileManager.default
@@ -70,13 +70,14 @@ extension AppData {
                     try NativePackage.prepare(source: source, destination: staged, app: app, descriptor: descriptor)
                 }.value
                 try Task.checkCancellation()
+                if let expectedVersion, info.version != expectedVersion { throw StoreError.versionMismatch }
                 let downloads = try fm.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
                     .appendingPathComponent("Downloads", isDirectory: true)
                 try fm.createDirectory(at: downloads, withIntermediateDirectories: true)
                 let filename = "\(app.id)-\(descriptor.externalVersionID)-\(UUID().uuidString).ipa"
                 let destination = downloads.appendingPathComponent(filename)
                 let record = DownloadRecord(filename: filename, appID: app.id, appName: app.name, bundleID: info.bundleID,
-                    version: info.version, externalVersionID: descriptor.externalVersionID, date: Date())
+                    version: info.version, build: info.build, externalVersionID: descriptor.externalVersionID, date: Date())
                 let sidecar = destination.deletingPathExtension().appendingPathExtension("json")
                 try JSONEncoder().encode(record).write(to: sidecar, options: .atomic)
                 do { try fm.moveItem(at: staged, to: destination) }

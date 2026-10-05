@@ -14,7 +14,7 @@ extension AppData {
         let challengeCookies = hasSent2FACode ? pendingAuthenticationCookies : []
         isAuthenticating = true
         authenticationError = ""
-        authenticationDiagnostic = ["WaffleStore authentication probe v5",
+        authenticationDiagnostic = ["WaffleStore authentication probe v6",
             "iOS=\(UIDevice.current.systemVersion)",
             "app-build=\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") ?? "unknown")",
             "password-persistence=false", "signer=tci-no-jit"].joined(separator: "\n")
@@ -42,7 +42,7 @@ extension AppData {
                             self.authenticationDiagnostic += "\n\(event)"
                             print("Apple authentication diagnostic: \(event)")
                         }
-                    })
+                    }, automaticRecovery: true)
                 let outcome = try await authentication.login(email: email, password: secret, code: verification,
                     identity: identity, endpoint: configuration.authenticationURL) { stage in
                         await MainActor.run { self.setAuthenticationStage(stage) }

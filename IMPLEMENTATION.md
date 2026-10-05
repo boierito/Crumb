@@ -1,4 +1,4 @@
-# WaffleStore 2.3.0-dev.5 — Store/download experimental
+# WaffleStore 2.3.0-dev.6 — Store/download experimental
 
 El proyecto original se conserva. El usuario confirmó login, 2FA,
 DSID/passwordToken/storefront y restauración al reabrir en iPhone iOS 27.0.1,
@@ -407,3 +407,44 @@ por un redirect HTML desconocido. La inestabilidad HTTP del login aún debe
 medirse con el nuevo probe. Sólo una nueva prueba iOS puede confirmar aceptación
 de ent/kbsync y versiones. No se declara download, downgrade o instalación
 recuperados con estos cambios.
+
+## Dev.6: login, versiones e instalación experimental
+
+El usuario confirmó en 23005 versiones disponibles y exportación tras logout/login,
+pero requiere 20–30 intentos manuales para autenticar, no ve fácilmente números
+visibles y el popup de descarga falla con scroll. Instalación no se ha probado;
+no se afirma que el export de una app concreta corresponda a un ID sin revisar
+su registro/IPA. La ruta ya valida metadata/ID/bundle, ZIP/CRC/MD5 disponible y
+lee la versión de Info.plist. Dev.6 muestra esa evidencia en Downloaded apps y
+compara la versión final con la inspección previa si existía.
+
+La UI activa una recuperación automática finita: hasta 12 intentos/120 segundos
+por envío autenticado, espera 2/4/8/15 segundos, cookies conservadas y transportes
+separados. Default de la librería sigue 3 intentos como ipatool. No arregla por
+sí sola las respuestas HTML del backend: reduce acciones manuales y reutiliza
+SAP ya inicializado. No se reintentan fallos lógicos de password/2FA/cuenta; se
+respeta Retry-After y hay Cancel. Un redirect/paso lógico nuevo tiene otro envío
+acotado; no hay bucle de re-login indefinido.
+
+Las filas visibles encolan inspección serial del descriptor/rangos de IPA; no
+se consulta toda la lista de golpe. Selección tiene prioridad y usa sheet propia
+sin ancla de la fila. Etiquetas no disponibles se indican como tales. Rangos
+tienen presupuesto 8 MiB y 20 segundos; no descargan la IPA completa. Cancelar
+no puede interrumpir el C ABI ya en curso, pero el timeout limita esa demora.
+No hay server externo de numeración ni números inventados.
+
+OTA recupera el mecanismo upstream: Telegraph sirve exclusivamente una IPA
+verificada desde un directorio temporal, en 127.0.0.1:9090 y ruta aleatoria;
+Safari embebido abre itms-services con manifest HTTPS generado por api.palera.in.
+Se envía sólo nombre/bundle/build y URL loopback. No se sube la IPA ni la sesión
+Apple. El generador devolvió HTTP 200 y plist válido con metadata y software-package
+para un fixture sin credenciales. Esto no prueba instalación en iOS 27.
+
+El usuario confirma el request de instalación en una pantalla explícita. El
+servidor soporta rangos mediante HTTPFileHandler, evita cargar toda la IPA en RAM,
+se cierra al salir o tras 10 minutos, y usa un tiempo de background permitido por
+iOS que puede expirar antes. La descarga original permanece en Documents.
+No se declara instalada ni se agrega historial de instalación al abrir Safari o
+servir bytes. No se re-firma/decripta ni se agregan entitlements privados. iOS
+puede rechazar FairPlay, la versión antigua o el transporte loopback; exportar
+sigue disponible. Evaluar el error real de iOS antes de proponer otro mecanismo.

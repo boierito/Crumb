@@ -43,6 +43,7 @@ Relative to original d508e53 / upstream-wafflestore-2.2.2.
 - `WaffleStore-Info.plist`
 - `WaffleStore.xcodeproj/project.pbxproj`
 - `WaffleStore/App/AppSearchView.swift`
+- `WaffleStore/App/DownloadedAppsView.swift`
 - `WaffleStore/App/NavigationButtons.swift`
 - `WaffleStore/App/SettingsView.swift`
 - `WaffleStore/App/StoreVersionsView.swift`
@@ -52,6 +53,7 @@ Relative to original d508e53 / upstream-wafflestore-2.2.2.
 - `WaffleStore/Functions/CDNDownload.swift`
 - `WaffleStore/Functions/Downgrader.swift`
 - `WaffleStore/Functions/IPATool.swift`
+- `WaffleStore/Functions/OTAInstaller.swift`
 - `WaffleStore/MapleSyrup/AppleLoginController.swift`
 - `WaffleStore/MapleSyrup/Native/SAPGuestBridge.h`
 - `WaffleStore/MapleSyrup/Native/SAPProbe-Bridging-Header.h`
@@ -67,6 +69,7 @@ Relative to original d508e53 / upstream-wafflestore-2.2.2.
 - `docs/evidence/ios27-ksign-user-report.md`
 - `docs/evidence/ios27-store-dev3-user-report.md`
 - `docs/evidence/ios27-store-dev4-user-report.md`
+- `docs/evidence/ios27-store-dev5-user-report.md`
 - `docs/evidence/original-build-linux.log`
 - `docs/evidence/original-ci-xcode16.log`
 - `docs/evidence/original-ci-xcode26.log`

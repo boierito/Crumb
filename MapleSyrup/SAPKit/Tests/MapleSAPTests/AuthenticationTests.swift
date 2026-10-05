@@ -161,6 +161,37 @@ final class AuthenticationTests: XCTestCase {
         }
     }
 
+    func testAutomaticRecoverySurvivesMoreThanThreeTemporaryReplies() async throws {
+        let transport = FixtureAuthenticationTransport(Array(repeating: .http(404, Data("<html>temporary</html>".utf8), [:]), count: 5) + [.http(200, try success(), responseHeaders)])
+        let sleeps = FixtureSleeps()
+        let result = try await AppleAuthentication(transport: transport, signer: FixtureSigner(), persistence: FixtureAccountStore(), automaticRecovery: true,
+            sleep: { await sleeps.record($0) }).login(email: "fixture@example.test", password: "secret", identity: identity, endpoint: endpoint)
+        guard case .authenticated = result else { return XCTFail("Recovery failed") }
+        let requests = await transport.requests
+        XCTAssertEqual(requests.count, 6)
+        XCTAssertTrue(requests.allSatisfy { $0.httpBody == requests.first?.httpBody })
+        let delays = await sleeps.values
+        XCTAssertEqual(delays, [2, 4, 8, 15, 15])
+    }
+    func testAutomaticRecoveryStopsAfterTwelveAttemptsAndHonorsRateLimit() async throws {
+        let transport = FixtureAuthenticationTransport(Array(repeating: .http(503, Data(), [:]), count: 12))
+        do {
+            _ = try await AppleAuthentication(transport: transport, signer: FixtureSigner(), persistence: FixtureAccountStore(), automaticRecovery: true, sleep: { _ in })
+                .login(email: "fixture@example.test", password: "secret", identity: identity, endpoint: endpoint)
+            XCTFail("Unlimited recovery")
+        } catch { XCTAssertEqual(error as? AuthenticationError, .http(503)) }
+        let requests = await transport.requests
+        XCTAssertEqual(requests.count, 12)
+        let rate = FixtureAuthenticationTransport([.http(429, Data(), ["Retry-After": "300"])])
+        do {
+            _ = try await AppleAuthentication(transport: rate, signer: FixtureSigner(), persistence: FixtureAccountStore(), automaticRecovery: true, sleep: { _ in })
+                .login(email: "fixture@example.test", password: "secret", identity: identity, endpoint: endpoint)
+            XCTFail("Ignored Apple retry deadline")
+        } catch { XCTAssertEqual(error as? AuthenticationError, .retryLater) }
+        let rateRequests = await rate.requests
+        XCTAssertEqual(rateRequests.count, 1)
+    }
+
     func testAppleCredentialErrorOn403IsNotTreatedAsTransientHTML() async throws {
         let transport = FixtureAuthenticationTransport([.http(403, try plist(["failureType": "bad-password", "customerMessage": "Denied"]), [:])])
         do { _ = try await login(transport); XCTFail("Accepted error") }

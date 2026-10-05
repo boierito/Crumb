@@ -1,6 +1,6 @@
 # WaffleStore
 
-## Experimental revival — 2.3.0-dev.5
+## Experimental revival — 2.3.0-dev.6
 
 The user confirmed signed SAP login, 2FA and session restoration on iPhone
 running iOS 27.0.1, signed with ksign/certificate without JIT (build 23002).
@@ -18,6 +18,12 @@ with ipatool, and explicitly applies restored cookies to their matching URLs.
 Probe v5 reports cookie counts and redirect Location presence without values.
 Versions in 23004 still failed with ent HTTP 401 and pod sign-in-required 2042.
 These changes require another physical-device check.
+
+Dev.6 (23006) adds bounded automatic login recovery, visible version labels read
+from IPA ranges, a stable download review sheet, and Downloaded apps with the
+original loopback/Safari OTA installation request. Installation is experimental
+and remains subject to iOS approval; serving an IPA does not prove installation.
+The user confirmed versions and IPA export in 23005 after fresh sign-in.
 
 Choose an app link/ID/bundle ID → Choose version / download IPA → selected
 externalVersionId → verified IPA version → Export IPA. Installing or downgrading

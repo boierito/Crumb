@@ -94,9 +94,9 @@ func InspectRemote(text, bundle string) ([]byte, error) {
 	if e != nil || !trustedCDN(u) {
 		return nil, errors.New("untrusted CDN")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	client := &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+	client := &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 8 || !trustedCDN(req.URL) {
 			return errors.New("redirect rejected")
 		}

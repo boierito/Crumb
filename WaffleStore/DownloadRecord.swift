@@ -9,6 +9,7 @@ struct DownloadRecord: Codable, Identifiable {
     let appName: String
     let bundleID: String
     let version: String
+    let build: String?
     let externalVersionID: String
     let date: Date
     var fileURL: URL? {

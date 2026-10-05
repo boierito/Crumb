@@ -1,4 +1,4 @@
-# Testing — 2.3.0-dev.5 / build 23005
+# Testing — 2.3.0-dev.6 / build 23006
 
 Build/test success is not equivalent to Apple acceptance or installation.
 No physical device is connected to this environment. Device results below
@@ -150,3 +150,27 @@ If a fresh login is necessary, copy authentication probe v5 as well, including
 cookie counts and redirect Location presence (values are withheld). Do not repeat
 logout automatically for 2042. Continue latest/old download and Share Sheet
 validation only if a valid descriptor is returned.
+
+## Dev.6 physical-device checks (pending)
+
+User report for 23005: fresh logout/login eventually allows versions and IPA
+export; 20–30 manual login attempts, version labels/popup poor, installation
+untested. Device model remains unspecified. Dev.6 must validate:
+
+1. Fresh sign-in: one tap, automatic attempt counter in diagnostic, cookies
+   retained, Cancel works, correct password/2FA stops appropriately; record the
+   number of HTTP attempts. Do not claim backend reliability from fixtures.
+2. Scroll to old entries: visible version numbers load gradually from IPA
+   Info.plist; select a low row, scroll, review sheet remains stable, close/retry.
+3. Download an old ID; verify Downloaded apps shows visible version/build and
+   selected ID. If range inspection succeeded, final version must match it.
+4. Open menu → Downloaded apps → Install this downloaded version → Request iOS
+   installation. Keep Safari screen open and confirm iOS. Record the exact iOS
+   result (success/refusal), not merely Safari launch or downloaded bytes.
+5. Check installed Settings/App version when accepted. Reopen WaffleStore and
+   export still works. Server Close/timeouts stop transfer without deleting IPA.
+6. Repeat on iOS 26/27, with an owned free app. No paid purchase automation,
+   decryption, sideloader capability or App Store downgrade acceptance is assumed.
+
+Generator smoke: HTTP 200 and valid OTA plist for com.example.fixture, build 1,
+loopback URL. No Apple login/IPA was uploaded. This checks generator format only.

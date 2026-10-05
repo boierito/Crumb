@@ -8,6 +8,7 @@ struct ContentView: View {
     @State private var showSearchView: Bool = false
     @State private var showHistoryView: Bool = false
     @State private var showFavouritesView: Bool = false
+    @State private var showDownloadedView = false
     
     @EnvironmentObject var appData: AppData
     @StateObject private var localizationManager = LocalizationManager.shared
@@ -35,7 +36,7 @@ struct ContentView: View {
                     }
                     .toolbar {
                         ToolbarItem(placement: .topBarTrailing) {
-                            AppMenu(showHistoryView: $showHistoryView, showFavouritesView: $showFavouritesView)
+                            AppMenu(showHistoryView: $showHistoryView, showFavouritesView: $showFavouritesView, showDownloadedView: $showDownloadedView)
                         }
                         ToolbarItem(placement: .topBarTrailing) {
                             Button(action: {
@@ -63,7 +64,7 @@ struct ContentView: View {
                     .navigationTitle("WaffleStore")
                     .toolbar {
                         ToolbarItem(placement: .topBarTrailing) {
-                            AppMenu(showHistoryView: $showHistoryView, showFavouritesView: $showFavouritesView)
+                            AppMenu(showHistoryView: $showHistoryView, showFavouritesView: $showFavouritesView, showDownloadedView: $showDownloadedView)
                         }
                         ToolbarItem(placement: .topBarTrailing) {
                             Button(action: {
@@ -92,6 +93,7 @@ struct ContentView: View {
         .sheet(isPresented: $showFavouritesView) {
             FavouritesView()
         }
+        .sheet(isPresented: $showDownloadedView) { DownloadedAppsView() }
         .sheet(isPresented: $appData.showStoreVersions) { StoreVersionsView() }
         .onAppear { appData.restoreStoreAccount(); appData.restoreDownloadedIPA() }
     }
@@ -121,7 +123,7 @@ struct ContentView: View {
     
     private var LoginSection: some View {
         Group {
-            Section(header: HeaderLabel(text: "Login".localized, icon: "icloud"), footer: Text("Apple may sign in directly or request a verification code. A new 2FA prompt is not required for every login.")) {
+            Section(header: HeaderLabel(text: "Login".localized, icon: "icloud"), footer: Text("Temporary Apple failures are retried automatically for up to two minutes per request. You can cancel. Apple decides whether to request a new 2FA code.")) {
                 VStack {
                     TextField("Apple ID".localized, text: $appData.appleId)
                         .modifier(TextFieldBackground())
@@ -212,9 +214,11 @@ struct AppMenu: View {
     @EnvironmentObject var appData: AppData
     @Binding var showHistoryView: Bool
     @Binding var showFavouritesView: Bool
+    @Binding var showDownloadedView: Bool
     
     var body: some View {
         Menu {
+            Button("Downloaded apps", systemImage: "square.and.arrow.down") { showDownloadedView = true }
             Button(action: {
                 showFavouritesView.toggle()
             }) {

@@ -24,6 +24,7 @@ type Input struct {
 	Sinfs             [][]byte `json:"sinfs"`
 }
 type Info struct {
+	Build      string   `json:"build,omitempty" plist:"CFBundleVersion"`
 	BundleID   string   `json:"bundleID" plist:"CFBundleIdentifier"`
 	Version    string   `json:"version" plist:"CFBundleShortVersionString"`
 	Executable string   `json:"-" plist:"CFBundleExecutable"`

@@ -1,92 +1,151 @@
 import SwiftUI
 import MapleSAP
 
+private struct VersionSelection: Identifiable { let id: String }
+
+// One worker prevents concurrent Store requests and limits inspection to visible
+// rows. Selection has priority; no complete IPA is downloaded to label a row.
+@MainActor
+private final class VersionLabels: ObservableObject {
+    @Published var info: [String: NativePackage.Info] = [:]
+    @Published var failures: [String: String] = [:]
+    @Published var active: String?
+    private var pending: [String] = []
+    private var visible: Set<String> = []
+    private var worker: Task<Void, Never>?
+    func request(_ id: String, app: StoreApp, tool: IPATool, priority: Bool = false) {
+        visible.insert(id)
+        guard info[id] == nil, failures[id] == nil else { return }
+        if active != id {
+            pending.removeAll { $0 == id }
+            if priority { pending.insert(id, at: 0) } else { pending.append(id) }
+        }
+        guard worker == nil else { return }
+        worker = Task {
+            defer { worker = nil; active = nil }
+            while !pending.isEmpty, !Task.isCancelled {
+                let next = pending.removeFirst()
+                guard visible.contains(next) else { continue }
+                active = next
+                do {
+                    let descriptor = try await tool.descriptor(app: app, version: next)
+                    let result = try await Task.detached(priority: .utility) {
+                        try NativePackage.inspect(url: descriptor.url, bundle: app.bundleID)
+                    }.value
+                    try Task.checkCancellation()
+                    info[next] = result
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    failures[next] = "Version label unavailable; the downloaded IPA will be checked."
+                }
+                active = nil
+            }
+        }
+    }
+    func hide(_ id: String) { visible.remove(id); pending.removeAll { $0 == id } }
+    func stop() { worker?.cancel(); pending.removeAll(); visible.removeAll() }
+}
+
 struct StoreVersionsView: View {
     @EnvironmentObject var appData: AppData
     @Environment(\.dismiss) private var dismiss
+    @StateObject private var labels = VersionLabels()
     @State private var app: StoreApp?
     @State private var versions: [String] = []
-    @State private var latest: String = ""
-    @State private var error: String = ""
+    @State private var latest = ""
+    @State private var error = ""
     @State private var loading = true
     @State private var manualID = ""
-    @State private var inspecting = false
-    @State private var inspectionTask: Task<Void, Never>?
-    @State private var selectedID = ""
-    @State private var confirmation = false
-    @State private var versionDetail = ""
+    @State private var selected: VersionSelection?
     var body: some View {
         NavigationStack {
             List {
-                if inspecting { ProgressView("Reading selected IPA version…") }
-                if loading { ProgressView("Resolving app, kbsync and available versions…") }
+                if loading { ProgressView("Resolving available versions…") }
                 if !error.isEmpty { Text(error).foregroundStyle(.red).textSelection(.enabled) }
-                if let app = app {
+                if let app {
                     Section(app.name) {
                         Text(app.bundleID).font(.caption)
-                        Text("Select an externalVersionId. The displayed app version is verified from the downloaded IPA's Info.plist.")
+                        Text("Version numbers are read from the IPA. Labels load as rows become visible.")
                             .font(.caption).foregroundStyle(.secondary)
                         ForEach(versions, id: \.self) { id in
-                            Button(id == latest ? "Latest iOS build — ID \(id)" : "Version ID \(id)") { inspect(app, version: id) }
+                            Button { select(id, app: app) } label: {
+                                HStack {
+                                    VStack(alignment: .leading) {
+                                        Text(labels.info[id].map { "Version \($0.version)" } ?? (labels.failures[id] != nil ? "Version number unavailable" : (id == latest ? "Latest version" : "Reading version…")))
+                                        Text("ID \(id)\(id == latest ? " · Latest" : "")").font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if labels.active == id { ProgressView() }
+                                }
+                            }
+                            .onAppear { if let tool = appData.ipaTool { labels.request(id, app: app, tool: tool) } }
+                            .onDisappear { if selected?.id != id { labels.hide(id) } }
                         }
                     }
                     Section("Specific externalVersionId") {
                         TextField("Numeric externalVersionId", text: $manualID).keyboardType(.numberPad)
-                        Button("Download selected ID") { inspect(app, version: manualID) }
+                        Button("Review selected version") { select(manualID, app: app) }
                             .disabled(StoreParsing.identifier(manualID) == nil)
                     }
-                    Text("The IPA retains App Store protection. Exporting it does not prove that another sideloader can install or downgrade it.")
-                        .font(.caption).foregroundStyle(.secondary)
                 }
-            }
-            .disabled(inspecting || loading)
-            .confirmationDialog(versionDetail, isPresented: $confirmation, titleVisibility: .visible) {
-                Button("Download IPA — ID \(selectedID)") {
-                    guard let app = app, let tool = appData.ipaTool else { return }
-                    appData.download(app: app, version: selectedID, tool: tool)
-                    dismiss()
-                }
-                Button("Cancel", role: .cancel) {}
             }
             .navigationTitle("Download a version")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
-            .onDisappear { inspectionTask?.cancel() }
+            .sheet(item: $selected) { choice in
+                NavigationStack {
+                    Form {
+                        Section("Selected version") {
+                            Text(app?.name ?? "App")
+                            Text("externalVersionId: \(choice.id)").textSelection(.enabled)
+                            if let info = labels.info[choice.id] {
+                                Text("Version: \(info.version)")
+                                if let build = info.build { Text("Build: \(build)") }
+                                Text("Read from IPA Info.plist").font(.caption).foregroundStyle(.secondary)
+                            } else if let failure = labels.failures[choice.id] { Text(failure).font(.caption) }
+                            else { ProgressView("Reading the selected IPA version…") }
+                        }
+                        Button("Download this version") {
+                            guard let app, let tool = appData.ipaTool else { return }
+                            let expected = labels.info[choice.id]?.version
+                            labels.stop()
+                            selected = nil
+                            // Wait for the serialized inspector before starting Store work.
+                            Task {
+                                await labels.finish()
+                                appData.download(app: app, version: choice.id, tool: tool, expectedVersion: expected)
+                                dismiss()
+                            }
+                        }
+                    }
+                    .navigationTitle("Confirm download")
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { selected = nil } } }
+                }
+                .presentationDetents([.medium, .large])
+            }
+            .onDisappear { labels.stop() }
             .task {
                 guard let tool = appData.ipaTool else { loading = false; return }
-                appData.storeDiagnostic = "WaffleStore Store probe v5\napp-build=23005\nkbsync-runtime=tci-no-jit\nsecret-values=withheld"
+                appData.storeDiagnostic = "WaffleStore Store probe v6\napp-build=23006\nkbsync-runtime=tci-no-jit\nsecret-values=withheld"
                 do {
                     let resolved = try await tool.lookup(appData.appLink)
-                    app = resolved
-                    appData.appBundleID = resolved.bundleID
+                    app = resolved; appData.appBundleID = resolved.bundleID
                     let descriptor = try await tool.descriptor(app: resolved)
                     try Task.checkCancellation()
                     latest = descriptor.externalVersionID; versions = descriptor.availableVersionIDs
                 } catch {
                     guard !Task.isCancelled else { return }
                     appData.storeDiagnostic += "\noutcome=versions-request-failed; category=\(ResponseDiagnostic.category(error))"
-                    self.error = (error as? StoreError)?.localizedDescription ?? (error as? SAPError)?.localizedDescription ?? "Store lookup failed (code \((error as NSError).code))."
+                    self.error = (error as? StoreError)?.localizedDescription ?? "Store lookup failed. Copy the Store diagnostic."
                 }
                 loading = false
             }
         }
     }
-    private func inspect(_ app: StoreApp, version: String) {
-        guard let tool = appData.ipaTool, !inspecting else { return }
-        inspecting = true; selectedID = version; error = ""
-        inspectionTask = Task {
-            defer { inspecting = false; inspectionTask = nil }
-            do {
-                let descriptor = try await tool.descriptor(app: app, version: version)
-                let info = try? await Task.detached(priority: .userInitiated) {
-                    try NativePackage.inspect(url: descriptor.url, bundle: app.bundleID)
-                }.value
-                try Task.checkCancellation()
-                versionDetail = info.map { "Verified IPA version \($0.version) — externalVersionId \(version)" } ?? "externalVersionId \(version). CDN range inspection unavailable; version will be verified after download."
-                confirmation = true
-            } catch {
-                guard !Task.isCancelled else { return }
-                self.error = (error as? StoreError)?.localizedDescription ?? (error as? SAPError)?.localizedDescription ?? "Version request failed (code \((error as NSError).code))."
-            }
-        }
+    private func select(_ id: String, app: StoreApp) {
+        selected = VersionSelection(id: id)
+        if let tool = appData.ipaTool { labels.request(id, app: app, tool: tool, priority: true) }
     }
+}
+private extension VersionLabels {
+    func finish() async { await worker?.value }
 }

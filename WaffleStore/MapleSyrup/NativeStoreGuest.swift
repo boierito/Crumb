@@ -30,7 +30,7 @@ nonisolated enum NativePackage {
         let metadata: Data
         let sinfs: [Data]
     }
-    struct Info: Codable, Sendable { let bundleID: String; let version: String }
+    struct Info: Codable, Sendable { let bundleID: String; let version: String; let build: String? }
     static func inspect(url: URL, bundle: String) throws -> Info {
         var output: UnsafeMutablePointer<UInt8>?
         var length = 0

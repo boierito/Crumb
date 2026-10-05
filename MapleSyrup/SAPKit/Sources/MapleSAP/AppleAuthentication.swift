@@ -60,13 +60,18 @@ public struct AppleAuthentication {
     private let persistence: StoreAccountPersistence
     private let sleep: (TimeInterval) async throws -> Void
     private let diagnostic: (String) async -> Void
+    private let recoveryAttempts: Int
+    private let recoveryWindow: TimeInterval?
     public init(transport: AuthenticationTransport, signer: ActionSigning,
                 persistence: StoreAccountPersistence,
                 diagnostic: @escaping (String) async -> Void = { _ in },
+                automaticRecovery: Bool = false,
                 sleep: @escaping (TimeInterval) async throws -> Void = {
                     try await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000))
                 }) {
         self.transport = transport; self.signer = signer; self.persistence = persistence; self.sleep = sleep; self.diagnostic = diagnostic
+        recoveryAttempts = automaticRecovery ? 12 : 3
+        recoveryWindow = automaticRecovery ? 120 : nil
     }
 
     public func login(email: String, password: String, code: String = "", identity: MachineIdentity,
@@ -141,10 +146,14 @@ public struct AppleAuthentication {
     }
 
     private func send(body: Data, endpoint: URL, progress: (AuthenticationStage) async -> Void, secrets: [String]) async throws -> (Data, HTTPURLResponse) {
-        for attempt in 1...3 {
+        let deadline = recoveryWindow.map { Date().addingTimeInterval($0) }
+        for attempt in 1...recoveryAttempts {
             try Task.checkCancellation()
+            if let deadline, Date() >= deadline { throw AuthenticationError.retryLater }
+            await diagnostic("authentication-recovery-attempt=\(attempt)/\(recoveryAttempts)")
             await progress(.signing)
             var request = URLRequest(url: endpoint)
+            if let deadline { request.timeoutInterval = max(1, min(30, deadline.timeIntervalSinceNow)) }
             request.httpMethod = "POST"; request.httpBody = body
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
             request.setValue(SAPProtocol.userAgent, forHTTPHeaderField: "User-Agent")
@@ -163,24 +172,29 @@ public struct AppleAuthentication {
                 let status = response.statusCode
                 if populated || (300..<400).contains(status) || status == 200 { return (data, response) }
                 guard [204, 403, 404, 429].contains(status) || status / 100 == 5 else { throw AuthenticationError.invalidResponse(status) }
-                guard attempt < 3 else { throw status == 429 ? AuthenticationError.rateLimited : AuthenticationError.http(status) }
+                guard attempt < recoveryAttempts else { throw status == 429 ? AuthenticationError.rateLimited : AuthenticationError.http(status) }
                 let delay = try retryDelay(response.value(forHTTPHeaderField: "Retry-After"), attempt: attempt)
+                if let deadline, Date().addingTimeInterval(delay) >= deadline { throw status == 429 ? AuthenticationError.rateLimited : AuthenticationError.http(status) }
                 await progress(.retrying)
                 try await sleep(delay)
             } catch let error as URLError {
                 if error.code == .cancelled || Task.isCancelled { throw CancellationError() }
-                guard [.timedOut, .networkConnectionLost, .cannotConnectToHost].contains(error.code), attempt < 3 else {
+                guard [.timedOut, .networkConnectionLost, .cannotConnectToHost].contains(error.code), attempt < recoveryAttempts else {
                     throw AuthenticationError.network(error.code.rawValue)
                 }
                 await progress(.retrying)
-                try await sleep(Double(10 << (attempt - 1)))
+                let delay = recoveryWindow == nil ? Double(10 << (attempt - 1)) : min(15, Double(2 << min(attempt - 1, 3)))
+                if let deadline, Date().addingTimeInterval(delay) >= deadline { throw AuthenticationError.network(error.code.rawValue) }
+                try await sleep(delay)
             }
         }
         throw AuthenticationError.invalidResponse(0)
     }
 
     private func retryDelay(_ header: String?, attempt: Int) throws -> TimeInterval {
-        guard let header = header?.trimmingCharacters(in: .whitespacesAndNewlines) else { return Double(10 << (attempt - 1)) }
+        guard let header = header?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            return recoveryWindow == nil ? Double(10 << (attempt - 1)) : min(15, Double(2 << min(attempt - 1, 3)))
+        }
         if !header.isEmpty, header.allSatisfy({ $0.isASCII && $0.isNumber }) {
             guard let seconds = UInt64(header), seconds <= 30 else { throw AuthenticationError.retryLater }
             return max(1, Double(seconds))
@@ -194,7 +208,7 @@ public struct AppleAuthentication {
                 return max(1, value)
             }
         }
-        return Double(10 << (attempt - 1))
+        return recoveryWindow == nil ? Double(10 << (attempt - 1)) : min(15, Double(2 << min(attempt - 1, 3)))
     }
     private func string(_ value: Any?) -> String { (value as? String) ?? (value as? NSNumber)?.stringValue ?? "" }
     private func safe(_ text: String, secrets: [String]) -> String {
