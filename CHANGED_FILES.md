@@ -83,4 +83,5 @@ Relative to original d508e53 / upstream-wafflestore-2.2.2.
 - `scripts/test-no-exec.sh`
 - `scripts/test-sap-host.sh`
 - `scripts/test-tci-host.sh`
+- `scripts/verify-ipa.py`
 - `scripts/unicorn-no-exec.c`
