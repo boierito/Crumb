@@ -92,6 +92,20 @@ enum ApplePlist {
             let plist = Data(("<plist version=\"1.0\">" + text[start.lowerBound..<end.upperBound] + "</plist>").utf8)
             return try PropertyListSerialization.propertyList(from: plist, format: nil) as? [String: Any]
         }
+        // Some native replies contain bare key/value pairs in Document/Protocol.
+        // Normalize only these envelopes (or bare pairs), never arbitrary HTML.
+        var inner = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        for tag in ["Document", "Protocol"] {
+            if let start = inner.range(of: "<" + tag + ">"),
+               let end = inner.range(of: "</" + tag + ">", options: .backwards),
+               start.upperBound < end.lowerBound {
+                inner = String(inner[start.upperBound..<end.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+        if inner.hasPrefix("<key>") {
+            let plist = Data(("<plist version=\"1.0\"><dict>" + inner + "</dict></plist>").utf8)
+            return try PropertyListSerialization.propertyList(from: plist, format: nil) as? [String: Any]
+        }
         throw SAPError.invalidBag
     }
 }

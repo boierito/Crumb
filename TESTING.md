@@ -1,4 +1,4 @@
-# Testing — 2.3.0-dev.3 / build 23003
+# Testing — 2.3.0-dev.4 / build 23004
 
 Build/test success is not equivalent to Apple acceptance or installation.
 No physical device is connected to this environment. Device results below
@@ -8,7 +8,7 @@ were reported by the user; untested cells remain pending.
 
 | iOS | Device | Login | 2FA | Search | Versions | Purchase | Download | Export |
 |---|---|---|---|---|---|---|---|---|
-| 27.0.1 | iPhone, model unspecified; ksign/certificate, no JIT | Confirmed by user, 23002 | Confirmed challenge → success, 23002 | Cancellation logs observed; dev.3 fix pending | Dev.3 pending | Dev.3 pending | Latest/old dev.3 pending | Dev.3 pending |
+| 27.0.1 | iPhone, model unspecified; ksign/certificate, no JIT | Confirmed by user, 23002 | Confirmed challenge → success, 23002 | Cancellation logs observed; dev.3 fix pending | Dev.3 failed at ent/download; dev.4 pending | Pending | Latest/old pending | Pending |
 | 26.x | iPhone | Pending | Pending | Pending | Pending | Pending | Pending | Pending |
 | 27.x | iPad | Pending | Pending | Pending | Pending | Pending | Pending | Pending |
 
@@ -46,9 +46,9 @@ missing sinfs and HTTP Range status/content-range/length enforcement.
 CI builds both unsigned Debug/Release arm64 IPAs with Xcode 26 on macOS.
 The complete app is not configured for Simulator. Build evidence is in GitHub Actions.
 
-## Install dev.3 and test downloads on iOS 27
+## Install dev.4 and test downloads on iOS 27
 
-1. Use **Release 23003 / v2.3.0-dev.3**. Sign using the same certificate and
+1. Use **Release 23004 / v2.3.0-dev.4**. Sign using the same certificate and
    bundle ID as 23002 to retain Keychain identity/session where the signing
    method supports it. Install with ksign, SideStore, AltStore, Sideloadly or a
    developer certificate, without JIT/debugger/TrollStore. Record device model,
@@ -112,3 +112,24 @@ The complete app is not configured for Simulator. Build evidence is in GitHub Ac
 The App Store IPA may remain encrypted. Successfully sideloading WaffleStore
 is not proof that SideStore/AltStore can install a protected downloaded IPA.
 No installation-success entry is fabricated in the original downgrade history.
+
+## Dev.4 regression checks on device
+
+1. Upgrade using the same signing identity and bundle ID; reopen and keep the
+   restored session. Do not logout as the first versions troubleshooting step.
+2. Request latest versions for an app already owned. If ent fails, diagnostic
+   must show recovery=ent-to-pod and the pod HTTP/failure result. Try a historical
+   externalVersionId, download and export if versions succeeds.
+3. If versions fails, copy Store probe v4. It should contain HTTP and numeric
+   apple-failure or absent, and a stable category; no token or cookie values.
+4. Logout only when deliberately testing login or a confirmed expired session.
+   Login can succeed without 2FA when Apple returns valid session fields. If
+   Apple challenges, enter its actual code; never append a guessed/stale code.
+5. For continued login 204/404, copy the authentication v4 diagnostic. Separate
+   URLSessions reduce connection reuse; acceptance still requires device proof.
+
+New local HTTP fixtures check bare ent 401 → pod success, structured ent session
+error → pod success, pod expiry preservation, bare pod 401 classification,
+diagnostic redaction, ephemeral cookies across isolated URLSessions, and bare
+Document login requiring a complete session. These are protocol regressions,
+not tests against Apple's servers.

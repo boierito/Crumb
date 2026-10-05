@@ -60,6 +60,19 @@ final class AuthenticationTests: XCTestCase {
         XCTAssertEqual(signer.bodies, requests.map { $0.httpBody! })
     }
 
+    func testBareDocumentPairsAuthenticateOnlyWithCompleteSession() async throws {
+        let xml = "<Document><Protocol><key>dsPersonId</key><string>123456789</string><key>passwordToken</key><string>fixture-token</string></Protocol></Document>"
+        guard case .authenticated = try await login(FixtureAuthenticationTransport([.http(200, Data(xml.utf8), responseHeaders)])) else {
+            return XCTFail("Document pairs not parsed")
+        }
+        let incomplete = Data("<Document><key>dsPersonId</key><string>123456789</string></Document>".utf8)
+        let store = FixtureAccountStore()
+        do { _ = try await login(FixtureAuthenticationTransport([.http(200, incomplete, responseHeaders)]), store: store); XCTFail("Incomplete session saved") }
+        catch { XCTAssertEqual(error as? AuthenticationError, .invalidResponse(200)) }
+        XCTAssertNil(try store.load())
+        XCTAssertThrowsError(try ApplePlist.dictionary(Data("<html><key>dsPersonId</key><string>123456789</string></html>".utf8)))
+    }
+
     func testCredentialRedirectsRejectUntrustedDestinationsAnd303() async throws {
         for location in ["https://evil.test/login", "http://p42-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate",
                          "https://user:pass@buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate",

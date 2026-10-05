@@ -1,4 +1,4 @@
-# WaffleStore 2.3.0-dev.3 — Store/download experimental
+# WaffleStore 2.3.0-dev.4 — Store/download experimental
 
 El proyecto original se conserva. El usuario confirmó login, 2FA,
 DSID/passwordToken/storefront y restauración al reabrir en iPhone iOS 27.0.1,
@@ -18,7 +18,7 @@ versión de metadata de Apple ni en el servidor externo de versiones.
 | 2–3. SAP/ActionSignature jailed | Reportes del usuario, build 23001, iPhone iOS 27.0.1, ksign sin JIT |
 | 4–6. Login/2FA/DSID/token/storefront | Login aceptado por Apple reportado en 23002; reapertura confirmada |
 | 7. Search | UI conservada; cancelación por debounce silenciada y país de la cuenta aplicado |
-| 8. Versions | Implementado; fixtures y consulta ZIP por rangos; pendiente Apple real en dev.3 |
+| 8. Versions | Implementado; fixtures y consulta ZIP por rangos; dev.3 rechazado; recuperación dev.4 pendiente en dispositivo |
 | 9–10. IPA última/antigua | Implementado; kbsync TCI Linux y fixtures; pendiente descarga real en iOS |
 | 11. Export | Documents/Downloads, Files y Share Sheet; pendiente iOS real |
 | 12. Flujo completo jailed | Login reportado funcional; Store/download/export aún por probar en dispositivo |
@@ -300,10 +300,10 @@ El fingerprint detecta cambios del bridge, scripts y SDK; se puede eliminar
 GitHub Actions: push/PR → Debug y Release en macos-15/Xcode 26 + tests del
 protocolo en macOS y restricciones/interpreter en Linux → artifacts.
 workflow_dispatch permite compilar el tag original con el mismo workflow.
-Un tag `v2.3.0-dev.3` genera una prerelease **draft** con ambas IPAs. No publicar
+Un tag `v2.3.0-dev.4` genera una prerelease **draft** con ambas IPAs. No publicar
 una release hasta resolver las licencias y validar los hitos; ver notices.
-CFBundleShortVersionString debe ser numérico: 2.3.0, CFBundleVersion 23003;
-el sufijo dev.3 vive en el tag/changelog, no en el plist.
+CFBundleShortVersionString debe ser numérico: 2.3.0, CFBundleVersion 23004;
+el sufijo dev.4 vive en el tag/changelog, no en el plist.
 
 ## 7. Instalar y probar iOS 27
 
@@ -340,3 +340,34 @@ el fork. Upstream WaffleStore no contiene licencia de redistribución: es un
 problema pendiente que requiere aclaración de sus titulares, no un permiso que
 pueda inferirse del nombre open source. Los assets Apple son propietarios y
 no se redistribuyen. Ver [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Recuperación dev.4 / build 23004
+
+El reporte de 23003 llegó a generar kbsync y pedir ent/download, pero terminó
+con code=10. Ese número era un ordinal NSError local: no identifica ni el estado
+HTTP ni el fallo de Apple. No demuestra que Apple aceptara el kbsync. Dev.3
+convertía todo HTTP 401 en sessionExpired y, para errores de sesión/licencia,
+cortaba el fallback ent → pod. El ipatool de referencia no corta ahí: su
+requestDownloadDescriptor prueba el fallback después del rechazo preferido.
+
+Dev.4 conserva la cuenta, regenera una vez un kbsync almacenado rechazado y
+prueba volumeStoreDownloadProduct en el pod validado. Un HTTP 401 sin cuerpo
+Apple queda como HTTP-401; un error explícito de sesión del pod sigue solicitando
+reauth. Los errores de licencia siguen la adquisición gratuita ya implementada.
+No se borra la sesión ni se regenera GUID por un rechazo aislado de ent.
+
+Cada intento de autenticación usa una URLSession nueva, compartiendo el jar
+efímero de cookies. Esto adapta DisableKeepAlives de ipatool a URLSession; no
+es una garantía sobre la conexión física elegida por iOS. También se normalizan
+pares plist en Document/Protocol. No se ha observado ese formato en el reporte:
+es una diferencia del parser de referencia cubierta con fixtures.
+
+El diagnóstico v4 registra scope, intento, HTTP, clase de cuerpo y failureType
+numérico acotado. Nunca registra cuerpo, URLs, headers, mensajes arbitrarios,
+password, código, DSID, token, cookies ni kbsync. Las categorías ya no son
+ordinales Swift. Si Apple devuelve una sesión completa sin challenge, el login
+es válido sin nuevo 2FA; sólo se guarda con DSID/token/storefront válidos.
+
+Actualizar con la misma identidad de firma y bundle ID y probar versiones
+primero sin logout. No se declara recuperada la consulta hasta la prueba real
+en iOS 27.0.1. Instalación/downgrade sigue separada de descargar/exportar.

@@ -1,12 +1,18 @@
 # WaffleStore
 
-## Experimental revival — 2.3.0-dev.3
+## Experimental revival — 2.3.0-dev.4
 
 The user confirmed signed SAP login, 2FA and session restoration on iPhone
 running iOS 27.0.1, signed with ksign/certificate without JIT (build 23002).
 Dev.3 (23003) adds interpreted kbsync, dynamic Store endpoints, version selection,
 free-license acquisition when required, validated IPA download and export to
 Files/Share Sheet. **Download still needs real-device Apple validation.**
+Dev.4 (23004) fixes premature logout after ent/download rejection, tries the
+validated pod fallback, and reports sanitized HTTP/Apple failure diagnostics.
+Authentication retries use separate URLSessions with the same ephemeral cookie
+jar. Apple may sign in without requesting 2FA again; no code is fabricated.
+Device confirmation of the versions recovery is pending.
+
 Choose an app link/ID/bundle ID → Choose version / download IPA → selected
 externalVersionId → verified IPA version → Export IPA. Installing or downgrading
 a protected App Store IPA is a separate capability and is not claimed here.

@@ -1,5 +1,16 @@
 # Development changelog
 
+## 2.3.0-dev.4
+
+- Corrige rechazo de ent/download: regenera caché rechazada y prueba pod validado.
+- No interpreta HTTP 401 sin error Apple como sesión expirada ni pide logout.
+- Conserva errores explícitos de sesión/licencia devueltos por el pod.
+- Login con conexiones separadas y cookies efímeras compartidas entre intentos.
+- Admite respuestas Document/Protocol con pares plist sin contenedor dict.
+- Diagnóstico v4: HTTP, fallo Apple numérico y categoría estable, sin secretos.
+- Explica que Apple decide si requiere 2FA; no fuerza un challenge nuevo.
+- Tests de recuperación, clasificación, cookies y parsing; prueba iOS pendiente.
+
 ## 2.3.0-dev.3
 
 - Registra login/2FA y reapertura confirmados por usuario en iOS 27.0.1 (23002).

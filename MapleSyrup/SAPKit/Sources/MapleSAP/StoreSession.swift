@@ -218,7 +218,8 @@ public actor StoreSession {
                     secrets: secrets + [account.passwordToken, account.dsid, account.guid, account.email]))
                 // A bare HTTP rejection is not proof that the account token expired.
                 // Decode populated Apple errors before generic HTTP classification.
-                if let root = try? ApplePlist.dictionary(data), root["failureType"] != nil || root["customerMessage"] != nil {
+                if let root = try? ApplePlist.dictionary(data),
+                   !(StoreParsing.identifier(root["failureType"]) ?? "").isEmpty || !(root["customerMessage"] as? String ?? "").isEmpty {
                     return data
                 }
                 if response.statusCode == 200 { return data }
