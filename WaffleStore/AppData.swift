@@ -40,8 +40,6 @@ final class AppData: ObservableObject {
     var authenticationTask: Task<Void, Never>?
     var didRestoreStoreAccount = false
     var pendingAuthenticationCookies: [StoreCookie] = []
-    // Enable only after the separate modern Store/download migration is verified.
-    let storeDownloadsAvailable = true
     @Published var showStoreVersions = false
     @Published var downloadedIPAURL: URL?
     @Published var completedDownloads: [DownloadRecord] = []

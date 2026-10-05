@@ -101,7 +101,7 @@ extension AppData {
     }
 
     func logoutStoreAccount() {
-        guard !isAuthenticating, storeTask == nil else { return }
+        guard !isAuthenticating, storeTask == nil, !showStoreVersions else { return }
         do {
             try KeychainKBSync().clear()
             try KeychainStoreAccount().clear()

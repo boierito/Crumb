@@ -7,6 +7,7 @@
 
 import SwiftUI
 import PartyUI
+import MapleSAP
 
 struct NavigationButtons: View {
     @EnvironmentObject var appData: AppData
@@ -44,7 +45,7 @@ struct NavigationButtons: View {
                         ShareLink(item: url) { Label("Export IPA", systemImage: "square.and.arrow.up") }
                     }
                     let currentAppId = extractAppId(from: appData.appLink)
-                    let existingFav = appData.favourites.first { extractAppId(from: $0.appLink) == currentAppId }
+                    let existingFav = appData.favourites.first { currentAppId.isEmpty ? $0.appLink == appData.appLink : extractAppId(from: $0.appLink) == currentAppId }
                     let isFavourited = existingFav != nil
 
                     Button(action: {
@@ -93,43 +94,19 @@ struct NavigationButtons: View {
 }
 
 func extractAppId(from link: String) -> String {
-    var parsed = link.components(separatedBy: "id").last ?? ""
-    for char in parsed {
-        if !char.isNumber {
-            if let index = parsed.firstIndex(of: char) {
-                parsed = String(parsed.prefix(upTo: index))
-            }
-            break
-        }
-    }
-    return parsed
+    let trimmed = link.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let id = StoreParsing.identifier(trimmed) { return id }
+    guard let url = URL(string: trimmed), url.scheme == "https",
+          ["apps.apple.com", "itunes.apple.com"].contains(url.host?.lowercased() ?? "") else { return "" }
+    return url.pathComponents.compactMap { $0.hasPrefix("id") ? StoreParsing.identifier(String($0.dropFirst(2))) : nil }.last ?? ""
 }
 
 func fetchAppNameAndBundleId(forLink: String, completion: @escaping (String, String) -> Void) {
-    let parsedAppId = extractAppId(from: forLink)
-    guard !parsedAppId.isEmpty, let url = URL(string: "https://itunes.apple.com/lookup?id=\(parsedAppId)") else {
-        completion("", "")
-        return
-    }
-    
-    URLSession.shared.dataTask(with: url) { data, response, error in
-        guard let data = data, error == nil else {
-            completion("", "")
-            return
-        }
+    guard let tool = AppData.shared.ipaTool else { completion("", ""); return }
+    Task {
         do {
-            if let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
-               let results = json["results"] as? [[String: Any]],
-               let firstResult = results.first {
-                let trackName = firstResult["trackName"] as? String ?? ""
-                let bundleId = firstResult["bundleId"] as? String ?? ""
-                completion(trackName, bundleId)
-            } else {
-                completion("", "")
-            }
-        } catch {
-            completion("", "")
-        }
-    }.resume()
+            let app = try await tool.lookup(forLink)
+            completion(app.name, app.bundleID)
+        } catch { completion("", "") }
+    }
 }
-

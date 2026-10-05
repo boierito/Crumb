@@ -181,10 +181,6 @@ struct ContentView: View {
     private var InputAppSection: some View {
         Section(header: HeaderLabel(text: "Downgrade App".localized, icon: "arrow.down.app"), footer: Text("Download the latest or a specific App Store version and export its IPA. Installation depends on iOS and the receiving app.")) {
             VStack(spacing: 12) {
-                if !appData.storeDownloadsAvailable {
-                    Text("This development build validates login and 2FA. Versions, purchase and download are pending migration.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
                 TextField("App Store link, ID or bundle ID", text: $appData.appLink)
                     .modifier(TextFieldBackground())
                     .autocorrectionDisabled()
@@ -248,7 +244,7 @@ struct AppMenu: View {
             }) {
                 ButtonLabel(text: "Log Out".localized, icon: "arrow.right")
             }
-            .disabled(!appData.isAuthenticated || appData.isAuthenticating || appData.isDowngrading)
+            .disabled(!appData.isAuthenticated || appData.isAuthenticating || appData.isDowngrading || appData.showStoreVersions)
         } label: {
             Image(systemName: "line.horizontal.3")
         }

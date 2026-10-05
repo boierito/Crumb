@@ -11,6 +11,7 @@ struct StoreVersionsView: View {
     @State private var loading = true
     @State private var manualID = ""
     @State private var inspecting = false
+    @State private var inspectionTask: Task<Void, Never>?
     @State private var selectedID = ""
     @State private var confirmation = false
     @State private var versionDetail = ""
@@ -38,7 +39,7 @@ struct StoreVersionsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
-            .disabled(inspecting)
+            .disabled(inspecting || loading)
             .confirmationDialog(versionDetail, isPresented: $confirmation, titleVisibility: .visible) {
                 Button("Download IPA — ID \(selectedID)") {
                     guard let app = app, let tool = appData.ipaTool else { return }
@@ -49,6 +50,7 @@ struct StoreVersionsView: View {
             }
             .navigationTitle("Download a version")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
+            .onDisappear { inspectionTask?.cancel() }
             .task {
                 guard let tool = appData.ipaTool else { loading = false; return }
                 appData.storeDiagnostic = "WaffleStore Store probe v3\napp-build=23003\nkbsync-runtime=tci-no-jit\nsecret-values=withheld"
@@ -71,16 +73,18 @@ struct StoreVersionsView: View {
     private func inspect(_ app: StoreApp, version: String) {
         guard let tool = appData.ipaTool, !inspecting else { return }
         inspecting = true; selectedID = version; error = ""
-        Task {
-            defer { inspecting = false }
+        inspectionTask = Task {
+            defer { inspecting = false; inspectionTask = nil }
             do {
                 let descriptor = try await tool.descriptor(app: app, version: version)
                 let info = try? await Task.detached(priority: .userInitiated) {
                     try NativePackage.inspect(url: descriptor.url, bundle: app.bundleID)
                 }.value
+                try Task.checkCancellation()
                 versionDetail = info.map { "Verified IPA version \($0.version) — externalVersionId \(version)" } ?? "externalVersionId \(version). CDN range inspection unavailable; version will be verified after download."
                 confirmation = true
             } catch {
+                guard !Task.isCancelled else { return }
                 self.error = (error as? StoreError)?.localizedDescription ?? (error as? SAPError)?.localizedDescription ?? "Version request failed (code \((error as NSError).code))."
             }
         }
