@@ -173,7 +173,7 @@ struct StoreVersionsView: View {
                 guard let tool = appData.ipaTool else { loading = false; return }
 
                 do {
-                    let resolved = try await tool.lookup(appData.appLink)
+                    let resolved = try await tool.lookup(appData.appLink, country: appData.selectedCatalogCountry)
                     app = resolved; appData.appBundleID = resolved.bundleID
                     let descriptor = try await tool.descriptor(app: resolved)
                     try Task.checkCancellation()
@@ -193,7 +193,7 @@ struct StoreVersionsView: View {
         if let favourite = appData.favourites.first(where: { $0.bundleId == app.bundleID }) {
             appData.favourites = FavouritesStore.remove(favourite)
         } else {
-            appData.favourites = FavouritesStore.add(FavouriteApp(appLink: appData.appLink, bundleId: app.bundleID, appName: app.name))
+            appData.favourites = FavouritesStore.add(FavouriteApp(appLink: appData.appLink, bundleId: app.bundleID, appName: app.name, catalogCountry: app.catalogCountry))
         }
     }
     private func download(_ choice: VersionSelection, install: Bool) {

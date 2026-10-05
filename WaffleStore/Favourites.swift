@@ -12,13 +12,15 @@ struct FavouriteApp: Identifiable, Codable, Equatable {
     let appLink: String
     let bundleId: String
     let appName: String
+    let catalogCountry: String?
     let dateAdded: Date
     
-    init(appLink: String, bundleId: String, appName: String) {
+    init(appLink: String, bundleId: String, appName: String, catalogCountry: String? = nil) {
         self.id = UUID()
         self.appLink = appLink
         self.bundleId = bundleId
         self.appName = appName
+        self.catalogCountry = catalogCountry
         self.dateAdded = Date()
     }
 }

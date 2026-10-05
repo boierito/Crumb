@@ -53,7 +53,7 @@ struct AppSearchView: View {
                     }
                 } footer: {
                     if appData.catalogCountry != appData.accountCountry {
-                        Text("Browsing \(regionName(appData.catalogCountry)). Downloads use your Apple account region (\(appData.accountCountry.uppercased())).")
+                        Text("Browsing \(regionName(appData.catalogCountry)). Apple decides download access for your account (\(appData.accountCountry.uppercased())).")
                     }
                 }
                 if isSearching {
@@ -168,7 +168,7 @@ private struct CatalogRegionView: View {
                 Section {
                     row("", name: "Use account region (\(appData.accountCountry.uppercased()))")
                 } footer: {
-                    Text("Changes the search catalog only. Apple controls licenses and downloads through your account region; choosing another catalog does not change your Apple account or unlock regional apps.")
+                    Text("Search and resolve versions in this catalog. You can try downloading with your current account; Apple decides license availability. This does not change your Apple account region.")
                 }
                 Section("Catalogs") {
                     ForEach(countries, id: \.self) { country in row(country, name: regionName(country)) }

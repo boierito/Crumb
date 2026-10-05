@@ -18,6 +18,7 @@ final class AppData: ObservableObject {
     static let shared = AppData()
     @Published var selectedTab: AppTab = .search
     var openVersionsAfterLogin = false
+    var selectedCatalogCountry: String?
     @Published var catalogRegion: String = UserDefaults.standard.string(forKey: "catalogRegion") ?? "" {
         didSet { UserDefaults.standard.set(catalogRegion, forKey: "catalogRegion") }
     }
@@ -28,9 +29,10 @@ final class AppData: ObservableObject {
     var catalogCountry: String {
         Storefront.catalogCountries.contains(catalogRegion) ? catalogRegion : accountCountry
     }
-    func openAppSelection(_ input: String) {
+    func openAppSelection(_ input: String, country: String? = nil) {
         guard !isDowngrading, storeRequestCount == 0, !showStoreVersions else { return }
         appLink = input
+        selectedCatalogCountry = country ?? catalogCountry
         if isAuthenticated {
             selectedTab = .search
             showStoreVersions = true

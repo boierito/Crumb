@@ -231,3 +231,37 @@ No automatic Apple country change or cross-region license bypass is implemented.
 
 The user reports 23011 works well on their device. This supports preserving its
 backend, but is not evidence of 23012 navigation or foreign-region downloads.
+
+## Build 23013: correct the cross-region conclusion and metadata path
+
+The 23012 limitation was overstated: an account storefront does not prove that
+all apps found in another country are impossible to download. 23012 changed
+search country but StoreSession.lookup and latestVersion forced account country,
+so a foreign-only listing could fail before any authenticated download attempt.
+23013 carries the selected country through StoreApp to both catalog lookups and
+externalVersionId resolution, including version-label inspection and actual
+selected-version download. Authentication credentials/storefront are unchanged;
+the existing Apple download/license services decide eligibility. No speculative
+storefront-header substitution is needed for this correction.
+
+DLiPA evidence inspected October 5, 2026: repository AhmedBafkir/DLiPA commit
+8bc61ee9d4642f2706b99e9012425c58077015b7 declares "Select an available storefronts"
+but contains README/images, not application source. The published v1.4 IPA SHA256
+is 72012beabf55a12d70c5ad3bbe95384e7fd450c8de1bf6fbc62f8844512eea0f.
+Read-only inspection of its Objective-C metadata/call sites shows its selected
+storefront stored separately under Storefronts_selected (selection callback at
+0x100023958); search uses searchForApp:countryCode:limit:completion:. Download
+uses downloadWithAppId:specificVer:completion: and the MZFinance volume endpoint,
+with account DSID headers. Its purchase request obtains the storefront from
+APStoreAccount.sharedInstance (0x10004a854 through 0x10004a888), not the selected
+search preference. This supports trying a foreign catalog app with an existing
+account; it is not proof that Apple accepts every cross-region acquisition.
+No DLiPA binary/source code is copied into WaffleStore or redistributed.
+
+Favourites optionally persist the catalog country; old records remain decodable
+and use account country. Login handoff preserves the pending selection country.
+Invalid catalog overrides fail before network access. Default requests retain
+account-country behavior. Free acquisition remains once per operation after
+license denial; paid/unknown-price apps are never automatically purchased.
+These fixes allow genuine attempts, not invented licenses or claimed live Apple
+acceptance. Real cross-region download/install remains a device test.

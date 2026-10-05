@@ -22,7 +22,7 @@ struct FavouritesView: View {
                         ForEach(appData.favourites) { favourite in
                             Button {
                                 Haptic.shared.play(.soft)
-                                if embedded { appData.openAppSelection(favourite.appLink) }
+                                if embedded { appData.openAppSelection(favourite.appLink, country: favourite.catalogCountry ?? appData.accountCountry) }
                                 else { appData.appLink = favourite.appLink; dismiss() }
                             } label: { FavouriteAppCell(favourite: favourite) }
                             .buttonStyle(.plain)

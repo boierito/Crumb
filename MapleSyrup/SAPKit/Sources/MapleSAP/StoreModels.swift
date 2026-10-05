@@ -13,7 +13,7 @@ public enum StoreError: Error, LocalizedError, Equatable {
         case .invalidApp: return "Enter an App Store link, numeric App Store ID or bundle ID."
         case .retryLater: return "Apple requested a longer retry delay. Wait and try again later."
         case .emptyRedownload: return "Apple redownload endpoint returned an empty HTTP 500."
-        case .unavailable: return "Apple cannot serve this app/version in your account's storefront."
+        case .unavailable: return "Apple could not find or serve this app/version in the selected catalog or for this account."
         case .invalidResponse: return "Apple returned an incomplete Store response."
         case .versionMismatch: return "Apple returned a different app or externalVersionId. Download refused."
         case .sessionExpired: return "Apple Store requires sign-in for this request. The saved account was retained. Please try again later if a fresh login gives the same error."
@@ -33,8 +33,9 @@ public struct StoreApp: Sendable, Equatable {
     public let bundleID: String
     public let name: String
     public let price: Double?
-    public init(id: String, bundleID: String, name: String, price: Double?) {
-        self.id = id; self.bundleID = bundleID; self.name = name; self.price = price
+    public let catalogCountry: String?
+    public init(id: String, bundleID: String, name: String, price: Double?, catalogCountry: String? = nil) {
+        self.id = id; self.bundleID = bundleID; self.name = name; self.price = price; self.catalogCountry = catalogCountry
     }
 }
 public struct StoreDownload: Sendable {

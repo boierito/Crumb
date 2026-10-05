@@ -33,7 +33,7 @@ final class IPATool {
         self.transport = transport; self.store = store
         return store
     }
-    func lookup(_ input: String) async throws -> StoreApp { try await session().lookup(input) }
+    func lookup(_ input: String, country: String? = nil) async throws -> StoreApp { try await session().lookup(input, country: country) }
     func descriptor(app: StoreApp, version: String = "") async throws -> StoreDownload {
         AppData.shared.storeRequestCount += 1
         defer { AppData.shared.storeRequestCount -= 1 }

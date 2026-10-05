@@ -26,7 +26,7 @@ struct ContentView: View {
         .onChange(of: appData.isAuthenticated) { authenticated in
             if authenticated, appData.openVersionsAfterLogin {
                 appData.openVersionsAfterLogin = false
-                appData.openAppSelection(appData.appLink)
+                appData.openAppSelection(appData.appLink, country: appData.selectedCatalogCountry)
             }
         }
     }

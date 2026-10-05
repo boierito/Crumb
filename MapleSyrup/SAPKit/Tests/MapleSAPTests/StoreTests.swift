@@ -325,3 +325,41 @@ extension StoreTests {
         XCTAssertEqual(ResponseDiagnostic.category(StoreError.sessionExpired), "Apple-sign-in-required")
     }
 }
+
+extension StoreTests {
+    func testForeignCatalogResolutionReachesDownloadWithoutChangingAccountAuthentication() async throws {
+        let lookup = try JSONSerialization.data(withJSONObject: ["results": [["trackId": 123, "bundleId": "test.app", "trackName": "Test", "price": 0]]])
+        let version = try JSONSerialization.data(withJSONObject: ["results": ["123": ["bundleId": "test.app", "offers": [["version": ["externalId": "888"]]]]]])
+        let transport = StoreFixtureTransport([.init(status: 200, data: lookup), .init(status: 200, data: try bag()),
+            .init(status: 200, data: version), .init(status: 200, data: try reply(version: "888"))])
+        let store = try session(transport)
+        let app = try await store.lookup("123", country: "US")
+        XCTAssertEqual(app.catalogCountry, "us")
+        let result = try await store.descriptor(app: app)
+        XCTAssertEqual(result.externalVersionID, "888")
+        let requests = await transport.requests
+        XCTAssertEqual(URLComponents(url: requests[0].url!, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "country" }?.value, "us")
+        XCTAssertEqual(URLComponents(url: requests[2].url!, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "cc" }?.value, "us")
+        XCTAssertEqual(requests[3].value(forHTTPHeaderField: "X-Apple-Store-Front"), "143505-1,29")
+        XCTAssertEqual(requests[3].value(forHTTPHeaderField: "X-Token"), "fixture-token")
+        XCTAssertFalse(requests.contains { $0.url?.path.hasSuffix("buyProduct") == true })
+    }
+    func testForeignCatalogFreeLicenseStillUsesAccountStorefrontAndSelectedVersion() async throws {
+        let transport = StoreFixtureTransport([.init(status: 200, data: try bag()), .init(status: 200, data: try plist(["failureType": "9610"])),
+            .init(status: 200, data: try plist(["jingleDocType": "purchaseSuccess", "status": 0])), .init(status: 200, data: try reply(version: "888"))])
+        let app = StoreApp(id: "123", bundleID: "test.app", name: "Test", price: 0, catalogCountry: "us")
+        let result = try await session(transport).descriptor(app: app, externalVersionID: "888")
+        XCTAssertEqual(result.externalVersionID, "888")
+        let requests = await transport.requests
+        XCTAssertEqual(requests[2].value(forHTTPHeaderField: "X-Apple-Store-Front"), "143505-1,29")
+        XCTAssertEqual(requests[2].url?.host, "p42-buy.itunes.apple.com")
+        XCTAssertEqual(requests.filter { $0.url?.path.hasSuffix("buyProduct") == true }.count, 1)
+    }
+    func testInvalidCatalogCountryRejectedBeforeNetwork() async throws {
+        let transport = StoreFixtureTransport([])
+        do { _ = try await session(transport).lookup("123", country: "us&evil=1"); XCTFail("Invalid country accepted") }
+        catch { XCTAssertEqual(error as? StoreError, .unsupportedStorefront) }
+        let requests = await transport.requests
+        XCTAssertTrue(requests.isEmpty)
+    }
+}

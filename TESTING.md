@@ -146,3 +146,23 @@ Use a Release IPA signed with the same bundle ID/certificate as 23011.
 | 27.0.1 | User iPhone, normally signed 23011 | User reports remaining minor login glitches | Reported working | User reports 23011 works well, exact cases unspecified | Earlier install/export confirmed | Not in 23011 |
 | 27 | Physical iPhone, Release 23012 | Pending regression | Pending | Pending regression | Pending regression | Pending |
 | 26 | Physical iPhone/iPad, Release 23012 | Pending | Pending | Pending | Pending | Pending |
+
+## Build 23013: cross-region attempt (supersedes 23012 catalog-only restriction)
+
+- Choose a country different from Account region. Find an app absent in the account
+  catalog. App resolution/version metadata must use the chosen catalog, rather
+  than fail the account-country public lookup before contacting download services.
+- Owned app: list versions, download current and known older externalVersionId,
+  check actual IPA version/build, install/export. Acceptance must come from Apple.
+- Never-obtained free app: allow one existing license acquisition. Record actual
+  Apple response; a regional/license denial is not success. No paid acquisition.
+- Favourite the foreign listing; change search country, reopen the favourite and
+  verify its original catalog is retained. Old favourites must still load.
+- Signed out: choose foreign app, log in, confirm selection country survives.
+  Account region/session must remain unchanged. Default account-region apps still
+  work, and rejected regional requests must not force logout.
+
+Fixtures check foreign lookup + latest-version lookup reach authenticated download,
+unchanged account token/storefront, one license request with original external ID,
+and invalid country rejection before network. They do not establish live Apple
+eligibility. Physical iOS 27/26 cross-region acceptance is pending.

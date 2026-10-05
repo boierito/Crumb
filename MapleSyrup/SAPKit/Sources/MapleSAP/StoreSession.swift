@@ -24,7 +24,7 @@ public actor StoreSession {
         self.account = account; self.identity = identity; self.transport = transport
         self.generator = generator; self.persistence = persistence; self.sleep = sleep; self.progress = progress; self.diagnostic = diagnostic
     }
-    public func lookup(_ input: String) async throws -> StoreApp {
+    public func lookup(_ input: String, country: String? = nil) async throws -> StoreApp {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         var id = StoreParsing.identifier(trimmed)
         if let url = URL(string: trimmed), let host = url.host {
@@ -34,7 +34,7 @@ public actor StoreSession {
         }
         let bundle = id == nil ? trimmed : nil
         guard id != nil || (bundle?.contains(".") == true && !trimmed.contains("/") && !trimmed.contains(" ")) else { throw StoreError.invalidApp }
-        let country = try Storefront.country(account.storefront)
+        let country = try catalogCountry(country)
         let data = try await get("https://itunes.apple.com/lookup", query: [id == nil ? "bundleId" : "id": id ?? trimmed,
             "country": country, "entity": "software,iPadSoftware", "limit": "1"])
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -42,7 +42,7 @@ public actor StoreSession {
               let appID = StoreParsing.identifier(result["trackId"]), let bundleID = result["bundleId"] as? String,
               let name = result["trackName"] as? String, !bundleID.isEmpty,
               id == nil || appID == id, bundle == nil || bundleID == bundle else { throw StoreError.unavailable }
-        return StoreApp(id: appID, bundleID: bundleID, name: name, price: (result["price"] as? NSNumber)?.doubleValue)
+        return StoreApp(id: appID, bundleID: bundleID, name: name, price: (result["price"] as? NSNumber)?.doubleValue, catalogCountry: country)
     }
     public func descriptor(app: StoreApp, externalVersionID: String = "", acquireFreeLicense: Bool = true) async throws -> StoreDownload {
         guard !busy else { throw SAPError.invalidState }
@@ -77,9 +77,15 @@ public actor StoreSession {
             return try await requestDescriptor(app, version: version)
         }
     }
+    private func catalogCountry(_ override: String?) throws -> String {
+        guard let override else { return try Storefront.country(account.storefront) }
+        let code = override.lowercased()
+        guard Storefront.catalogCountries.contains(code) else { throw StoreError.unsupportedStorefront }
+        return code
+    }
     private func latestVersion(_ app: StoreApp) async throws -> String {
         await progress(.latest)
-        let country = try Storefront.country(account.storefront)
+        let country = try catalogCountry(app.catalogCountry)
         for platform in ["enterprisestore", "iphone", "ipad"] {
             let data = try await get("https://uclient-api.itunes.apple.com/WebObjects/MZStorePlatform.woa/wa/lookup", query:
                 ["version": "2", "id": app.id, "p": "mdm-lockup", "caller": "MDM", "platform": platform, "cc": country, "l": "en"])
