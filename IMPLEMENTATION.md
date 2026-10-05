@@ -95,7 +95,7 @@ Independent installed-version/data-preservation checks and iOS 26 remain unteste
 ## Build and IPA
 
 Requires macOS, Xcode 26+, Go 1.25.1, CMake/Ninja/Python and network access for
-pinned dependencies. scripts/build-unicorn-tci.sh and scripts/build-native-ios.sh
+pinned dependencies. scripts/build-unicorn-tci.sh and scripts/build-sap-native.sh
 are invoked by the project's existing native build phase; CI provisions tools.
 
 ```sh

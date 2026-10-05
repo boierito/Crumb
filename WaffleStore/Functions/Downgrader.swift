@@ -3,8 +3,8 @@ import SwiftUI
 import PartyUI
 import MapleSAP
 
-// Download/export comes first. No localhost installer, third-party manifest,
-// or fabricated installation-success history is used by this jailed flow.
+// Download/export remains separate from OTAInstaller. Installation history
+// must never claim success without confirmation from iOS.
 func downgradeApp(appId: String, ipaTool: IPATool) { AppData.shared.showStoreVersions = true }
 func cleanUp() {
     // Original auto-clean setting must not erase completed Downloads at launch.
