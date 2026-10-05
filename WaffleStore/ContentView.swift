@@ -95,6 +95,8 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showDownloadedView) { DownloadedAppsView() }
         .sheet(isPresented: $appData.showStoreVersions) { StoreVersionsView() }
+        .sheet(item: $appData.downloadReady) { DownloadReadyView(record: $0) }
+        .sheet(item: $appData.installationRequest) { OTAInstallationView(record: $0, startImmediately: true) }
         .onAppear { appData.restoreStoreAccount(); appData.restoreDownloadedIPA() }
     }
     
@@ -123,23 +125,27 @@ struct ContentView: View {
     
     private var LoginSection: some View {
         Group {
-            Section(header: HeaderLabel(text: "Login".localized, icon: "icloud"), footer: Text("Temporary Apple failures are retried automatically for up to two minutes per request. You can cancel. Apple decides whether to request a new 2FA code.")) {
+            Section(header: HeaderLabel(text: "Login".localized, icon: "icloud"), footer: Text("Temporary Apple failures are retried automatically for up to two minutes per sign-in attempt. You can cancel. Apple decides whether to request a new 2FA code.")) {
                 VStack {
                     TextField("Apple ID".localized, text: $appData.appleId)
                         .modifier(TextFieldBackground())
                         .disabled(appData.hasSent2FACode || appData.isAuthenticating)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
+                        .keyboardType(.emailAddress)
+                        .textContentType(.username)
                     
                     HStack {
                         if appData.showPassword {
                             TextField("Password".localized, text: $appData.password)
+                                .textContentType(.password)
                                 .modifier(TextFieldBackground())
                                 .disabled(appData.hasSent2FACode || appData.isAuthenticating)
                                 .autocorrectionDisabled()
                                 .textInputAutocapitalization(.never)
                         } else {
                             SecureField("Password".localized, text: $appData.password)
+                                .textContentType(.password)
                                 .modifier(TextFieldBackground())
                                 .disabled(appData.hasSent2FACode || appData.isAuthenticating)
                                 .autocorrectionDisabled()
@@ -182,7 +188,7 @@ struct ContentView: View {
     }
     
     private var InputAppSection: some View {
-        Section(header: HeaderLabel(text: "Downgrade App".localized, icon: "arrow.down.app"), footer: Text("Download the latest or a specific App Store version and export its IPA. Installation depends on iOS and the receiving app.")) {
+        Section(header: HeaderLabel(text: "Downgrade App".localized, icon: "arrow.down.app"), footer: Text("Choose a version to download or install. Your IPA remains available for export.")) {
             VStack(spacing: 12) {
                 TextField("App Store link, ID or bundle ID", text: $appData.appLink)
                     .modifier(TextFieldBackground())

@@ -17,52 +17,63 @@ extension AppData {
         authenticationRecovery = ""
         authenticationTask = Task {
             defer { isAuthenticating = false; authenticationTask = nil }
-            let sapTransport = AppleSAPTransport()
-            let loginTransport = AppleAuthenticationTransport(cookies: challengeCookies, isolatedConnections: true)
-            defer { sapTransport.close(); loginTransport.close() }
-            var sap: SAPSession?
+            var preparation: PreparedAppleLogin?
+            var keepPrepared = false
             do {
-                // Invalid codes are rejected before downloading assets or sending credentials.
-                _ = try TwoFactorAuthentication.normalize(verification)
-                let identity = try KeychainMachineIdentity.loadOrCreate()
-                setAuthenticationStage(.bag)
-                let configuration = try await SAPProtocol(transport: sapTransport).bag(identity: identity)
-                _ = try AuthenticationEndpoint.validate(configuration.authenticationURL)
-                setAuthenticationStage(.sap)
-                let signer = try SAPSession(guest: NativeSAPGuest(), transport: sapTransport)
-                sap = signer
-                try await signer.initialize(configuration: configuration, identity: identity)
                 try Task.checkCancellation()
-                let authentication = AppleAuthentication(transport: loginTransport, signer: signer,
+                // Reject invalid codes before creating a guest or contacting Apple.
+                _ = try TwoFactorAuthentication.normalize(verification)
+                let prepared: PreparedAppleLogin
+                if let existing = preparedAppleLogin, existing.canReuse(for: email) {
+                    prepared = existing
+                } else {
+                    if let existing = preparedAppleLogin { await existing.close() }
+                    preparedAppleLogin = nil
+                    prepared = try PreparedAppleLogin(email: email, cookies: challengeCookies)
+                    preparedAppleLogin = prepared
+                }
+                preparation = prepared
+                let signer = try await prepared.prepare { self.setAuthenticationStage($0) }
+                try Task.checkCancellation()
+                let authentication = AppleAuthentication(transport: prepared.loginTransport, signer: signer,
                     persistence: KeychainStoreAccount(), diagnostic: { event in
                         await MainActor.run {
                             if event.hasPrefix("authentication-recovery-attempt=") {
                                 self.authenticationRecovery = "Automatic attempt " + event.replacingOccurrences(of: "authentication-recovery-attempt=", with: "")
                             }
-
                         }
                     }, automaticRecovery: true)
+                guard let endpoint = prepared.endpoint else { throw CancellationError() }
                 let outcome = try await authentication.login(email: email, password: secret, code: verification,
-                    identity: identity, endpoint: configuration.authenticationURL) { stage in
+                    identity: prepared.identity, endpoint: endpoint, resolvedEndpoint: { endpoint in
+                        await MainActor.run { prepared.endpoint = endpoint }
+                    }) { stage in
                         await MainActor.run { self.setAuthenticationStage(stage) }
                     }
                 try Task.checkCancellation()
                 switch outcome {
                 case .twoFactorRequired(let cookies):
                     pendingAuthenticationCookies = cookies
-
+                    keepPrepared = true
                     hasSent2FACode = true
                     code = ""
                     applicationStatus = AuthenticationStage.twoFactor.rawValue
                 case .authenticated(let account):
-
                     applyStoreAccount(account, restored: false)
                 }
             } catch let error where error is CancellationError || Task.isCancelled {
                 applicationStatus = "Sign-in cancelled."
-
             } catch {
-                if hasSent2FACode { pendingAuthenticationCookies = await loginTransport.cookies() }
+                if let preparation {
+                    if hasSent2FACode { pendingAuthenticationCookies = await preparation.loginTransport.cookies() }
+                    if let error = error as? AuthenticationError {
+                        switch error {
+                        case .http, .network, .rateLimited, .retryLater, .invalidResponse, .verificationRejected, .invalidCode:
+                            keepPrepared = true
+                        default: break
+                        }
+                    }
+                }
                 // Apple/SAP errors have sanitized, bounded descriptions. Arbitrary
                 // URL errors can include routing secrets: expose only numeric codes.
                 if let error = error as? AuthenticationError { authenticationError = error.localizedDescription }
@@ -71,14 +82,21 @@ extension AppData {
                 code = ""
                 applicationStatus = "Sign-in failed."
                 print("Apple sign-in failed (code \((error as NSError).code)).")
-
             }
-            if let sap = sap { await sap.close() }
+            if let preparation {
+                if keepPrepared, !Task.isCancelled, preparation.canReuse(for: email), preparedAppleLogin === preparation {
+                    expireLoginPreparation(preparation)
+                } else {
+                    if preparedAppleLogin === preparation { preparedAppleLogin = nil }
+                    await preparation.close()
+                }
+            }
         }
     }
 
     func cancelAppleLogin() {
         authenticationTask?.cancel()
+        clearLoginPreparation()
         hasSent2FACode = false
         code = ""
         password = ""
@@ -106,6 +124,7 @@ extension AppData {
     func logoutStoreAccount() {
         guard !isAuthenticating, storeTask == nil, !showStoreVersions else { return }
         do {
+            clearLoginPreparation()
             try KeychainKBSync().clear()
             try KeychainStoreAccount().clear()
             try LegacyCredentials.remove()
@@ -126,9 +145,25 @@ extension AppData {
         }
     }
 
+    private func expireLoginPreparation(_ prepared: PreparedAppleLogin) {
+        loginPreparationExpiry?.cancel()
+        loginPreparationExpiry = Task {
+            let remaining = max(0, prepared.expiresAt.timeIntervalSinceNow)
+            try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+            guard !Task.isCancelled, preparedAppleLogin === prepared, !isAuthenticating else { return }
+            preparedAppleLogin = nil
+            await prepared.close()
+        }
+    }
+    private func clearLoginPreparation() {
+        loginPreparationExpiry?.cancel(); loginPreparationExpiry = nil
+        let prepared = preparedAppleLogin
+        preparedAppleLogin = nil
+        Task { await prepared?.close() }
+    }
+
     private func setAuthenticationStage(_ stage: AuthenticationStage) {
         applicationStatus = stage.rawValue
-
         print("Apple authentication stage: \(stage.rawValue)")
     }
     private func applyStoreAccount(_ account: StoreAccount, restored: Bool) {
@@ -141,9 +176,54 @@ extension AppData {
         applicationIcon = "checkmark.circle.fill"
         applicationIconColor = .primary
         print("Apple authentication: \(restored ? "saved session loaded" : "DSID/token/storefront received and saved in Keychain") [values withheld]")
-
     }
 
+}
+
+// A short-lived, same-account preparation avoids repeating the Bag/certificate/
+// SAP handshake for a manual retry or 2FA. It holds no password/code, writes
+// nothing to disk, signs every request freshly and expires after five minutes.
+@MainActor
+final class PreparedAppleLogin {
+    let email: String
+    let identity: MachineIdentity
+    let loginTransport: AppleAuthenticationTransport
+    private let sapTransport = AppleSAPTransport()
+    private var signer: SAPSession?
+    private var closed = false
+    var endpoint: URL?
+    private(set) var expiresAt = Date.distantPast
+    init(email: String, cookies: [StoreCookie]) throws {
+        self.email = email
+        identity = try KeychainMachineIdentity.loadOrCreate()
+        loginTransport = AppleAuthenticationTransport(cookies: cookies, isolatedConnections: true)
+    }
+    func canReuse(for email: String) -> Bool {
+        !closed && self.email == email && signer != nil && expiresAt > Date()
+    }
+    func prepare(progress: (AuthenticationStage) -> Void) async throws -> SAPSession {
+        guard !closed else { throw CancellationError() }
+        if let signer { progress(.prepared); return signer }
+        progress(.bag)
+        let configuration = try await SAPProtocol(transport: sapTransport).bag(identity: identity)
+        endpoint = try AuthenticationEndpoint.validate(configuration.authenticationURL)
+        progress(.sap)
+        let created = try SAPSession(guest: NativeSAPGuest(), transport: sapTransport)
+        // Own the guest immediately, including cancellation during initialization.
+        signer = created
+        try await created.initialize(configuration: configuration, identity: identity)
+        try Task.checkCancellation()
+        guard !closed else { throw CancellationError() }
+        expiresAt = Date().addingTimeInterval(300)
+        return created
+    }
+    func close() async {
+        guard !closed else { return }
+        closed = true
+        sapTransport.close(); loginTransport.close()
+        if let signer { await signer.close() }
+        signer = nil; endpoint = nil
+    }
 }
 
 private enum LegacyCredentials {

@@ -17,10 +17,12 @@ machine identity use Keychain.
 2. Sign in with your Apple ID. Temporary Apple failures are retried automatically;
    you can cancel. Enter an actual 2FA code only when Apple requests one.
 3. Search or enter an App Store link, ID or bundle ID and choose a version.
-4. Review its version number, when IPA range inspection is available, and download.
-5. Open **Downloaded apps** to see the IPA version/build and selected ID, export
-   to Files/another app, or request installation using WaffleStore's Safari method.
-   Keep the installation screen open and confirm iOS's prompt.
+4. Review its version number and choose **Download and install** to open the
+   Safari installer after verification, or **Download IPA only** to see Install/
+   Export when it finishes. Keep the installer open and confirm iOS's prompt.
+5. **Downloaded apps** also offers installation, export, version details and
+   **Delete IPA** (with confirmation). Deleting a download does not uninstall
+   the installed app or remove its data.
 
 The user confirmed authentication, versions, IPA export and installation on
 an iPhone running iOS 27.0.1, signed with ksign/certificate without JIT. This is

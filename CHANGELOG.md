@@ -75,3 +75,15 @@ No es una release estable ni una afirmación de recuperación de WaffleStore.
 - Retains error messages/progress and moves interpreter/memory probes to tests.
 - Adds boierito and majd/ipatool credits, preserving original contributors.
 - Consolidates documentation for upstream review; AI-generated contribution is disclosed.
+
+## Direct installation and download management / build 23008
+
+- Add Download and install, a post-download Install/Export sheet and a latest
+  download installation shortcut; keep the original OTA mechanism.
+- Confirm deletion of a saved IPA and sidecar, refresh shortcuts, and condense
+  download metadata into Details. Installed apps/data are not removed.
+- Reuse a same-account SAP preparation and validated pod in memory for five
+  minutes for retry/2FA; sign every request anew and close on cancellation,
+  success or expiry. Apply one login recovery deadline across signing/redirects.
+- Add deletion-boundary and pod/deadline regression tests. Device validation of
+  the new flows and actual login latency remains pending.

@@ -40,8 +40,12 @@ final class AppData: ObservableObject {
     var authenticationTask: Task<Void, Never>?
     var didRestoreStoreAccount = false
     var pendingAuthenticationCookies: [StoreCookie] = []
+    var preparedAppleLogin: PreparedAppleLogin?
+    var loginPreparationExpiry: Task<Void, Never>?
     @Published var showStoreVersions = false
     @Published var downloadedIPAURL: URL?
+    @Published var downloadReady: DownloadRecord?
+    @Published var installationRequest: DownloadRecord?
     @Published var completedDownloads: [DownloadRecord] = []
     @Published var storeError = ""
     var storeTask: Task<Void, Never>?

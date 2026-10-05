@@ -12,6 +12,8 @@ import MapleSAP
 struct NavigationButtons: View {
     @EnvironmentObject var appData: AppData
     
+    @State private var installation: DownloadRecord?
+
     var body: some View {
         VStack {
             // i hate this.
@@ -41,6 +43,9 @@ struct NavigationButtons: View {
                     }
                     .buttonStyle(FancyButtonStyle())
                     .disabled(appData.appLink.isEmpty)
+                    if let record = appData.completedDownloads.first, let url = record.fileURL, url == appData.downloadedIPAURL {
+                        Button { installation = record } label: { Label("Install latest download", systemImage: "arrow.down.app") }
+                    }
                     if let url = appData.downloadedIPAURL {
                         ShareLink(item: url) { Label("Export IPA", systemImage: "square.and.arrow.up") }
                     }
@@ -90,6 +95,7 @@ struct NavigationButtons: View {
                 }
             }
         }
+        .sheet(item: $installation) { OTAInstallationView(record: $0, startImmediately: true) }
     }
 }
 

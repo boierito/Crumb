@@ -35,6 +35,7 @@ public enum AuthenticationOutcome { case authenticated(StoreAccount), twoFactorR
 public enum AuthenticationStage: String, Sendable {
     case bag = "Resolving Store Bag", sap = "Initializing SAP", signing = "Signing authentication request"
     case authenticating = "Contacting Apple", redirect = "Following Store pod", retrying = "Waiting to retry"
+    case prepared = "Using prepared SAP session"
     case twoFactor = "Enter the code from your trusted device", saving = "Saving session in Keychain"
 }
 
@@ -62,28 +63,34 @@ public struct AppleAuthentication {
     private let diagnostic: (String) async -> Void
     private let recoveryAttempts: Int
     private let recoveryWindow: TimeInterval?
+    private let now: () -> Date
     public init(transport: AuthenticationTransport, signer: ActionSigning,
                 persistence: StoreAccountPersistence,
                 diagnostic: @escaping (String) async -> Void = { _ in },
                 automaticRecovery: Bool = false,
+                now: @escaping () -> Date = Date.init,
                 sleep: @escaping (TimeInterval) async throws -> Void = {
                     try await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000))
                 }) {
-        self.transport = transport; self.signer = signer; self.persistence = persistence; self.sleep = sleep; self.diagnostic = diagnostic
+        self.transport = transport; self.signer = signer; self.persistence = persistence; self.sleep = sleep; self.diagnostic = diagnostic; self.now = now
         recoveryAttempts = automaticRecovery ? 12 : 3
         recoveryWindow = automaticRecovery ? 120 : nil
     }
 
     public func login(email: String, password: String, code: String = "", identity: MachineIdentity,
-                      endpoint: URL, progress: (AuthenticationStage) async -> Void = { _ in }) async throws -> AuthenticationOutcome {
+                      endpoint: URL, resolvedEndpoint: (URL) async -> Void = { _ in }, progress: (AuthenticationStage) async -> Void = { _ in }) async throws -> AuthenticationOutcome {
         let code = try TwoFactorAuthentication.normalize(code)
         var endpoint = try AuthenticationEndpoint.validate(endpoint)
+        let deadline = recoveryWindow.map { now().addingTimeInterval($0) }
         var logicalAttempt = 1
         var redirects = 0
         var body = try payload(email: email, password: password, code: code, guid: identity.guid, attempt: logicalAttempt)
         while true {
             try Task.checkCancellation()
-            let (data, response) = try await send(body: body, endpoint: endpoint, progress: progress, secrets: [password, code, email])
+            // Only publish endpoints after the same strict validation used for
+            // credential replay. A warm 2FA/retry can skip an already resolved pod.
+            await resolvedEndpoint(endpoint)
+            let (data, response) = try await send(body: body, endpoint: endpoint, progress: progress, secrets: [password, code, email], deadline: deadline)
             if (300..<400).contains(response.statusCode) {
                 await diagnostic("authentication-redirect=received; HTTP=\(response.statusCode); location-present=\(response.value(forHTTPHeaderField: "Location") != nil)")
                 guard [301, 302, 307, 308].contains(response.statusCode),
@@ -145,15 +152,14 @@ public struct AppleAuthentication {
             "guid": guid, "password": password + code, "rmp": "0", "why": "signIn"], format: .xml, options: 0)
     }
 
-    private func send(body: Data, endpoint: URL, progress: (AuthenticationStage) async -> Void, secrets: [String]) async throws -> (Data, HTTPURLResponse) {
-        let deadline = recoveryWindow.map { Date().addingTimeInterval($0) }
+    private func send(body: Data, endpoint: URL, progress: (AuthenticationStage) async -> Void, secrets: [String], deadline: Date?) async throws -> (Data, HTTPURLResponse) {
         for attempt in 1...recoveryAttempts {
             try Task.checkCancellation()
-            if let deadline, Date() >= deadline { throw AuthenticationError.retryLater }
+            if let deadline, now() >= deadline { throw AuthenticationError.retryLater }
             await diagnostic("authentication-recovery-attempt=\(attempt)/\(recoveryAttempts)")
             await progress(.signing)
             var request = URLRequest(url: endpoint)
-            if let deadline { request.timeoutInterval = max(1, min(30, deadline.timeIntervalSinceNow)) }
+            if let deadline { request.timeoutInterval = max(1, min(30, deadline.timeIntervalSince(now()))) }
             request.httpMethod = "POST"; request.httpBody = body
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
             request.setValue(SAPProtocol.userAgent, forHTTPHeaderField: "User-Agent")
@@ -161,6 +167,13 @@ public struct AppleAuthentication {
             let signature = try await signer.actionSignature(body: body)
             guard !signature.isEmpty else { throw SAPError.emptySignature }
             request.setValue(signature, forHTTPHeaderField: "X-Apple-ActionSignature")
+            try Task.checkCancellation()
+            // Native signing can be slow: recompute the remaining network
+            // timeout afterwards, not before the blocking interpreter call.
+            if let deadline {
+                guard deadline > now() else { throw AuthenticationError.retryLater }
+                request.timeoutInterval = max(1, min(30, deadline.timeIntervalSince(now())))
+            }
             await progress(.authenticating)
             do {
                 await diagnostic(await transport.cookieDiagnostic(for: endpoint))
@@ -174,7 +187,7 @@ public struct AppleAuthentication {
                 guard [204, 403, 404, 429].contains(status) || status / 100 == 5 else { throw AuthenticationError.invalidResponse(status) }
                 guard attempt < recoveryAttempts else { throw status == 429 ? AuthenticationError.rateLimited : AuthenticationError.http(status) }
                 let delay = try retryDelay(response.value(forHTTPHeaderField: "Retry-After"), attempt: attempt)
-                if let deadline, Date().addingTimeInterval(delay) >= deadline { throw status == 429 ? AuthenticationError.rateLimited : AuthenticationError.http(status) }
+                if let deadline, now().addingTimeInterval(delay) >= deadline { throw status == 429 ? AuthenticationError.rateLimited : AuthenticationError.http(status) }
                 await progress(.retrying)
                 try await sleep(delay)
             } catch let error as URLError {
@@ -184,7 +197,7 @@ public struct AppleAuthentication {
                 }
                 await progress(.retrying)
                 let delay = recoveryWindow == nil ? Double(10 << (attempt - 1)) : min(15, Double(2 << min(attempt - 1, 3)))
-                if let deadline, Date().addingTimeInterval(delay) >= deadline { throw AuthenticationError.network(error.code.rawValue) }
+                if let deadline, now().addingTimeInterval(delay) >= deadline { throw AuthenticationError.network(error.code.rawValue) }
                 try await sleep(delay)
             }
         }
@@ -203,7 +216,7 @@ public struct AppleAuthentication {
             let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
             formatter.timeZone = TimeZone(secondsFromGMT: 0); formatter.dateFormat = format
             if let date = formatter.date(from: header) {
-                let value = max(0, date.timeIntervalSinceNow)
+                let value = max(0, date.timeIntervalSince(now()))
                 guard value <= 30 else { throw AuthenticationError.retryLater }
                 return max(1, value)
             }

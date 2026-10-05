@@ -105,17 +105,11 @@ struct StoreVersionsView: View {
                             } else if let failure = labels.failures[choice.id] { Text(failure).font(.caption) }
                             else { ProgressView("Reading the selected IPA version…") }
                         }
-                        Button("Download this version") {
-                            guard let app, let tool = appData.ipaTool else { return }
-                            let expected = labels.info[choice.id]?.version
-                            labels.stop()
-                            selected = nil
-                            // Wait for the serialized inspector before starting Store work.
-                            Task {
-                                await labels.finish()
-                                appData.download(app: app, version: choice.id, tool: tool, expectedVersion: expected)
-                                dismiss()
-                            }
+                        Section {
+                            Button("Download and install") { download(choice, install: true) }
+                            Button("Download IPA only") { download(choice, install: false) }
+                        } footer: {
+                            Text("Installation starts after the selected IPA is downloaded and verified. iOS will ask for confirmation.")
                         }
                     }
                     .navigationTitle("Confirm download")
@@ -140,6 +134,18 @@ struct StoreVersionsView: View {
                 }
                 loading = false
             }
+        }
+    }
+    private func download(_ choice: VersionSelection, install: Bool) {
+        guard let app, let tool = appData.ipaTool else { return }
+        let expected = labels.info[choice.id]?.version
+        labels.stop()
+        selected = nil
+        Task {
+            await labels.finish()
+            appData.download(app: app, version: choice.id, tool: tool,
+                expectedVersion: expected, installWhenReady: install)
+            dismiss()
         }
     }
     private func select(_ id: String, app: StoreApp) {

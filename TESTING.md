@@ -12,8 +12,9 @@ this environment. Device outcomes below were reported by boierito.
 Automatic recovery efficiency, all visible version labels/scroll cases,
 independent installed-version identity and downgrade data retention still need
 measurement. No universal app/device compatibility or end-to-end iOS 26 result
-is claimed. Integration build 23007 removes probes/tracing from the app; its
-cleaned UI/credits should receive an update/regression check on device.
+is claimed. Build 23008 adds direct installation/deletion and warm login preparation.
+These changes require the device checks below; no measured reduction in Apple
+HTTP failures or login time is claimed from host fixtures.
 
 ## Automated checks
 
@@ -45,8 +46,19 @@ this checks generator format only.
    Numbers should load from IPA Info.plist; unavailable labels stay explicit.
 4. Download and compare the displayed Info.plist version/build and selected ID
    in Downloaded apps; export through Files/Share Sheet and reopen the app.
-5. Request installation from Downloaded apps, keep Safari screen open and
+5. Choose Download and install; after verification the Safari installer should
+   open directly. Choose Download IPA only; completion should offer Install now
+   and Export. Check Install latest download and Downloaded apps too. Keep Safari
+   screen open and
    confirm iOS. Record the actual system result and installed version, rather
    than treating URL opening or served bytes as installation confirmation.
-6. Verify server Close/timeouts stop serving without deleting the original IPA.
+6. Delete one downloaded IPA with confirmation (also try swipe/delete/cancel).
+   Confirm its IPA and JSON sidecar disappear, other downloads/exports remain,
+   the latest-download shortcut refreshes, and the installed app/data remain.
+7. Retry a temporary login failure and submit 2FA within five minutes: status
+   should show Using prepared SAP session, skipping Bag/SAP setup. Check success,
+   cancel, account change and expiration discard the preparation. Repeat after
+   five minutes and confirm a fresh Bag/SAP setup. Measure elapsed time and
+   manual attempts; verify wrong/expired code still gets an Apple error.
+8. Verify server Close/timeouts stop serving without deleting the original IPA.
    Repeat with a previously licensed free app on iOS 26/27 as available.

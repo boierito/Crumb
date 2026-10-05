@@ -86,6 +86,10 @@ final class OTAInstaller: ObservableObject {
 }
 struct OTAInstallationView: View {
     let record: DownloadRecord
+    let startImmediately: Bool
+    init(record: DownloadRecord, startImmediately: Bool = false) {
+        self.record = record; self.startImmediately = startImmediately
+    }
     @StateObject private var installer = OTAInstaller()
     @Environment(\.dismiss) private var dismiss
     @State private var started = false
@@ -105,8 +109,7 @@ struct OTAInstallationView: View {
                             .font(.caption)
                         if !installer.status.isEmpty { Text(installer.status) }
                         Button("Request iOS installation") {
-                            do { try installer.start(record); started = true }
-                            catch { installer.status = "Could not start local installation server (code \((error as NSError).code))." }
+                            requestInstallation()
                         }
                         if let url = record.fileURL { ShareLink(item: url) { Label("Export IPA instead", systemImage: "square.and.arrow.up") } }
                     }
@@ -114,8 +117,13 @@ struct OTAInstallationView: View {
             }
             .navigationTitle(started ? "Installation requested" : "Install downloaded IPA")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { installer.stop(); dismiss() } } }
+            .task { if startImmediately && !started { requestInstallation() } }
             .onDisappear { installer.stop() }
         }
+    }
+    private func requestInstallation() {
+        do { try installer.start(record); started = true }
+        catch { installer.status = "Could not start local installation server (code \((error as NSError).code))." }
     }
 }
 private struct InstallationSafari: UIViewControllerRepresentable {

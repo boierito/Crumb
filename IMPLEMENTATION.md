@@ -19,9 +19,14 @@ The Bag supplies SAP endpoints, authentication URL and Store download/purchase
 endpoints. Redirect destinations are validated before any credential replay.
 Native XML/Document/Protocol replies are normalized; account/2FA errors remain
 specific. Temporary HTML/empty HTTP failures use bounded automatic recovery
-(12 attempts/120 seconds per signed request in the UI), separate ephemeral
+(12 HTTP attempts per endpoint, with one 120-second window per UI login), separate ephemeral
 URLSessions and preserved cookies. Retry-After is respected, cancellation is
-available, and the single -5000 logical retry follows ipatool. No fake 2FA code
+available, and the single -5000 logical retry follows ipatool. Signing and
+redirects share that window; a slow signature cannot reset the network timeout.
+The app retains a prepared SAP guest, ephemeral cookies and validated pod for
+up to five minutes for the same account's retry/2FA. Each request is signed
+freshly. This preparation is memory-only, contains no password/code, and closes
+on success, cancellation, logout, account change, terminal error or expiration. No fake 2FA code
 is supplied. Intermittent Apple login failures remain a known limitation.
 
 DSID, passwordToken, storefront, pod, relevant cookies and stable six-byte GUID
@@ -76,7 +81,13 @@ Downloads and can be exported through Files/Share Sheet. Auto-clean preserves th
 
 ## Installation
 
-The original public OTA mechanism is restored: Downloaded apps → Install →
+Version review offers Download and install → verified IPA → Safari, without
+visiting Downloaded apps. Download-only completion offers Install now/Export,
+and the main screen offers Install latest download. Downloaded apps groups
+technical details behind a disclosure and confirms deletion of the IPA plus
+matching JSON sidecar. Other files, installed apps and app data are untouched.
+
+The original public OTA mechanism is restored: Install →
 Safari → itms-services → HTTPS manifest → one verified IPA on loopback.
 The manifest generator remains api.palera.in. It receives only app metadata
 and the loopback address, not account credentials or uploaded IPA bytes.
@@ -112,7 +123,7 @@ python3 scripts/verify-ipa.py WaffleStore-Release.ipa
 GitHub Actions builds Debug/Release unsigned IPAs on macOS and tests Swift,
 Go package preparation and the no-executable-memory interpreter. Artifacts
 include corresponding native sources and license notices. Version remains
-numeric 2.3.0; the integration build is 23007. Sign with conventional sideloading,
+numeric 2.3.0; the integration build is 23008. Sign with conventional sideloading,
 keeping the same bundle ID/certificate when updating to preserve local state.
 
 ipatool is MIT; Unicorn/TCI includes GPL-derived code. Preserve notices and

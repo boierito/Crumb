@@ -45,6 +45,7 @@ Relative to upstream main d508e53.
 - `WaffleStore-Info.plist`
 - `WaffleStore.xcodeproj/project.pbxproj`
 - `WaffleStore/App/AppSearchView.swift`
+- `WaffleStore/App/DownloadReadyView.swift`
 - `WaffleStore/App/DownloadedAppsView.swift`
 - `WaffleStore/App/NavigationButtons.swift`
 - `WaffleStore/App/SettingsView.swift`
@@ -74,6 +75,7 @@ Relative to upstream main d508e53.
 - `scripts/prepare-unicorn-tci.py`
 - `scripts/sap-host-probe_test.go`
 - `scripts/tci-smoke.c`
+- `scripts/test-download-record.swift`
 - `scripts/test-no-exec.sh`
 - `scripts/test-sap-host.sh`
 - `scripts/test-tci-host.sh`

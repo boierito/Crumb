@@ -19,6 +19,25 @@ struct DownloadRecord: Codable, Identifiable {
         let url = docs.appendingPathComponent("Downloads").appendingPathComponent(filename)
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
+    // Delete only the IPA and matching nonsecret sidecar in Downloads. A stale
+    // record is safe to remove even if Files already deleted its IPA.
+    func deleteFiles(in directory: URL? = nil) throws {
+        guard filename == URL(fileURLWithPath: filename).lastPathComponent,
+              filename.hasSuffix(".ipa"), !filename.contains("..") else {
+            throw CocoaError(.fileReadInvalidFileName)
+        }
+        let fm = FileManager.default
+        let root: URL
+        if let directory { root = directory }
+        else {
+            root = try fm.url(for: .documentDirectory, in: .userDomainMask,
+                appropriateFor: nil, create: false).appendingPathComponent("Downloads")
+        }
+        let ipa = root.appendingPathComponent(filename)
+        for file in [ipa, ipa.deletingPathExtension().appendingPathExtension("json")] {
+            if fm.fileExists(atPath: file.path) { try fm.removeItem(at: file) }
+        }
+    }
     static func load() -> [DownloadRecord] {
         let fm = FileManager.default
         guard let docs = try? fm.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false),

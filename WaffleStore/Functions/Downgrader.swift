@@ -18,10 +18,12 @@ func resetDowngradeProgress() {
     appData.isDowngrading = false; appData.showsDowngradeProgress = false
 }
 extension AppData {
-    func download(app: StoreApp, version: String, tool: IPATool, expectedVersion: String? = nil) {
+    func download(app: StoreApp, version: String, tool: IPATool, expectedVersion: String? = nil, installWhenReady: Bool = false) {
         guard storeTask == nil else { return }
         isDowngrading = true; showsDowngradeProgress = true; downgradeProgress = 0
         storeError = ""
+        downloadReady = nil; installationRequest = nil
+        downgradeProgressDetail = "Preparing download…"
 
         storeTask = Task {
             defer { storeTask = nil; isDowngrading = false; showsDowngradeProgress = false }
@@ -85,7 +87,9 @@ extension AppData {
                 completedDownloads = DownloadRecord.load()
                 downloadedIPAURL = destination; hasAppBeenServed = true
                 appBundleID = info.bundleID; appVersion = info.version
-                storeStage("IPA verified and saved. Export to Files or another app.")
+                storeStage("IPA verified and saved. Ready to install or export.")
+                if installWhenReady { installationRequest = record }
+                else { downloadReady = record }
 
                 downgradeProgress = 1; applicationIcon = "checkmark.circle.fill"
             } catch {
@@ -104,8 +108,14 @@ extension AppData {
 
         print("Apple Store stage: \(stage)")
     }
+    func deleteDownload(_ record: DownloadRecord) throws {
+        try record.deleteFiles()
+        if downloadReady?.id == record.id { downloadReady = nil }
+        restoreDownloadedIPA()
+    }
     func restoreDownloadedIPA() {
         completedDownloads = DownloadRecord.load()
+        downloadedIPAURL = nil; hasAppBeenServed = false
         let fm = FileManager.default
         guard let docs = try? fm.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false),
               let files = try? fm.contentsOfDirectory(at: docs.appendingPathComponent("Downloads"),
@@ -116,5 +126,6 @@ extension AppData {
         }.first
         hasAppBeenServed = downloadedIPAURL != nil
         if let record = completedDownloads.first { appBundleID = record.bundleID; appVersion = record.version }
+        else { appBundleID = ""; appVersion = "" }
     }
 }

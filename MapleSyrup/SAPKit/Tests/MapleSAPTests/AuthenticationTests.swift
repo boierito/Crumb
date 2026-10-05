@@ -60,6 +60,46 @@ final class AuthenticationTests: XCTestCase {
         XCTAssertEqual(signer.bodies, requests.map { $0.httpBody! })
     }
 
+    func testResolvedPodIsReusableForTwoFactorWithoutAnotherRedirect() async throws {
+        let pod = URL(string: "https://p42-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate")!
+        let challenge = try plist(["customerMessage": "MZFinance.BadLogin.Configurator_message"])
+        let transport = FixtureAuthenticationTransport([.http(302, Data(), ["Location": pod.absoluteString]),
+            .http(200, challenge, [:]), .http(200, try success(), responseHeaders)])
+        let signer = FixtureSigner()
+        let auth = AppleAuthentication(transport: transport, signer: signer, persistence: FixtureAccountStore())
+        let route = FixtureRoute()
+        guard case .twoFactorRequired = try await auth.login(email: "fixture@example.test", password: "secret",
+            identity: identity, endpoint: endpoint, resolvedEndpoint: { await route.record($0) }) else {
+            return XCTFail("No challenge")
+        }
+        let resolved = await route.last
+        XCTAssertEqual(resolved, pod)
+        _ = try await auth.login(email: "fixture@example.test", password: "secret", code: "123456",
+            identity: identity, endpoint: XCTUnwrap(resolved))
+        let requests = await transport.requests
+        XCTAssertEqual(requests.count, 3)
+        XCTAssertEqual(requests[2].url, pod)
+        XCTAssertEqual(signer.bodies.count, 3) // fresh signing, including 2FA
+        let payload = try PropertyListSerialization.propertyList(from: requests[2].httpBody!, format: nil) as! [String: String]
+        XCTAssertEqual(payload["password"], "secret123456")
+    }
+
+    func testSigningTimeAndRedirectsShareOneRecoveryDeadline() async throws {
+        let clock = FixtureAuthenticationClock()
+        let signer = AdvancingAuthenticationSigner(clock: clock)
+        let transport = FixtureAuthenticationTransport([.http(302, Data(), ["Location": endpoint.absoluteString])])
+        let auth = AppleAuthentication(transport: transport, signer: signer, persistence: FixtureAccountStore(),
+            automaticRecovery: true, now: { clock.date }, sleep: { _ in })
+        do {
+            _ = try await auth.login(email: "fixture@example.test", password: "secret", identity: identity, endpoint: endpoint)
+            XCTFail("Deadline reset on redirect")
+        } catch { XCTAssertEqual(error as? AuthenticationError, .retryLater) }
+        let requests = await transport.requests
+        XCTAssertEqual(requests.count, 1) // second signature exceeds the shared deadline
+        XCTAssertEqual(requests[0].timeoutInterval, 30)
+        XCTAssertEqual(signer.calls, 2)
+    }
+
     func testBareDocumentPairsAuthenticateOnlyWithCompleteSession() async throws {
         let xml = "<Document><Protocol><key>dsPersonId</key><string>123456789</string><key>passwordToken</key><string>fixture-token</string></Protocol></Document>"
         guard case .authenticated = try await login(FixtureAuthenticationTransport([.http(200, Data(xml.utf8), responseHeaders)])) else {
@@ -340,4 +380,22 @@ private final class FixtureAccountStore: StoreAccountPersistence {
 private actor FixtureSleeps {
     var values: [TimeInterval] = []
     func record(_ seconds: TimeInterval) { values.append(seconds) }
+}
+
+private actor FixtureRoute {
+    private(set) var last: URL?
+    func record(_ url: URL) { last = url }
+}
+private final class FixtureAuthenticationClock {
+    var date = Date(timeIntervalSince1970: 1_000_000)
+}
+private final class AdvancingAuthenticationSigner: ActionSigning {
+    let clock: FixtureAuthenticationClock
+    var calls = 0
+    init(clock: FixtureAuthenticationClock) { self.clock = clock }
+    func actionSignature(body: Data) async throws -> String {
+        calls += 1
+        clock.date.addTimeInterval(70)
+        return "fixture-signature-not-valid"
+    }
 }
