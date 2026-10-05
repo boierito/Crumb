@@ -13,7 +13,10 @@ project objectVersion 77 with a synchronized `WaffleStore/` source group.
 Original marketing version is 2.2, build 2. Project metadata says Xcode 27.0;
 the original actually builds with Xcode 26.0 after resolving Swift 6.2 PartyUI.
 No custom signing entitlements file is configured in the original project.
-The Info.plist enables Files document sharing and the `wafflestore` URL scheme.
+The standalone Info.plist declares Files document sharing and the `wafflestore`
+URL scheme, but the target generates its plist without using that file. The
+inspected IPA does not contain UIFileSharingEnabled; declarations in that
+unused file must not be treated as verified capabilities.
 The `MapleSyrup/` directory originally contains a share-extension controller
 and storyboard; it is not a separate backend Swift package or active target.
 

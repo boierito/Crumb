@@ -1,7 +1,9 @@
 import Foundation
 import MapleSAP
 
-final class NativeSAPGuest: AppleSAPGuest {
+// The application target defaults to MainActor. Guest calls must stay on the
+// SAPSession executor, since asset loading/emulation can take minutes.
+nonisolated final class NativeSAPGuest: AppleSAPGuest {
     let executionMode = SAPExecutionMode.interpreted
     private var handle: UInt64 = 0
     private let cache: URL
