@@ -10,6 +10,10 @@ on:
         description: 'Source revision (original: upstream-wafflestore-2.2.2)'
         required: false
         default: ''
+      release_tag:
+        description: 'Optional existing draft tag to refresh with IPAs and corresponding sources'
+        required: false
+        default: ''
 permissions:
   contents: read
 jobs:
@@ -64,7 +68,7 @@ jobs:
           path: artifacts/
           if-no-files-found: error
   publish:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
     needs: ipa
     runs-on: ubuntu-latest
     permissions:
@@ -78,9 +82,16 @@ jobs:
       - name: Create draft prerelease
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
           REPOSITORY: ${{ github.repository }}
         run: |
-          gh release create "$RELEASE_TAG" artifacts/*.ipa --repo "$REPOSITORY" \
+          if DRAFT=$(gh release view "$RELEASE_TAG" --repo "$REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null); then
+            test "$DRAFT" = true || { echo 'Refusing to modify a published release.' >&2; exit 1; }
+            gh release upload "$RELEASE_TAG" artifacts/*.ipa artifacts/*-corresponding-source.tar.gz \
+              artifacts/UNICORN-COPYING artifacts/IPATOOL-LICENSE --repo "$REPOSITORY" --clobber
+            exit 0
+          fi
+          gh release create "$RELEASE_TAG" artifacts/*.ipa artifacts/*-corresponding-source.tar.gz \
+            artifacts/UNICORN-COPYING artifacts/IPATOOL-LICENSE --repo "$REPOSITORY" \
             --draft --prerelease --title "$RELEASE_TAG" \
             --notes 'Unsigned development IPA; resign with a conventional sideloader. See IMPLEMENTATION.md and TESTING.md for verified milestones and limitations. Redistribution rights for the upstream project must be resolved before publication.'
