@@ -3,7 +3,7 @@ import PartyUI
 
 struct ContentView: View {
     @State private var hasShownWelcome: Bool = false
-    @State private var showLogs: Bool = true
+    @State private var showLogs: Bool = false
     @State private var showSettingsView: Bool = false
     @State private var showSearchView: Bool = false
     @State private var showHistoryView: Bool = false
@@ -50,9 +50,10 @@ struct ContentView: View {
             } else {
                 NavigationStack {
                     List {
-                        LogsSection
+                        if appData.isAuthenticated { LogsSection }
                         if !appData.isAuthenticated {
                             LoginSection
+                            LogsSection
                         } else {
                             if appData.isDowngrading {
                                 AppInfoSection
@@ -101,9 +102,11 @@ struct ContentView: View {
     }
     
     private var LogsSection: some View {
-        Section(header: HeaderLabel(text: "Logs".localized, icon: "terminal"), footer: Text("Originally created by mineek with QoL improvements and backend fixes made by jailbreak.party with further upgrades by nxtcoreee3.".localized)) {
-            VStack {
-                TerminalHeader(text: appData.applicationStatus, icon: appData.applicationIcon, color: appData.applicationIconColor)
+        Section {
+            if appData.isAuthenticated {
+                Label(appData.applicationStatus, systemImage: appData.applicationIcon)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
                 if appData.showsDowngradeProgress {
                     VStack(alignment: .leading, spacing: 6) {
                         ProgressView(value: appData.downgradeProgress)
@@ -117,7 +120,10 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, 2)
                 }
+            }
+            DisclosureGroup("Activity log", isExpanded: $showLogs) {
                 LogView()
+                    .frame(height: 140)
                     .modifier(TerminalPlatter())
             }
         }
@@ -125,7 +131,7 @@ struct ContentView: View {
     
     private var LoginSection: some View {
         Group {
-            Section(header: HeaderLabel(text: "Login".localized, icon: "icloud"), footer: Text("Temporary Apple failures are retried automatically for up to two minutes per sign-in attempt. You can cancel. Apple decides whether to request a new 2FA code.")) {
+            Section(header: HeaderLabel(text: "Login".localized, icon: "icloud"), footer: Text("Sign in to choose and download App Store versions.")) {
                 VStack {
                     TextField("Apple ID".localized, text: $appData.appleId)
                         .modifier(TextFieldBackground())
@@ -161,16 +167,23 @@ struct ContentView: View {
                         .buttonStyle(TranslucentButtonStyle(useFullWidth: false))
                     }
                 }
-            }
-            
-            if !appData.authenticationError.isEmpty {
-                Section { Text(appData.authenticationError).foregroundStyle(.red).textSelection(.enabled) }
-            }
-            if appData.isAuthenticating {
-                Section {
-                    ProgressView(appData.applicationStatus)
-                    Text(appData.authenticationRecovery).font(.caption).foregroundStyle(.secondary)
-                    Button("Cancel sign-in") { appData.cancelAppleLogin() }
+                if appData.isAuthenticating {
+                    HStack(spacing: 12) {
+                        ProgressView()
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(appData.applicationStatus).font(.subheadline)
+                            if !appData.authenticationRecovery.isEmpty {
+                                Text(appData.authenticationRecovery).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer(minLength: 0)
+                        Button("Cancel") { appData.cancelAppleLogin() }
+                            .buttonStyle(.borderless)
+                    }
+                    .accessibilityElement(children: .contain)
+                }
+                if !appData.authenticationError.isEmpty {
+                    Text(appData.authenticationError).font(.subheadline).foregroundStyle(.red).textSelection(.enabled)
                 }
             }
             if appData.hasSent2FACode {
@@ -180,7 +193,7 @@ struct ContentView: View {
                         .keyboardType(.numberPad)
                         .textContentType(.oneTimeCode)
                         .disabled(appData.isAuthenticating)
-                    Button("Use another Apple ID / restart sign-in") { appData.cancelAppleLogin() }
+                    Button("Use another Apple ID") { appData.cancelAppleLogin() }
                         .disabled(appData.isAuthenticating)
                 }
             }

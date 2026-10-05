@@ -17,7 +17,11 @@ final class IPATool {
         let store = try StoreSession(account: account, identity: KeychainMachineIdentity.loadOrCreate(),
             transport: transport, generator: NativeKBSyncGenerator(), persistence: KeychainKBSync(), progress: { stage in
                 await MainActor.run {
-                    AppData.shared.applicationStatus = stage.rawValue
+                    switch stage {
+                    case .purchase: AppData.shared.applicationStatus = "Obtaining free app…"
+                    case .bag, .latest: AppData.shared.applicationStatus = "Finding available versions…"
+                    default: AppData.shared.applicationStatus = "Preparing download…"
+                    }
                     print("Apple Store stage: \(stage.rawValue)")
                 }
             })

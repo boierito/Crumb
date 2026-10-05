@@ -23,6 +23,7 @@ struct DownloadReadyView: View {
                 }
             }
             .navigationTitle("Download complete")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
             .sheet(isPresented: $install) { OTAInstallationView(record: record, startImmediately: true) }
         }

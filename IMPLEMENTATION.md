@@ -123,10 +123,39 @@ python3 scripts/verify-ipa.py WaffleStore-Release.ipa
 GitHub Actions builds Debug/Release unsigned IPAs on macOS and tests Swift,
 Go package preparation and the no-executable-memory interpreter. Artifacts
 include corresponding native sources and license notices. Version remains
-numeric 2.3.0; the integration build is 23008. Sign with conventional sideloading,
+numeric 2.3.0; the integration build is 23010. Sign with conventional sideloading,
 keeping the same bundle ID/certificate when updating to preserve local state.
 
 ipatool is MIT; Unicorn/TCI includes GPL-derived code. Preserve notices and
 corresponding sources. Original WaffleStore has no explicit redistribution
 license; upstream PR review does not establish permission to publish unrelated
 redistributed releases. See THIRD_PARTY_NOTICES.md.
+
+## Free-license preparation and UI recovery (23010)
+
+A verified zero catalog price now triggers `buyProduct` from the validated Bag
+and authenticated pod before asking for version/download metadata. Purchase
+always uses `appExtVrsId=0` / `price=0` / `STDQ`, matching ipatool's normal free
+license request. Only `purchaseSuccess/status=0` or the explicit already-owned
+code 5002 is accepted. The original requested externalVersionId is retained for
+the following download. License success is memoized in the account-bound Store
+session, not on disk; logout/recreating IPATool removes it. A cached license
+rejected by Apple can be refreshed once, with no acquisition loop in one operation.
+Paid/unknown-price apps are not automatically acquired; an owned paid app can
+still download. Purchase failures retain Apple's sanitized information.
+
+Previously only a final 9610 download failure initiated acquisition; intermediate
+fallbacks could mask that signal. The preferred endpoint's structured 9610 now
+propagates directly, and free apps do not depend on that signal to obtain a license.
+There is no paid purchase, subscription acquisition, or replay after ambiguous
+purchase failure. Device acceptance for previously unowned apps is pending.
+
+The main terminal is collapsed by default; status/progress use compact rows and
+user-facing wording. stdout is drained continuously into a bounded memory buffer
+on MainActor, independent of the terminal view, so hiding it cannot fill the pipe.
+Version/download modals use inline navigation titles and grouped rows. Technical
+IDs are under Advanced/Details. Install/Export use the original PartyUI button
+style, and downloaded-file deletion remains in the item menu/swipe with confirmation.
+The clean integration line is based on build 23008; the optional investigation
+branch/build 23009 remains separate. See docs/UI_REVIEW_23010.md for screenshot
+findings and explicit visual/device validation gaps.

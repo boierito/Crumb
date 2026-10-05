@@ -163,7 +163,13 @@ extension AppData {
     }
 
     private func setAuthenticationStage(_ stage: AuthenticationStage) {
-        applicationStatus = stage.rawValue
+        switch stage {
+        case .bag, .sap, .signing, .prepared: applicationStatus = "Preparing sign-in…"
+        case .authenticating, .redirect: applicationStatus = "Connecting to Apple…"
+        case .retrying: applicationStatus = "Apple is taking longer. Retrying…"
+        case .saving: applicationStatus = "Completing sign-in…"
+        case .twoFactor: applicationStatus = "Enter your verification code."
+        }
         print("Apple authentication stage: \(stage.rawValue)")
     }
     private func applyStoreAccount(_ account: StoreAccount, restored: Bool) {
@@ -172,7 +178,7 @@ extension AppData {
         pendingAuthenticationCookies = []
         ipaTool = IPATool(account: account)
         isAuthenticated = true
-        applicationStatus = restored ? "Saved session loaded; Apple validity not checked." : "Signed in. Choose an app/version to download."
+        applicationStatus = "Signed in. Choose an app to get started."
         applicationIcon = "checkmark.circle.fill"
         applicationIconColor = .primary
         print("Apple authentication: \(restored ? "saved session loaded" : "DSID/token/storefront received and saved in Keychain") [values withheld]")

@@ -58,67 +58,114 @@ struct StoreVersionsView: View {
     @State private var loading = true
     @State private var manualID = ""
     @State private var selected: VersionSelection?
+    @State private var showAdvanced = false
+    @State private var loadAttempt = 0
     var body: some View {
         NavigationStack {
             List {
-                if loading { ProgressView("Resolving available versions…") }
-                if !error.isEmpty { Text(error).foregroundStyle(.red).textSelection(.enabled) }
                 if let app {
-                    Section(app.name) {
-                        Text(app.bundleID).font(.caption)
-                        Text("Version numbers are read from the IPA. Labels load as rows become visible.")
-                            .font(.caption).foregroundStyle(.secondary)
+                    Section {
+                        HStack(spacing: 12) {
+                            Image(systemName: "app.fill")
+                                .font(.title2).foregroundStyle(.tint)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(app.name).font(.headline)
+                                Text(app.bundleID).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+                if loading {
+                    Section {
+                        HStack(spacing: 12) {
+                            ProgressView()
+                            Text(appData.applicationStatus == "Obtaining free app…" ? "Obtaining free app…" : "Finding available versions…")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                        }
+                    }
+                } else if !error.isEmpty {
+                    Section {
+                        Label(error, systemImage: "exclamationmark.circle")
+                            .font(.subheadline).foregroundStyle(.secondary).textSelection(.enabled)
+                        Button("Try again") { loadAttempt += 1 }
+                    }
+                } else if let app {
+                    Section {
                         ForEach(versions, id: \.self) { id in
                             Button { select(id, app: app) } label: {
-                                HStack {
-                                    VStack(alignment: .leading) {
-                                        Text(labels.info[id].map { "Version \($0.version)" } ?? (labels.failures[id] != nil ? "Version number unavailable" : (id == latest ? "Latest version" : "Reading version…")))
-                                        Text("ID \(id)\(id == latest ? " · Latest" : "")").font(.caption).foregroundStyle(.secondary)
+                                HStack(spacing: 12) {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(labels.info[id].map { "Version \($0.version)" } ?? (labels.failures[id] != nil ? "Version ID \(id)" : (id == latest ? "Latest version" : "Loading version…")))
+                                            .foregroundStyle(.primary)
+                                        if id == latest {
+                                            Text("Latest").font(.caption).foregroundStyle(.secondary)
+                                        } else if labels.info[id] == nil {
+                                            Text(labels.failures[id] == nil ? "ID \(id)" : "Number unavailable")
+                                                .font(.caption).foregroundStyle(.secondary)
+                                        }
                                     }
-                                    Spacer()
+                                    Spacer(minLength: 8)
                                     if labels.active == id { ProgressView() }
+                                    Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
                                 }
+                                .padding(.vertical, 4)
+                                .frame(minHeight: 44)
+                                .contentShape(Rectangle())
                             }
+                            .buttonStyle(.plain)
                             .onAppear { if let tool = appData.ipaTool { labels.request(id, app: app, tool: tool) } }
                             .onDisappear { if selected?.id != id { labels.hide(id) } }
                         }
+                    } header: {
+                        Text("\(versions.count) available versions")
                     }
-                    Section("Specific externalVersionId") {
-                        TextField("Numeric externalVersionId", text: $manualID).keyboardType(.numberPad)
-                        Button("Review selected version") { select(manualID, app: app) }
-                            .disabled(StoreParsing.identifier(manualID) == nil)
+                    Section {
+                        DisclosureGroup("Advanced", isExpanded: $showAdvanced) {
+                            TextField("External version ID", text: $manualID).keyboardType(.numberPad)
+                            Button("Choose this version") { select(manualID, app: app) }
+                                .disabled(StoreParsing.identifier(manualID) == nil)
+                        }
                     }
                 }
             }
-            .navigationTitle("Download a version")
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
+            .navigationTitle("Choose version")
+            .navigationBarTitleDisplayMode(.inline)
+            .listStyle(.insetGrouped)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { labels.stop(); dismiss() } } }
             .sheet(item: $selected) { choice in
                 NavigationStack {
                     Form {
                         Section("Selected version") {
                             Text(app?.name ?? "App")
-                            Text("externalVersionId: \(choice.id)").textSelection(.enabled)
                             if let info = labels.info[choice.id] {
                                 Text("Version: \(info.version)")
                                 if let build = info.build { Text("Build: \(build)") }
-                                Text("Read from IPA Info.plist").font(.caption).foregroundStyle(.secondary)
                             } else if let failure = labels.failures[choice.id] { Text(failure).font(.caption) }
-                            else { ProgressView("Reading the selected IPA version…") }
+                            else { HStack(spacing: 12) { ProgressView(); Text("Checking version…").foregroundStyle(.secondary) } }
+                            DisclosureGroup("Version details") {
+                                LabeledContent("External version ID", value: choice.id).font(.caption).textSelection(.enabled)
+                            }
                         }
                         Section {
-                            Button("Download and install") { download(choice, install: true) }
-                            Button("Download IPA only") { download(choice, install: false) }
+                            Button { download(choice, install: true) } label: {
+                                Label("Download and install", systemImage: "arrow.down.app")
+                            }
+                            Button { download(choice, install: false) } label: {
+                                Label("Download IPA", systemImage: "square.and.arrow.down")
+                            }
                         } footer: {
-                            Text("Installation starts after the selected IPA is downloaded and verified. iOS will ask for confirmation.")
+                            Text("iOS will ask you to confirm installation after the download.")
                         }
                     }
-                    .navigationTitle("Confirm download")
+                    .navigationTitle("Selected version")
+                    .navigationBarTitleDisplayMode(.inline)
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { selected = nil } } }
                 }
                 .presentationDetents([.medium, .large])
             }
-            .onDisappear { labels.stop() }
-            .task {
+            .onDisappear { if selected == nil { labels.stop() } }
+            .task(id: loadAttempt) {
+                loading = true; error = ""
                 guard let tool = appData.ipaTool else { loading = false; return }
 
                 do {

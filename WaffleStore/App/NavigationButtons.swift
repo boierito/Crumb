@@ -15,7 +15,7 @@ struct NavigationButtons: View {
     @State private var installation: DownloadRecord?
 
     var body: some View {
-        VStack {
+        VStack(spacing: 10) {
             // i hate this.
             if !appData.isAuthenticated {
                 Button(action: {
@@ -39,15 +39,26 @@ struct NavigationButtons: View {
                         .buttonStyle(FancyButtonStyle())
                 } else {
                     Button(action: { appData.showStoreVersions = true }) {
-                        ButtonLabel(text: "Choose version / download IPA", icon: "square.and.arrow.down")
+                        ButtonLabel(text: "Choose version", icon: "square.and.arrow.down")
                     }
                     .buttonStyle(FancyButtonStyle())
                     .disabled(appData.appLink.isEmpty)
                     if let record = appData.completedDownloads.first, let url = record.fileURL, url == appData.downloadedIPAURL {
-                        Button { installation = record } label: { Label("Install latest download", systemImage: "arrow.down.app") }
-                    }
-                    if let url = appData.downloadedIPAURL {
-                        ShareLink(item: url) { Label("Export IPA", systemImage: "square.and.arrow.up") }
+                        VStack(spacing: 6) {
+                            Text("\(record.appName) · \(record.version)")
+                                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            HStack(spacing: 10) {
+                                Button { installation = record } label: {
+                                    ButtonLabel(text: "Install", icon: "arrow.down.app")
+                                }
+                                .accessibilityLabel("Install \(record.appName), version \(record.version)")
+                                ShareLink(item: url) { ButtonLabel(text: "Export", icon: "square.and.arrow.up") }
+                            }
+                            .buttonStyle(TranslucentButtonStyle())
+                        }
+                    } else if let url = appData.downloadedIPAURL {
+                        ShareLink(item: url) { ButtonLabel(text: "Export IPA", icon: "square.and.arrow.up") }
+                            .buttonStyle(TranslucentButtonStyle())
                     }
                     let currentAppId = extractAppId(from: appData.appLink)
                     let existingFav = appData.favourites.first { currentAppId.isEmpty ? $0.appLink == appData.appLink : extractAppId(from: $0.appLink) == currentAppId }

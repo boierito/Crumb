@@ -62,3 +62,32 @@ this checks generator format only.
    manual attempts; verify wrong/expired code still gets an Apple error.
 8. Verify server Close/timeouts stop serving without deleting the original IPA.
    Repeat with a previously licensed free app on iOS 26/27 as available.
+
+## Build 23010: free-license acquisition and UI
+
+Manual validation pending on a physical normally signed iPhone (iOS 26 and 27).
+Earlier user-reported success does not validate these new changes.
+
+- Use a free app never acquired by the test account. Choose version: confirm
+  Obtaining free app precedes version loading and Apple's account library gains
+  access. Select an older known version, download and check the saved IPA's
+  version/build and externalVersionId; install and verify on-device version.
+- Repeat with the owned app: version-label requests must not repeatedly acquire
+  the same license within one Store session. Test another previously unowned app.
+- Paid app not owned: no buyProduct request. Paid app owned: download continues.
+  Unknown price: refuse automatic acquisition. Terms/age/subscription/account
+  restrictions: show Apple's sanitized error, no download without confirmed license.
+- Inspect all four reported screens: login (retry, cancellation, 2FA and error),
+  versions (loading, acquisition failure/retry, deep scroll and confirmation),
+  main actions (selected app versus labeled completed download), downloaded apps
+  (Install, Export, Details, menu/swipe deletion and empty state).
+- Verify Dynamic Type, VoiceOver labels, dark/light appearance, landscape, small
+  iPhone and iPad. Screenshot review cannot establish contrast/accessibility compliance.
+- Keep Activity log collapsed during several operations, then expand it; verify
+  activity remains available and UI does not hang. Buffer is bounded to 32,768
+  characters; restart clears it. It must never include credentials or signed URLs.
+
+Fixture coverage: acquisition before download, exact older ID retained, already
+owned only once, failed acquisition not cached/no download, missing license after
+purchase has no loop, structured 9610 propagation and opt-out, no paid acquisition.
+These fixtures do not prove live Apple purchase acceptance or iOS installation.

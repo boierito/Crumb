@@ -87,3 +87,14 @@ No es una release estable ni una afirmación de recuperación de WaffleStore.
   success or expiry. Apply one login recovery deadline across signing/redirects.
 - Add deletion-boundary and pod/deadline regression tests. Device validation of
   the new flows and actual login latency remains pending.
+
+## Free-license acquisition and UI recovery / build 23010
+
+- Obtain verified free apps before requesting versions; preserve the selected
+  externalVersionId and cache only confirmed ownership for the current account session.
+- Preserve structured missing-license errors and bound acquisition recovery.
+- Restore compact login/progress, collapsed activity logs, inline modal titles,
+  grouped version rows and consistent PartyUI Install/Export buttons.
+- Move external version input to Advanced and deletion to item menu/swipe.
+- Drain stdout independently of the visible log view, update it on MainActor and
+  bound memory. Device validation of UI and previously unowned free apps is pending.

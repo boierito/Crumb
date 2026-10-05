@@ -9,7 +9,6 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 var pipe = Pipe()
-var sema = DispatchSemaphore(value: 0)
 var weOnADebugBuild: Bool = false
 
 @main
@@ -20,6 +19,7 @@ struct WaffleStoreApp: App {
     @AppStorage("autoCleanApp") var autoCleanApp: Bool = true
     
     init() {
+        ActivityLog.shared.beginCapture()
         setvbuf(stdout, nil, _IONBF, 0)
         dup2(pipe.fileHandleForWriting.fileDescriptor, STDOUT_FILENO)
         #if DEBUG

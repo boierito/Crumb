@@ -1,6 +1,4 @@
-# Modified files
-
-Relative to upstream main d508e53.
+# Modified files relative to upstream
 
 - `.github/workflows/build-ipa.yml`
 - `.github/workflows/sap-tests.yml`
@@ -47,6 +45,7 @@ Relative to upstream main d508e53.
 - `WaffleStore/App/AppSearchView.swift`
 - `WaffleStore/App/DownloadReadyView.swift`
 - `WaffleStore/App/DownloadedAppsView.swift`
+- `WaffleStore/App/LogView.swift`
 - `WaffleStore/App/NavigationButtons.swift`
 - `WaffleStore/App/SettingsView.swift`
 - `WaffleStore/App/StoreVersionsView.swift`
@@ -63,8 +62,10 @@ Relative to upstream main d508e53.
 - `WaffleStore/MapleSyrup/NativeSAPGuest.swift`
 - `WaffleStore/MapleSyrup/NativeStoreGuest.swift`
 - `WaffleStore/Resources/ThirdPartyNotices.txt`
+- `WaffleStore/WaffleStoreApp.swift`
 - `docs/BACKEND_AUDIT.md`
 - `docs/IPATOOL_AUDIT.md`
+- `docs/UI_REVIEW_23010.md`
 - `scripts/build-sap-native.sh`
 - `scripts/build-unicorn-tci.sh`
 - `scripts/deny-exec.h`

@@ -1,4 +1,5 @@
 import SwiftUI
+import PartyUI
 
 struct DownloadedAppsView: View {
     @EnvironmentObject var appData: AppData
@@ -20,18 +21,31 @@ struct DownloadedAppsView: View {
                 }
                 ForEach(appData.completedDownloads) { record in
                     VStack(alignment: .leading, spacing: 12) {
-                        Text(record.appName).font(.headline)
-                        Text("Version \(record.version)").font(.subheadline)
-                        if let build = record.build { Text("Build \(build)").font(.caption).foregroundStyle(.secondary) }
-                        HStack {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: "app.fill").font(.title2).foregroundStyle(.tint)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(record.appName).font(.headline)
+                                Text("Version \(record.version)").font(.subheadline).foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                            Menu {
+                                Button(role: .destructive) { requestDeletion(record) } label: {
+                                    Label("Delete IPA", systemImage: "trash")
+                                }
+                            } label: {
+                                Image(systemName: "ellipsis").frame(minWidth: 44, minHeight: 44)
+                            }
+                            .accessibilityLabel("Options for \(record.appName), version \(record.version)")
+                        }
+                        HStack(spacing: 10) {
                             Button { installation = record } label: { Label("Install", systemImage: "arrow.down.app") }
-                            Spacer()
                             if let url = record.fileURL {
                                 ShareLink(item: url) { Label("Export", systemImage: "square.and.arrow.up") }
                             }
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(TranslucentButtonStyle())
                         DisclosureGroup("Details") {
+                            if let build = record.build { Text("Build \(build)").font(.caption) }
                             Text(record.bundleID).font(.caption).textSelection(.enabled)
                             Text("externalVersionId \(record.externalVersionID)").font(.caption).textSelection(.enabled)
                             Text(record.date, style: .date).font(.caption)
@@ -41,10 +55,6 @@ struct DownloadedAppsView: View {
                             }
                             Text("Version and build read from the downloaded IPA.").font(.caption).foregroundStyle(.secondary)
                         }
-                        Button(role: .destructive) { requestDeletion(record) } label: {
-                            Label("Delete IPA", systemImage: "trash")
-                        }
-                        .buttonStyle(.borderless)
                     }
                     .padding(.vertical, 4)
                     .swipeActions(allowsFullSwipe: false) {
@@ -53,8 +63,10 @@ struct DownloadedAppsView: View {
                 }
             }
             .navigationTitle("Downloaded apps")
+            .navigationBarTitleDisplayMode(.inline)
+            .listStyle(.insetGrouped)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
-            .sheet(item: $installation) { OTAInstallationView(record: $0) }
+            .sheet(item: $installation) { OTAInstallationView(record: $0, startImmediately: true) }
             .confirmationDialog("Delete downloaded IPA?", isPresented: $confirmDeletion, titleVisibility: .visible) {
                 if let record = deletion {
                     Button("Delete IPA", role: .destructive) {
