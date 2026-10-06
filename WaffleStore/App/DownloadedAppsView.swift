@@ -9,6 +9,7 @@ struct DownloadedAppsView: View {
     @State private var showLogs = false
     @State private var installation: DownloadRecord?
     @State private var deletion: DownloadRecord?
+    @State private var confirmDeleteAll = false
     @State private var confirmDeletion = false
     @State private var deletionError = ""
     var body: some View {
@@ -100,6 +101,12 @@ struct DownloadedAppsView: View {
                     }
                     }
                 }
+                if !appData.completedDownloads.isEmpty || appData.downloadedIPAURL != nil {
+                    Section {
+                        Button("Delete all downloads", role: .destructive) { confirmDeleteAll = true }
+                            .disabled(appData.isDowngrading)
+                    }
+                }
                 Section {
                     DisclosureGroup("Activity log", isExpanded: $showLogs) { LogView() }
                 }
@@ -129,6 +136,20 @@ struct DownloadedAppsView: View {
                 Button("Cancel", role: .cancel) { deletion = nil }
             } message: {
                 Text("The saved IPA will be removed. The installed app and its data will stay on this device.")
+            }
+            .alert("Delete all downloads?", isPresented: $confirmDeleteAll) {
+                Button("Delete all", role: .destructive) {
+                    do {
+                        try withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) {
+                            try appData.deleteAllDownloads()
+                        }
+                    } catch {
+                        deletionError = "Could not delete all downloads (code \((error as NSError).code))."
+                    }
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("All downloaded IPAs will be removed. Installed apps, favourites and your Apple account will stay unchanged.")
             }
             .alert("Could not delete download", isPresented: Binding(
                 get: { !deletionError.isEmpty }, set: { if !$0 { deletionError = "" } })) {

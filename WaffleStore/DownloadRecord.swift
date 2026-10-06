@@ -38,6 +38,33 @@ struct DownloadRecord: Codable, Identifiable {
             if fm.fileExists(atPath: file.path) { try fm.removeItem(at: file) }
         }
     }
+    // Clean downloaded IPAs and their sidecars, including IPAs without records.
+    // Preserve unrelated documents and never follow a substituted Downloads directory.
+    static func deleteAllFiles(in directory: URL? = nil) throws {
+        let fm = FileManager.default
+        let root = try directory ?? fm.url(for: .documentDirectory, in: .userDomainMask,
+            appropriateFor: nil, create: false).appendingPathComponent("Downloads")
+        guard fm.fileExists(atPath: root.path) else { return }
+        let values = try root.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+        guard values.isDirectory == true, values.isSymbolicLink != true else {
+            throw CocoaError(.fileReadInvalidFileName)
+        }
+        let files = try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey])
+        for file in files where file.pathExtension == "ipa" {
+            guard try file.resourceValues(forKeys: [.isDirectoryKey]).isDirectory != true else { continue }
+            let record = DownloadRecord(filename: file.lastPathComponent, appID: "", appName: "",
+                bundleID: "", version: "", build: nil, externalVersionID: "", date: .distantPast)
+            try record.deleteFiles(in: root)
+        }
+        // A sidecar may remain after the IPA was deleted in Files.
+        for file in files where file.pathExtension == "json" && fm.fileExists(atPath: file.path) {
+            guard let data = try? Data(contentsOf: file), data.count < 65536,
+                  let record = try? JSONDecoder().decode(DownloadRecord.self, from: data),
+                  file.lastPathComponent == URL(fileURLWithPath: record.filename)
+                    .deletingPathExtension().appendingPathExtension("json").lastPathComponent else { continue }
+            try record.deleteFiles(in: root)
+        }
+    }
     static func load() -> [DownloadRecord] {
         let fm = FileManager.default
         guard let docs = try? fm.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false),

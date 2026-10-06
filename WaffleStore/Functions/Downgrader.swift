@@ -114,6 +114,12 @@ extension AppData {
         if downloadReady?.id == record.id { downloadReady = nil }
         restoreDownloadedIPA()
     }
+    func deleteAllDownloads() throws {
+        guard !isDowngrading else { return }
+        defer { restoreDownloadedIPA() }
+        try DownloadRecord.deleteAllFiles()
+        downloadReady = nil
+    }
     func restoreDownloadedIPA() {
         completedDownloads = DownloadRecord.load()
         downloadedIPAURL = nil; hasAppBeenServed = false

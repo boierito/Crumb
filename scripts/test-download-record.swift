@@ -28,6 +28,24 @@ import Foundation
                 preconditionFailure("Unsafe filename accepted")
             } catch let error as CocoaError { precondition(error.code == .fileReadInvalidFileName) }
         }
+        try Data("keep document".utf8).write(to: root.appendingPathComponent("notes.txt"))
+        try Data("unrelated json".utf8).write(to: root.appendingPathComponent("unrelated.json"))
+        try Data().write(to: root.appendingPathComponent("orphan.ipa"))
+        try JSONEncoder().encode(record("missing.ipa")).write(to: root.appendingPathComponent("missing.json"))
+        try DownloadRecord.deleteAllFiles(in: root)
+        precondition(!fm.fileExists(atPath: root.appendingPathComponent("keep.ipa").path))
+        precondition(!fm.fileExists(atPath: root.appendingPathComponent("keep.json").path))
+        precondition(!fm.fileExists(atPath: root.appendingPathComponent("orphan.ipa").path))
+        precondition(!fm.fileExists(atPath: root.appendingPathComponent("missing.json").path))
+        precondition(fm.fileExists(atPath: root.appendingPathComponent("notes.txt").path))
+        precondition(fm.fileExists(atPath: root.appendingPathComponent("unrelated.json").path))
+        try DownloadRecord.deleteAllFiles(in: root) // idempotent
+        let link = root.appendingPathComponent("linked-downloads")
+        try fm.createSymbolicLink(at: link, withDestinationURL: root)
+        do {
+            try DownloadRecord.deleteAllFiles(in: link)
+            preconditionFailure("Symlink Downloads directory accepted")
+        } catch let error as CocoaError { precondition(error.code == .fileReadInvalidFileName) }
         print("Download deletion: IPA/sidecar, stale records, unrelated files and path boundaries passed")
     }
 }

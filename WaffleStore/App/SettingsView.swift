@@ -70,38 +70,6 @@ struct SettingsView: View {
                     .pickerStyle(.menu)
                 }
                 
-                if !appData.completedDownloads.isEmpty {
-                    Section("Downloaded IPAs") {
-                        ForEach(appData.completedDownloads) { record in
-                            if let url = record.fileURL {
-                                ShareLink(item: url) {
-                                    VStack(alignment: .leading) {
-                                        Text("\(record.appName) — \(record.version)")
-                                        Text("externalVersionId \(record.externalVersionID)").font(.caption).foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                Section(header: HeaderLabel(text: "Data".localized, icon: "loupe"), footer: Text("Storage Warning".localized)) {
-                    VStack {
-                        Button(action: {
-                            if let url = appData.downloadedIPAURL { presentShareSheet(with: url) }
-                        }) {
-                            ButtonLabel(text: "Export IPA".localized, icon: "arrow.up.doc")
-                        }
-                        .buttonStyle(TranslucentButtonStyle())
-                        .disabled(!appData.hasAppBeenServed)
-                        Button(action: {
-                            cleanUp()
-                        }) {
-                            ButtonLabel(text: "Clean Documents".localized, icon: "trash")
-                        }
-                        .buttonStyle(TranslucentButtonStyle())
-                        
-                    }
-                }
                 Section(header: HeaderLabel(text: "Credits".localized, icon: "star")) {
                     LinkCreditCell(image: Image("mineek"), name: "mineek", description: "Original creator of MuffinStore Jailed.".localized, url: "https://github.com/mineek")
                     LinkCreditCell(image: Image("lunginspector"), name: "lunginspector", description: "Original creator of PancakeStore.".localized, url: "https://github.com/lunginspector")

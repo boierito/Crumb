@@ -327,3 +327,7 @@ and target preservation. Visual/tap/real transfer checks require device validati
 ## Build 23016 — remove unused history and confirm before deleting
 
 The user verified 23015 search/download/export/install/UI on device, but regional acquisition still returns Apple 2059 (the reported number varies in subsequent messages). No further auth or purchase changes are made. Remove the unpopulated Downgrade History screen, state/model and JSON import/export controls; existing downloaded IPA records remain the download list. Historical UserDefaults bytes are left untouched. A destructive-role swipe button caused SwiftUI to optimistically remove a row before the alert, then restore it. Use a red-tinted ordinary swipe action to request confirmation; only a successful confirmed file deletion changes the list inside a short animation, respecting Reduce Motion. Native animation still needs physical-device validation.
+
+## Build 23017
+
+Settings no longer lists downloaded IPAs or global Export IPA/Clean Documents actions. Individual export remains in Downloads, which now owns a confirmed Delete all downloads action. Bulk cleanup only removes downloaded IPAs/matching sidecars inside Downloads, handles orphan IPAs/stale records, preserves unrelated files and rejects a symlink root. Disable bulk deletion during download; reload records even after partial failure. No broad Documents wipe.
