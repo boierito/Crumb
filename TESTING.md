@@ -223,3 +223,7 @@ Release: Account/Downloads must not show Activity log or technical retry counter
 ## Crumb 1.0.0 (23019)
 
 Crumb physical validation pending: install alongside WaffleStore, confirm name/icon in Home/Settings and light/dark/tinted modes; crumb:// deep link must route to Crumb, original scheme remains with WaffleStore. Fresh login/2FA/session reopen, search/version/download/install/export/delete all. Original app account/files remain untouched. CI checks display name, bundle, arm64, Files, crumb scheme and app icon registration. Release stays without debug UI. Verify new Keychain machine identity is stable after relaunch.
+
+## Crumb 1.0.0 (23020) — 2FA renewal and incomplete redirects
+
+23019 user report: first-time 2FA failed with endpoint-or-redirect-rejected; exact HTTP/Location unknown without diagnostics. 23020 manual: fresh Crumb login triggers 2FA; valid code succeeds; Request new code preserves entered password (RAM only), clears stale code/challenge and sends fresh password-only signed login. Apple may reuse/withhold a notification; use trusted-device account settings if needed. Button has 30-second cooldown; duplicate taps/network operations blocked. Change Apple ID clears email/password/code; Cancel/success clear cooldown. Verify wrong/expired code, missing-Location retry, unsafe redirect error remains strict, relaunch session and no debug UI. Fixtures are not live Apple acceptance.

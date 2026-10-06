@@ -9,7 +9,7 @@ public enum AuthenticationError: Error, LocalizedError, Equatable {
     case invalidCode, invalidCredentials, twoFactorRequired, verificationRejected, accountDisabled
     case apple(failure: String, message: String)
     case invalidResponse(Int), http(Int), rateLimited, retryLater, network(Int)
-    case invalidRedirect, tooManyRedirects, invalidSession
+    case invalidRedirect, redirectUnavailable(Int), tooManyRedirects, invalidSession
 
     public var errorDescription: String? {
         switch self {
@@ -24,6 +24,7 @@ public enum AuthenticationError: Error, LocalizedError, Equatable {
         case .rateLimited: return "Apple rate limited sign-in. Wait before trying again."
         case .retryLater: return "Apple requested a wait longer than 30 seconds. Try again later."
         case .network(let code): return "Authentication network request failed (code \(code)). Check your connection."
+        case .redirectUnavailable(let status): return "Apple returned an incomplete sign-in redirect (HTTP \(status)). Sign-in was not confirmed. Try again or request a new code."
         case .invalidRedirect: return "Apple authentication endpoint or redirect was rejected. No credentials were forwarded."
         case .tooManyRedirects: return "Apple returned too many authentication redirects."
         case .invalidSession: return "The saved Store session is invalid. Sign in again."
@@ -183,11 +184,19 @@ public struct AppleAuthentication {
                 let result = try? ApplePlist.dictionary(data)
                 let populated = result.map { !string($0["failureType"]).isEmpty || !string($0["customerMessage"]).isEmpty || !string($0["passwordToken"]).isEmpty } ?? false
                 let status = response.statusCode
-                if populated || (300..<400).contains(status) || status == 200 { return (data, response) }
-                guard [204, 403, 404, 429].contains(status) || status / 100 == 5 else { throw AuthenticationError.invalidResponse(status) }
-                guard attempt < recoveryAttempts else { throw status == 429 ? AuthenticationError.rateLimited : AuthenticationError.http(status) }
+                // An allowed redirect status without a usable Location is not an
+                // unsafe destination. Retry the current validated endpoint only;
+                // never invent a redirect or broaden the credential allowlist.
+                let missingLocation = [301, 302, 307, 308].contains(status)
+                    && (response.value(forHTTPHeaderField: "Location")?
+                        .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+                if populated || (!missingLocation && (300..<400).contains(status)) || status == 200 { return (data, response) }
+                let failure: AuthenticationError = missingLocation ? .redirectUnavailable(status)
+                    : (status == 429 ? .rateLimited : .http(status))
+                guard missingLocation || [204, 403, 404, 429].contains(status) || status / 100 == 5 else { throw AuthenticationError.invalidResponse(status) }
+                guard attempt < recoveryAttempts else { throw failure }
                 let delay = try retryDelay(response.value(forHTTPHeaderField: "Retry-After"), attempt: attempt)
-                if let deadline, now().addingTimeInterval(delay) >= deadline { throw status == 429 ? AuthenticationError.rateLimited : AuthenticationError.http(status) }
+                if let deadline, now().addingTimeInterval(delay) >= deadline { throw failure }
                 await progress(.retrying)
                 try await sleep(delay)
             } catch let error as URLError {

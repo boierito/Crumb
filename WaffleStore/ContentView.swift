@@ -124,8 +124,22 @@ struct ContentView: View {
                         .keyboardType(.numberPad)
                         .textContentType(.oneTimeCode)
                         .disabled(appData.isAuthenticating)
-                    Button("Use another Apple ID") { appData.cancelAppleLogin() }
+                    VStack(spacing: 10) {
+                        Button { appData.requestNewVerificationCode() } label: {
+                            Label(appData.isCodeResendCoolingDown ? "Wait before requesting another code" : "Request new code", systemImage: "arrow.clockwise")
+                                .frame(maxWidth: .infinity, minHeight: 28)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(appData.isAuthenticating || appData.isCodeResendCoolingDown || appData.authenticationPassword.isEmpty)
+                        Button { appData.changeAppleAccount() } label: {
+                            Label("Change Apple ID", systemImage: "person.crop.circle")
+                                .frame(maxWidth: .infinity, minHeight: 28)
+                        }
+                        .buttonStyle(.bordered)
                         .disabled(appData.isAuthenticating)
+                    }
+                } footer: {
+                    Text("Apple decides when to send a code. You can also obtain one in your trusted device’s Apple account settings.")
                 }
             }
         }

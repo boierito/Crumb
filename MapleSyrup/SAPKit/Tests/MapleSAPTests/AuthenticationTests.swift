@@ -201,6 +201,92 @@ final class AuthenticationTests: XCTestCase {
         }
     }
 
+    func testTwoFactorRecoversIncompleteRedirectAtValidatedPod() async throws {
+        let pod = URL(string: "https://p42-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate")!
+        let transport = FixtureAuthenticationTransport([
+            .http(301, Data("<html>temporary</html>".utf8), [:]),
+            .http(302, Data(), ["Location": "   "]),
+            .http(200, try success(), responseHeaders)])
+        let signer = FixtureSigner(); let store = FixtureAccountStore(); let sleeps = FixtureSleeps()
+        let outcome = try await AppleAuthentication(transport: transport, signer: signer, persistence: store,
+            automaticRecovery: true, sleep: { await sleeps.record($0) })
+            .login(email: "fixture@example.test", password: "secret", code: "123456", identity: identity, endpoint: pod)
+        guard case .authenticated = outcome else { return XCTFail("2FA recovery failed") }
+        let requests = await transport.requests
+        XCTAssertEqual(requests.count, 3)
+        XCTAssertTrue(requests.allSatisfy { $0.url == pod && $0.httpMethod == "POST" && $0.httpBody == requests[0].httpBody })
+        XCTAssertEqual(signer.bodies.count, 3)
+        let payload = try PropertyListSerialization.propertyList(from: XCTUnwrap(requests[0].httpBody), format: nil) as! [String: String]
+        XCTAssertEqual(payload["password"], "secret123456")
+        let delays = await sleeps.values; XCTAssertEqual(delays, [2, 4])
+        XCTAssertNotNil(try store.load())
+    }
+
+    func testIncompleteRedirectRecoveryIsBoundedAndDoesNotSaveSession() async throws {
+        let transport = FixtureAuthenticationTransport(Array(repeating: .http(301, Data(), [:]), count: 12))
+        let store = FixtureAccountStore()
+        do {
+            _ = try await AppleAuthentication(transport: transport, signer: FixtureSigner(), persistence: store,
+                automaticRecovery: true, sleep: { _ in })
+                .login(email: "fixture@example.test", password: "secret", code: "123456", identity: identity, endpoint: endpoint)
+            XCTFail("Unbounded missing redirect recovery")
+        } catch { XCTAssertEqual(error as? AuthenticationError, .redirectUnavailable(301)) }
+        let requests = await transport.requests; XCTAssertEqual(requests.count, 12)
+        XCTAssertNil(try store.load())
+    }
+
+    func testMissingRedirectStillUsesSharedRecoveryDeadline() async throws {
+        let clock = FixtureAuthenticationClock()
+        let transport = FixtureAuthenticationTransport([.http(302, Data(), [:])])
+        do {
+            _ = try await AppleAuthentication(transport: transport, signer: FixtureSigner(), persistence: FixtureAccountStore(),
+                automaticRecovery: true, now: { clock.date }, sleep: { _ in clock.date.addTimeInterval(121) })
+                .login(email: "fixture@example.test", password: "secret", identity: identity, endpoint: endpoint)
+            XCTFail("Missing Location reset deadline")
+        } catch { XCTAssertEqual(error as? AuthenticationError, .retryLater) }
+        let requests = await transport.requests; XCTAssertEqual(requests.count, 1)
+    }
+
+    func testIncompleteRedirectRecoveryDoesNotPermitUnsafeDestination() async throws {
+        let transport = FixtureAuthenticationTransport([.http(301, Data(), [:]),
+            .http(302, Data(), ["Location": "https://evil.test/login"])])
+        do {
+            _ = try await AppleAuthentication(transport: transport, signer: FixtureSigner(), persistence: FixtureAccountStore(),
+                automaticRecovery: true, sleep: { _ in })
+                .login(email: "fixture@example.test", password: "secret", code: "123456", identity: identity, endpoint: endpoint)
+            XCTFail("Followed unsafe destination")
+        } catch { XCTAssertEqual(error as? AuthenticationError, .invalidRedirect) }
+        let requests = await transport.requests
+        XCTAssertEqual(requests.count, 2); XCTAssertTrue(requests.allSatisfy { $0.url == endpoint })
+    }
+
+    func testFreshCodeChallengeDoesNotAppendRejectedCodeOrPersistPassword() async throws {
+        let challenge = try plist(["customerMessage": "MZFinance.BadLogin.Configurator_message"])
+        let transport = FixtureAuthenticationTransport([.http(200, challenge, [:]), .http(200, challenge, [:]),
+            .http(200, challenge, [:]), .http(200, try success(), responseHeaders)])
+        let store = FixtureAccountStore(); let signer = FixtureSigner()
+        let auth = AppleAuthentication(transport: transport, signer: signer, persistence: store)
+        guard case .twoFactorRequired = try await auth.login(email: "fixture@example.test", password: "secret",
+            identity: identity, endpoint: endpoint) else { return XCTFail("Initial challenge absent") }
+        do {
+            _ = try await auth.login(email: "fixture@example.test", password: "secret", code: "111111", identity: identity, endpoint: endpoint)
+            XCTFail("Accepted rejected code")
+        } catch { XCTAssertEqual(error as? AuthenticationError, .verificationRejected) }
+        XCTAssertNil(try store.load())
+        guard case .twoFactorRequired = try await auth.login(email: "fixture@example.test", password: "secret", code: "",
+            identity: identity, endpoint: endpoint) else { return XCTFail("New challenge absent") }
+        guard case .authenticated = try await auth.login(email: "fixture@example.test", password: "secret", code: "222222",
+            identity: identity, endpoint: endpoint) else { return XCTFail("Fresh verification failed") }
+        let requests = await transport.requests
+        let passwords = try requests.map { request in
+            (try PropertyListSerialization.propertyList(from: XCTUnwrap(request.httpBody), format: nil) as! [String: String])["password"]
+        }
+        XCTAssertEqual(passwords, ["secret", "secret111111", "secret", "secret222222"])
+        XCTAssertEqual(signer.bodies.count, 4)
+        let saved = try XCTUnwrap(store.data)
+        for secret in ["secret", "111111", "222222"] { XCTAssertFalse(String(decoding: saved, as: UTF8.self).contains(secret)) }
+    }
+
     func testAutomaticRecoverySurvivesMoreThanThreeTemporaryReplies() async throws {
         let transport = FixtureAuthenticationTransport(Array(repeating: .http(404, Data("<html>temporary</html>".utf8), [:]), count: 5) + [.http(200, try success(), responseHeaders)])
         let sleeps = FixtureSleeps()

@@ -6,12 +6,12 @@ import MapleSAP
 
 // MainActor owns UI state; SAPSession runs the blocking native guest away from it.
 extension AppData {
-    func startAppleLogin() {
-        guard !isAuthenticating, !appleId.isEmpty, !password.isEmpty else { return }
+    func startAppleLogin(requestNewCode: Bool = false) {
+        guard !isAuthenticating, !appleId.isEmpty, !authenticationPassword.isEmpty else { return }
         let email = appleId.trimmingCharacters(in: .whitespacesAndNewlines)
-        let secret = password
-        let verification = hasSent2FACode ? code : ""
-        let challengeCookies = hasSent2FACode ? pendingAuthenticationCookies : []
+        let secret = authenticationPassword
+        let verification = !requestNewCode && hasSent2FACode ? code : ""
+        let challengeCookies = !requestNewCode && hasSent2FACode ? pendingAuthenticationCookies : []
         isAuthenticating = true
         authenticationError = ""
         authenticationTask = Task {
@@ -46,6 +46,8 @@ extension AppData {
                 try Task.checkCancellation()
                 switch outcome {
                 case .twoFactorRequired(let cookies):
+                    pendingTwoFactorEmail = email
+                    pendingTwoFactorPassword = secret
                     pendingAuthenticationCookies = cookies
                     keepPrepared = true
                     hasSent2FACode = true
@@ -61,7 +63,7 @@ extension AppData {
                     if hasSent2FACode { pendingAuthenticationCookies = await preparation.loginTransport.cookies() }
                     if let error = error as? AuthenticationError {
                         switch error {
-                        case .http, .network, .rateLimited, .retryLater, .invalidResponse, .verificationRejected, .invalidCode:
+                        case .http, .network, .rateLimited, .retryLater, .invalidResponse, .redirectUnavailable, .verificationRejected, .invalidCode:
                             keepPrepared = true
                         default: break
                         }
@@ -89,12 +91,43 @@ extension AppData {
         }
     }
 
+    func requestNewVerificationCode() {
+        guard hasSent2FACode, !isAuthenticating, !isCodeResendCoolingDown, !authenticationPassword.isEmpty else { return }
+        // Password remains in RAM for this sign-in only. A fresh signed password-only
+        // request asks Apple to start another challenge; Apple controls code delivery.
+        code = ""
+        pendingAuthenticationCookies = []
+        clearLoginPreparation()
+        isCodeResendCoolingDown = true
+        codeResendCooldownTask?.cancel()
+        codeResendCooldownTask = Task {
+            do { try await Task.sleep(nanoseconds: 30_000_000_000) }
+            catch { return }
+            isCodeResendCoolingDown = false
+            codeResendCooldownTask = nil
+        }
+        startAppleLogin(requestNewCode: true)
+    }
+
+    func changeAppleAccount() {
+        guard !isAuthenticating else { return }
+        cancelAppleLogin()
+        appleId = ""
+    }
+
+    private func clearCodeResendCooldown() {
+        codeResendCooldownTask?.cancel(); codeResendCooldownTask = nil
+        isCodeResendCoolingDown = false
+    }
+
     func cancelAppleLogin() {
         authenticationTask?.cancel()
+        clearCodeResendCooldown()
         clearLoginPreparation()
         hasSent2FACode = false
         code = ""
         password = ""
+        pendingTwoFactorEmail = nil; pendingTwoFactorPassword = nil
         pendingAuthenticationCookies = []
         authenticationError = ""
         applicationStatus = "Not logged in!".localized
@@ -119,6 +152,7 @@ extension AppData {
     func logoutStoreAccount() {
         guard !isAuthenticating, storeTask == nil, !showStoreVersions else { return }
         do {
+            clearCodeResendCooldown()
             clearLoginPreparation()
             try KeychainKBSync().clear()
             try KeychainStoreAccount().clear()
@@ -128,6 +162,7 @@ extension AppData {
             isAuthenticated = false
             hasSent2FACode = false
             appleId = ""; password = ""; code = ""
+            pendingTwoFactorEmail = nil; pendingTwoFactorPassword = nil
             pendingAuthenticationCookies = []
             authenticationError = ""
             hasAppBeenServed = false
@@ -170,8 +205,10 @@ extension AppData {
         #endif
     }
     private func applyStoreAccount(_ account: StoreAccount, restored: Bool) {
+        clearCodeResendCooldown()
         appleId = account.email
         password = ""; code = ""; hasSent2FACode = false
+        pendingTwoFactorEmail = nil; pendingTwoFactorPassword = nil
         pendingAuthenticationCookies = []
         ipaTool = IPATool(account: account)
         isAuthenticated = true

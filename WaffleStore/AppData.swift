@@ -79,9 +79,19 @@ final class AppData: ObservableObject {
     @Published var isAuthenticated: Bool = false
     @Published var isAuthenticating: Bool = false
     @Published var authenticationError: String = ""
+    @Published var isCodeResendCoolingDown = false
+    var codeResendCooldownTask: Task<Void, Never>?
     var authenticationTask: Task<Void, Never>?
     var didRestoreStoreAccount = false
     var pendingAuthenticationCookies: [StoreCookie] = []
+    // In-memory challenge credentials are independent of SecureField rendering.
+    var pendingTwoFactorEmail: String?
+    var pendingTwoFactorPassword: String?
+    var authenticationPassword: String {
+        if hasSent2FACode, pendingTwoFactorEmail == appleId.trimmingCharacters(in: .whitespacesAndNewlines),
+           let pendingTwoFactorPassword { return pendingTwoFactorPassword }
+        return password
+    }
     var preparedAppleLogin: PreparedAppleLogin?
     var loginPreparationExpiry: Task<Void, Never>?
     @Published var showStoreVersions = false
