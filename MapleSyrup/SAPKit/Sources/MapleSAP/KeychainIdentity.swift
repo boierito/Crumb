@@ -4,7 +4,7 @@ import Security
 
 public enum KeychainMachineIdentity {
     private static let lock = NSLock()
-    private static let service = "com.nxtcoreee3.WaffleStore.sap"
+    private static let service = "com.certlium.crumb.sap"
     private static let account = "machine-identity-v1"
 
     // No Apple ID, network interface MAC, private entitlement, file fallback,

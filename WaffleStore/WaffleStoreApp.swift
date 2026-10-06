@@ -10,7 +10,7 @@ import UniformTypeIdentifiers
 
 
 @main
-struct WaffleStoreApp: App {
+struct CrumbApp: App {
     @StateObject private var appData = AppData.shared
     @StateObject private var localizationManager = LocalizationManager.shared
     
@@ -27,7 +27,7 @@ struct WaffleStoreApp: App {
                     }
                 }
                 .onOpenURL { schemedURL in
-                    let rawURL = schemedURL.absoluteString.replacingOccurrences(of: "wafflestore:", with: "")
+                    let rawURL = schemedURL.absoluteString.replacingOccurrences(of: "crumb:", with: "")
                     if let appLink = rawURL.removingPercentEncoding {
                         appData.openAppSelection(appLink)
                         #if DEBUG

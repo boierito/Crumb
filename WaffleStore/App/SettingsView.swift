@@ -26,22 +26,16 @@ struct SettingsView: View {
                             Button(action: {
                                 openURL(URL(string: "https://discord.com/invite/tweakbreak-1443331342799601666")!)
                             }) {
-                                ButtonLabel(text: "Discord".localized, icon: "discord", useImage: true)
+                                ButtonLabel(text: "Original community", icon: "discord", useImage: true)
                             }
                             .buttonStyle(TranslucentButtonStyle(color: .discord))
                             Button(action: {
-                                openURL(URL(string: "https://github.com/nxtcoreee3/WaffleStore")!)
+                                openURL(URL(string: "https://github.com/boierito/WaffleStore/tree/release/crumb")!)
                             }) {
                                 ButtonLabel(text: "GitHub".localized, icon: "github", useImage: true)
                             }
                             .buttonStyle(TranslucentButtonStyle(color: .github))
                         }
-                        Button(action: {
-                            openURL(URL(string: "https://nxtcoreee3.github.io/WaffleStore/")!)
-                        }) {
-                            ButtonLabel(text: "Website".localized, icon: "globe")
-                        }
-                        .buttonStyle(TranslucentButtonStyle())
                     }
                 }
                 

@@ -219,3 +219,7 @@ Verify Settings has no downloaded IPA list/Data actions/history import/export. D
 ## Build 23018 — distribution UI without debugging
 
 Release: Account/Downloads must not show Activity log or technical retry counters; sign-in/2FA/retry/progress/cancel and Apple errors remain usable. Verify app launch does not redirect stdout through a Pipe. Debug/Release builds and protocol tests check no integration regression; new Release UI still needs device testing. No new brand/bundle ID/icon yet.
+
+## Crumb 1.0.0 (23019)
+
+Crumb physical validation pending: install alongside WaffleStore, confirm name/icon in Home/Settings and light/dark/tinted modes; crumb:// deep link must route to Crumb, original scheme remains with WaffleStore. Fresh login/2FA/session reopen, search/version/download/install/export/delete all. Original app account/files remain untouched. CI checks display name, bundle, arm64, Files, crumb scheme and app icon registration. Release stays without debug UI. Verify new Keychain machine identity is stable after relaunch.

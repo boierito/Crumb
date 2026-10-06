@@ -240,7 +240,7 @@ private enum LegacyCredentials {
             if fm.fileExists(atPath: file.path) { try fm.removeItem(at: file) }
         }
         let status = SecItemDelete([kSecClass as String: kSecClassKey,
-            kSecAttrApplicationTag as String: "com.nxtcoreee3.WaffleStore.key"] as CFDictionary)
+            kSecAttrApplicationTag as String: "com.certlium.crumb.key"] as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else { throw SAPError.keychain(status) }
     }
 }

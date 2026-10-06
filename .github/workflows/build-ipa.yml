@@ -48,13 +48,13 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
             build 2>&1 | tee artifacts/build.log
           mkdir -p build/package/Payload
-          ditto "build/DerivedData/Build/Products/$CONFIGURATION-iphoneos/WaffleStore.app" \
-            build/package/Payload/WaffleStore.app
+          ditto "build/DerivedData/Build/Products/$CONFIGURATION-iphoneos/Crumb.app" \
+            build/package/Payload/Crumb.app
           cd build/package
-          zip -qry "../../artifacts/WaffleStore-$CONFIGURATION.ipa" Payload
+          zip -qry "../../artifacts/Crumb-$CONFIGURATION.ipa" Payload
           cd ../..
           if [ -f scripts/verify-ipa.py ]; then
-            python3 scripts/verify-ipa.py "artifacts/WaffleStore-$CONFIGURATION.ipa" | tee "artifacts/verification-$CONFIGURATION.json"
+            python3 scripts/verify-ipa.py "artifacts/Crumb-$CONFIGURATION.ipa" | tee "artifacts/verification-$CONFIGURATION.json"
           fi
           if [ -f build/Native/unicorn-tci-corresponding-source.tar.gz ]; then
             cp build/Native/unicorn-tci-corresponding-source.tar.gz artifacts/
@@ -67,7 +67,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: WaffleStore-${{ matrix.configuration }}-${{ github.run_id }}
+          name: Crumb-${{ matrix.configuration }}-${{ github.run_id }}
           path: artifacts/
           if-no-files-found: error
   publish:
@@ -79,7 +79,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: WaffleStore-*
+          pattern: Crumb-*
           path: artifacts
           merge-multiple: true
       - name: Create draft prerelease

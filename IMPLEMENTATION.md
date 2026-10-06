@@ -335,3 +335,7 @@ Settings no longer lists downloaded IPAs or global Export IPA/Clean Documents ac
 ## Build 23018 — distribution UI without debugging
 
 Release has no Activity log UI, stdout pipe/capture, sign-in attempt counter or installed diagnostic callbacks. App console print statements compile only in Debug; SDK diagnostic hooks remain default no-ops for tests and reuse. Useful progress/cancel/errors, Keychain, SAP and Store recovery behavior are unchanged. Prebranding branch preserves current WaffleStore bundle ID/icon until a name is chosen. Public renaming/redistribution requires resolving missing upstream license; notices and corresponding sources remain intact.
+
+## Crumb 1.0.0 (23019)
+
+Crumb 1.0.0 (23019): display/product Crumb, bundle com.certlium.crumb, crumb URL scheme and new Keychain namespace. Original project, scheme, source tree and history retained; no new repo created. Exact approved icon exported 1024px RGB, default/dark; no alpha/pre-rounded mask. Existing WaffleStore can coexist; credentials/downloads/favourites do not migrate automatically. Native auth/SAP/Store behavior unchanged. CI names/product and artifact verifier updated. Credits/notices/AI disclosure retained; original installation provider is still identified honestly. Public redistribution permission remains unresolved.

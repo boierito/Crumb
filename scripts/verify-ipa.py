@@ -15,14 +15,17 @@ expected_build = re.search(r"CURRENT_PROJECT_VERSION = ([^;]+);", project)[1].st
 expected_version = re.search(r"MARKETING_VERSION = ([^;]+);", project)[1].strip()
 with zipfile.ZipFile(ipa) as archive:
     assert archive.testzip() is None, "IPA contains a bad ZIP checksum"
-    root = "Payload/WaffleStore.app/"
+    root = "Payload/Crumb.app/"
     info = plistlib.loads(archive.read(root + "Info.plist"))
     assert info["CFBundleVersion"] == expected_build, "Wrong build number"
     assert info["CFBundleShortVersionString"] == expected_version, "Wrong version"
     assert info.get("UIFileSharingEnabled") is True, "Files sharing missing"
     assert info.get("LSSupportsOpeningDocumentsInPlace") is True, "Files in-place access missing"
-    assert any("wafflestore" in item.get("CFBundleURLSchemes", [])
-               for item in info.get("CFBundleURLTypes", [])), "Original URL scheme missing"
+    assert any("crumb" in item.get("CFBundleURLSchemes", [])
+               for item in info.get("CFBundleURLTypes", [])), "Crumb URL scheme missing"
+    assert info["CFBundleIdentifier"] == "com.certlium.crumb", "Wrong Crumb bundle ID"
+    assert info["CFBundleDisplayName"] == "Crumb", "Wrong display name"
+    assert info.get("CFBundleIcons", {}).get("CFBundlePrimaryIcon", {}).get("CFBundleIconFiles"), "App icon missing"
     executable = archive.read(root + info["CFBundleExecutable"])
     assert struct.unpack("<II", executable[:8]) == (0xFEEDFACF, 0x0100000C), "Expected arm64 Mach-O"
     assert not any(n.endswith("embedded.mobileprovision") for n in archive.namelist()), "IPA must be resignable"
@@ -30,6 +33,7 @@ with zipfile.ZipFile(ipa) as archive:
     assert len(notices) == 3, "Linked code license notices missing"
     assert b"MIT License" in archive.read(root + "ThirdPartyNotices.txt"), "ipatool MIT notice missing"
     print(json.dumps({"ipa": str(ipa), "build": expected_build, "version": expected_version,
+                      "bundleID": info["CFBundleIdentifier"], "displayName": info["CFBundleDisplayName"],
                       "minimumOS": info["MinimumOSVersion"], "cpu": "arm64",
-                      "FilesEnabled": True, "originalURLScheme": True,
+                      "FilesEnabled": True, "CrumbURLScheme": True,
                       "sha256": hashlib.file_digest(ipa.open("rb"), "sha256").hexdigest()}, indent=2))

@@ -59,7 +59,7 @@ final class OTAInstaller: ObservableObject {
             server.route(.GET, path + "/install") { _ in HTTPResponse(.ok, headers: ["Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store"], content: html) }
             try server.start(port: 9090, interface: "127.0.0.1")
             self.server = server
-            backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "WaffleStore OTA transfer") {
+            backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Crumb OTA transfer") {
                 Task { @MainActor in
                     self.stop(); self.status = "iOS ended the background transfer time. The IPA was retained."
                 }
