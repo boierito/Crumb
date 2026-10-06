@@ -1,5 +1,6 @@
 import SwiftUI
 import PartyUI
+import MapleSAP
 
 struct ContentView: View {
     @EnvironmentObject var appData: AppData
