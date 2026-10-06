@@ -1,5 +1,6 @@
 // Protocol, retry and redirect behavior adapted from majd/ipatool (MIT),
-// pkg/appstore/appstore_login.go at 3411d57. No CLI or password persistence.
+// pkg/appstore/appstore_login.go; Bag normalization follows f9aa653 (Oct 5).
+// No CLI or password persistence. See docs/LOGIN_AUDIT.md for current comparison.
 import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
@@ -82,7 +83,7 @@ public struct AppleAuthentication {
                       endpoint: URL, resolvedEndpoint: (URL) async -> Void = { _ in }, progress: (AuthenticationStage) async -> Void = { _ in }) async throws -> AuthenticationOutcome {
         let code = try TwoFactorAuthentication.normalize(code)
         var endpoint = try AuthenticationEndpoint.validate(endpoint)
-        let deadline = recoveryWindow.map { now().addingTimeInterval($0) }
+        var recovery = AuthenticationRecoveryBudget(attempts: recoveryAttempts, window: recoveryWindow, now: now())
         var logicalAttempt = 1
         var redirects = 0
         var body = try payload(email: email, password: password, code: code, guid: identity.guid, attempt: logicalAttempt)
@@ -91,7 +92,7 @@ public struct AppleAuthentication {
             // Only publish endpoints after the same strict validation used for
             // credential replay. A warm 2FA/retry can skip an already resolved pod.
             await resolvedEndpoint(endpoint)
-            let (data, response) = try await send(body: body, endpoint: endpoint, progress: progress, secrets: [password, code, email], deadline: deadline)
+            let (data, response) = try await send(body: body, endpoint: endpoint, progress: progress, secrets: [password, code, email], recovery: &recovery)
             if (300..<400).contains(response.statusCode) {
                 await diagnostic("authentication-redirect=received; HTTP=\(response.statusCode); location-present=\(response.value(forHTTPHeaderField: "Location") != nil)")
                 guard [301, 302, 307, 308].contains(response.statusCode),
@@ -153,14 +154,14 @@ public struct AppleAuthentication {
             "guid": guid, "password": password + code, "rmp": "0", "why": "signIn"], format: .xml, options: 0)
     }
 
-    private func send(body: Data, endpoint: URL, progress: (AuthenticationStage) async -> Void, secrets: [String], deadline: Date?) async throws -> (Data, HTTPURLResponse) {
+    private func send(body: Data, endpoint: URL, progress: (AuthenticationStage) async -> Void, secrets: [String], recovery: inout AuthenticationRecoveryBudget) async throws -> (Data, HTTPURLResponse) {
         for attempt in 1...recoveryAttempts {
             try Task.checkCancellation()
-            if let deadline, now() >= deadline { throw AuthenticationError.retryLater }
+            try recovery.checkDeadline(now: now())
             await diagnostic("authentication-recovery-attempt=\(attempt)/\(recoveryAttempts)")
             await progress(.signing)
             var request = URLRequest(url: endpoint)
-            if let deadline { request.timeoutInterval = max(1, min(30, deadline.timeIntervalSince(now()))) }
+            request.timeoutInterval = try recovery.requestTimeout(now: now())
             request.httpMethod = "POST"; request.httpBody = body
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
             request.setValue(SAPProtocol.userAgent, forHTTPHeaderField: "User-Agent")
@@ -171,10 +172,7 @@ public struct AppleAuthentication {
             try Task.checkCancellation()
             // Native signing can be slow: recompute the remaining network
             // timeout afterwards, not before the blocking interpreter call.
-            if let deadline {
-                guard deadline > now() else { throw AuthenticationError.retryLater }
-                request.timeoutInterval = max(1, min(30, deadline.timeIntervalSince(now())))
-            }
+            request.timeoutInterval = try recovery.requestTimeout(now: now())
             await progress(.authenticating)
             do {
                 await diagnostic(await transport.cookieDiagnostic(for: endpoint))
@@ -196,7 +194,7 @@ public struct AppleAuthentication {
                 guard missingLocation || [204, 403, 404, 429].contains(status) || status / 100 == 5 else { throw AuthenticationError.invalidResponse(status) }
                 guard attempt < recoveryAttempts else { throw failure }
                 let delay = try retryDelay(response.value(forHTTPHeaderField: "Retry-After"), attempt: attempt)
-                if let deadline, now().addingTimeInterval(delay) >= deadline { throw failure }
+                try recovery.reserveRetry(delay: delay, now: now(), failure: failure)
                 await progress(.retrying)
                 try await sleep(delay)
             } catch let error as URLError {
@@ -205,8 +203,8 @@ public struct AppleAuthentication {
                     throw AuthenticationError.network(error.code.rawValue)
                 }
                 await progress(.retrying)
-                let delay = recoveryWindow == nil ? Double(10 << (attempt - 1)) : min(15, Double(2 << min(attempt - 1, 3)))
-                if let deadline, now().addingTimeInterval(delay) >= deadline { throw AuthenticationError.network(error.code.rawValue) }
+                let delay = fallbackDelay(attempt: attempt)
+                try recovery.reserveRetry(delay: delay, now: now(), failure: .network(error.code.rawValue))
                 try await sleep(delay)
             }
         }
@@ -215,7 +213,7 @@ public struct AppleAuthentication {
 
     private func retryDelay(_ header: String?, attempt: Int) throws -> TimeInterval {
         guard let header = header?.trimmingCharacters(in: .whitespacesAndNewlines) else {
-            return recoveryWindow == nil ? Double(10 << (attempt - 1)) : min(15, Double(2 << min(attempt - 1, 3)))
+            return fallbackDelay(attempt: attempt)
         }
         if !header.isEmpty, header.allSatisfy({ $0.isASCII && $0.isNumber }) {
             guard let seconds = UInt64(header), seconds <= 30 else { throw AuthenticationError.retryLater }
@@ -230,7 +228,10 @@ public struct AppleAuthentication {
                 return max(1, value)
             }
         }
-        return recoveryWindow == nil ? Double(10 << (attempt - 1)) : min(15, Double(2 << min(attempt - 1, 3)))
+        return fallbackDelay(attempt: attempt)
+    }
+    private func fallbackDelay(attempt: Int) -> TimeInterval {
+        recoveryWindow == nil ? Double(10 << (attempt - 1)) : min(15, Double(2 << min(attempt - 1, 3)))
     }
     private func string(_ value: Any?) -> String { (value as? String) ?? (value as? NSNumber)?.stringValue ?? "" }
     private func safe(_ text: String, secrets: [String]) -> String {
@@ -241,5 +242,29 @@ public struct AppleAuthentication {
         return String(String.UnicodeScalarView(text.unicodeScalars.filter {
             !CharacterSet.controlCharacters.contains($0)
         }.prefix(500)))
+    }
+}
+
+// Each login/verification owns one budget. Successful routing or Apple's logical
+// attempt=2 must not grant another eleven automatic retries. Keep the reference
+// three-attempt policy per request when automatic recovery is disabled.
+private struct AuthenticationRecoveryBudget {
+    let deadline: Date?
+    private var remainingRetries: Int?
+    init(attempts: Int, window: TimeInterval?, now: Date) {
+        deadline = window.map { now.addingTimeInterval($0) }
+        remainingRetries = window == nil ? nil : attempts - 1
+    }
+    func checkDeadline(now: Date) throws {
+        if let deadline, now >= deadline { throw AuthenticationError.retryLater }
+    }
+    func requestTimeout(now: Date) throws -> TimeInterval {
+        try checkDeadline(now: now)
+        return deadline.map { min(30, $0.timeIntervalSince(now)) } ?? 30
+    }
+    mutating func reserveRetry(delay: TimeInterval, now: Date, failure: AuthenticationError) throws {
+        if let remainingRetries, remainingRetries == 0 { throw failure }
+        if let deadline, now.addingTimeInterval(delay) >= deadline { throw failure }
+        if let remainingRetries { self.remainingRetries = remainingRetries - 1 }
     }
 }

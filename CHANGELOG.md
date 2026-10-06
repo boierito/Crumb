@@ -1,5 +1,14 @@
 # Development changelog
 
+## Crumb 1.0.0 — build 23021
+
+- Incorpora el fix de ipatool f9aa653: URL inicial authenticate/ validada y query preservada.
+- Corrige validación HTTP que podía rechazar endpoints/pods válidos con barra final.
+- Comparte el límite de recuperación automática entre pods e intentos lógicos del mismo login.
+- Conserva signer TCI, cookies aisladas, reutilización de SAP/2FA, backoff y Retry-After.
+- Añade nueve regresiones y auditoría del login; Release sigue sin debug.
+- La reducción real de tiempo frente a Apple queda pendiente de comparación en dispositivo.
+
 ## 2.3.0-dev.6
 
 - Registra versiones y exportación confirmadas en 23005 tras logout/login.

@@ -47,11 +47,14 @@ with the same signing identity/bundle ID preserves its own data and Keychain acc
 
 ## Current status and limits
 
-Current source is Crumb **1.0.0, build 23020**. The originating WaffleStore
+Current source is Crumb **1.0.0, build 23021**. The originating WaffleStore
 integration was tested by boierito on a physical iPhone running iOS 27.0.1 using
 ksign/certificate without JIT, including login/2FA, versions, download/export and installation.
 Crumb’s first-login/2FA recovery and new-code changes still require physical-device confirmation.
 Automated tests use fixtures and do not demonstrate Apple’s acceptance of a live login.
+Build 23021 incorporates ipatool’s canonical initial authentication URL, fixes
+trailing-slash validation and shares automatic retry allowances across Store pods.
+See the [login audit](docs/LOGIN_AUDIT.md) for evidence and the device timing comparison.
 
 - Apple can return intermittent empty/HTML authentication responses. Recovery is bounded and cancellable.
 - Cross-region free-app acquisition remains unresolved: Apple can return **2059**.

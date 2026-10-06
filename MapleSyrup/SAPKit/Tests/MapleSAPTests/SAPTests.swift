@@ -35,6 +35,39 @@ final class SAPTests: XCTestCase {
         XCTAssertThrowsError(try SAPConfiguration.parse(bag: bag(["authenticateAccount": "https://apple.com/other"])))
     }
 
+    func testInitialBagAuthenticationPathIsCanonicalWithRoutingBytesPreserved() throws {
+        let path = "/WebObjects/MZFinance.woa/wa/authenticate"
+        let query = "?Pod=7&routing=a%2Fb+c&PRH=7"
+        for host in ["buy.itunes.apple.com", "p7-buy.itunes.apple.com", "buy.itunes.apple.com:443"] {
+            for suffix in ["", "/"] {
+                let advertised = "https://" + host + path + suffix + query
+                let configuration = try SAPConfiguration.parse(bag: bag(["authenticateAccount": advertised]))
+                XCTAssertEqual(configuration.authenticationURL.absoluteString, "https://" + host + path + "/" + query)
+                XCTAssertEqual(try AuthenticationEndpoint.initial(configuration.authenticationURL), configuration.authenticationURL)
+                XCTAssertEqual(configuration.setupURL.absoluteString, "https://play.itunes.apple.com/setup")
+            }
+        }
+    }
+
+    func testInvalidBagAuthenticationPathCannotBeRepairedByNormalization() throws {
+        let path = "/WebObjects/MZFinance.woa/wa/authenticate"
+        for input in ["https://buy.itunes.apple.com" + path + "//",
+                      "https://buy.itunes.apple.com" + path + "/extra",
+                      "https://buy.itunes.apple.com" + path + "%2f",
+                      "https://buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/%61uthenticate",
+                      "https://buy.itunes.apple.com/other",
+                      "https://evil.test" + path,
+                      "http://buy.itunes.apple.com" + path,
+                      "https://user@buy.itunes.apple.com" + path,
+                      "https://buy.itunes.apple.com:444" + path,
+                      "https://buy.itunes.apple.com" + path + "#fragment"] {
+            XCTAssertThrowsError(try SAPConfiguration.parse(bag: bag(["authenticateAccount": input]))) {
+                XCTAssertEqual($0 as? SAPError, .invalidEndpoint)
+            }
+            XCTAssertThrowsError(try AuthenticationEndpoint.initial(URL(string: input)!))
+        }
+    }
+
     func testIdentityBytesAndGUIDAreTheSameStableIdentity() throws {
         let identity = try MachineIdentity(hardwareID: Data([2, 1, 2, 3, 4, 255]))
         XCTAssertEqual(identity.guid, "0201020304FF")

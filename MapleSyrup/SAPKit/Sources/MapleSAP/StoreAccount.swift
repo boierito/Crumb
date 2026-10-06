@@ -67,18 +67,34 @@ public protocol StoreAccountPersistence {
 }
 
 public enum AuthenticationEndpoint {
-    // Same authentication host/path policy as ipatool 3411d57. Bag-only SAP
+    private static let path = "/WebObjects/MZFinance.woa/wa/authenticate"
+    // Same authentication host/path policy as current ipatool. Bag-only SAP
     // probes may discover other endpoints; credentials never use a fallback.
     public static func validate(_ url: URL) throws -> URL {
         do { _ = try SAPConfiguration.trustedAppleURL(url.absoluteString) }
         catch { throw AuthenticationError.invalidRedirect }
         let host = url.host?.lowercased() ?? ""
-        let path = "/WebObjects/MZFinance.woa/wa/authenticate"
+        // URL.path may strip a terminal slash. Validate the URLComponents raw
+        // HTTP path instead; exact literals also reject encoded path aliases.
+        let rawPath = URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedPath
         guard (host == "buy.itunes.apple.com" || host.hasSuffix("-buy.itunes.apple.com")),
-              [path, path + "/"].contains(url.path),
-              URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedPath == url.path
+              rawPath == path || rawPath == path + "/"
         else { throw AuthenticationError.invalidRedirect }
         return url
+    }
+
+    // ipatool f9aa653: normalize the INITIAL Bag URL only, after validating it.
+    // Apple's bare authenticate path can return unusable 301/204/HTML replies.
+    // Preserve the advertised host, port and encoded routing query. Redirects
+    // use validate/redirect instead: an Apple-supplied pod URL is replayed as-is.
+    public static func initial(_ url: URL) throws -> URL {
+        let validated = try validate(url)
+        guard var components = URLComponents(url: validated, resolvingAgainstBaseURL: false) else {
+            throw AuthenticationError.invalidRedirect
+        }
+        components.percentEncodedPath = path + "/"
+        guard let normalized = components.url else { throw AuthenticationError.invalidRedirect }
+        return try validate(normalized)
     }
 
     public static func redirect(from base: URL, location: String) throws -> URL {

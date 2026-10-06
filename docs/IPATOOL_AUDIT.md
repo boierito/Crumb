@@ -1,5 +1,10 @@
 # Current ipatool audit and port map
 
+**Historical native-port snapshot below.** The current 2026-10-06 login comparison
+is [LOGIN_AUDIT.md](LOGIN_AUDIT.md), checked against `cde7d00355e152714377b953ec57438626d3cb5a`.
+It includes the missed `f9aa653` initial-auth-path fix. Implementation/device
+milestones have advanced since this initial audit; see IMPLEMENTATION.md/TESTING.md.
+
 Reference HEAD fetched 2026-10-05:
 `3411d57f451f5111ae115641c22f7ed17bbd5fbe`, dated 2026-10-01.
 Links below are immutable:

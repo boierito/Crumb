@@ -227,3 +227,38 @@ Crumb physical validation pending: install alongside WaffleStore, confirm name/i
 ## Crumb 1.0.0 (23020) — 2FA renewal and incomplete redirects
 
 23019 user report: first-time 2FA failed with endpoint-or-redirect-rejected; exact HTTP/Location unknown without diagnostics. 23020 manual: fresh Crumb login triggers 2FA; valid code succeeds; Request new code preserves entered password (RAM only), clears stale code/challenge and sends fresh password-only signed login. Apple may reuse/withhold a notification; use trusted-device account settings if needed. Button has 30-second cooldown; duplicate taps/network operations blocked. Change Apple ID clears email/password/code; Cancel/success clear cooldown. Verify wrong/expired code, missing-Location retry, unsafe redirect error remains strict, relaunch session and no debug UI. Fixtures are not live Apple acceptance.
+
+## Crumb 1.0.0 (23021) — login timing comparison (device pending)
+
+See [docs/LOGIN_AUDIT.md](docs/LOGIN_AUDIT.md) for the upstream path correction,
+trailing-slash validation bug and shared retry allowance. On the same physical
+iPhone, network, bundle ID and signing identity, compare Release 23020 and 23021.
+Keep the cached guest assets and machine identity: wiping them would confound
+authentication timing with first-install preparation. Reopening an already
+authenticated session checks restoration, not login speed.
+
+1. Only when testing a fresh login, sign out once, then time one Sign in action
+   through challenge or authenticated state. Do not repeatedly tap during work.
+   If Apple requests 2FA, separately time Verify code → signed-in state; exclude
+   the time spent finding/typing the code from the network result.
+2. Repeat a small number of comparable trials with pauses between them. Stop if
+   rate limited; do not erase cookies/identity to attempt to evade a server limit.
+   Apple may not request 2FA on every trial; mark that explicitly.
+3. Check Request new code, wrong/expired code and Cancel using the existing 23020
+   scenarios. A regular verification/retry within five minutes should reuse the
+   prepared session; explicit Request new code intentionally starts fresh setup.
+4. Reopen the app and confirm session restoration, then search/versions/free-app
+   acquisition/download/export/install. The Store/download backend is unchanged.
+5. Verify Release still has no Activity log, technical counters or stdout capture.
+   Debug-only stages may be observed in Xcode console for diagnosis; do not copy
+   credentials, tokens, cookies, verification codes or signature contents.
+
+| Build | iOS/device | Network | Warm or cold assets | Sign in → challenge/session | Verify → session | Apple requested 2FA? | Result |
+|---|---|---|---|---|---|---|---|
+| 23020 | Same physical device | Same network | Warm | Pending comparison | Pending | Record | Record |
+| 23021 | Same physical device | Same network | Warm | Pending | Pending | Record | Record |
+| 23021 | Same physical device | Same network | Cold, if separately tested | Pending; includes asset fetch | Pending | Record | Record |
+
+Fixture success cannot demonstrate live Apple acceptance, an exact failure cause
+for all transient statuses, or a login speedup. Cold native asset work and the
+120-second request-recovery scheduling window are different phases.

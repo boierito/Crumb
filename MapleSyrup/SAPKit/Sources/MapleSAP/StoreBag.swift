@@ -52,14 +52,17 @@ public struct SAPConfiguration: Equatable {
         let versionString = (rawVersion as? String) ?? (rawVersion as? NSNumber)?.stringValue
         guard let string = versionString, let version = UInt32(string) else { throw SAPError.invalidBag }
         guard version == 200 else { throw SAPError.unsupportedVersion }
-        let authURL = try trustedAppleURL(authentication)
+        var authURL = try trustedAppleURL(authentication)
         let host = authURL.host!.lowercased()
         let modern = (host == "auth.itunes.apple.com" || host.hasSuffix("-buy.itunes.apple.com")) &&
             ["/auth/v1/native", "/auth/v1/native/"].contains(authURL.path)
-        // Some live Bags still advertise the legacy endpoint. Permit discovery
-        // for SAP-only diagnostics; no credentials are sent by this module.
-        let legacy = host == "buy.itunes.apple.com" && authURL.path == "/WebObjects/MZFinance.woa/wa/authenticate"
-        guard modern || legacy else { throw SAPError.invalidEndpoint }
+        // SAP-only native discovery remains supported. Actual Store login uses
+        // the stricter credential policy, including pods and both path forms.
+        // Validate BEFORE normalization so a foreign/encoded path is not repaired.
+        if !modern {
+            do { authURL = try AuthenticationEndpoint.initial(authURL) }
+            catch { throw SAPError.invalidEndpoint }
+        }
         return SAPConfiguration(authenticationURL: authURL, setupURL: try trustedAppleURL(setup),
                                 certificateURL: try trustedAppleURL(certificate), version: version)
     }

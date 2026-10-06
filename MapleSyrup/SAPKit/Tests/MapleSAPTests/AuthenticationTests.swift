@@ -60,6 +60,28 @@ final class AuthenticationTests: XCTestCase {
         XCTAssertEqual(signer.bodies, requests.map { $0.httpBody! })
     }
 
+    func testBagLoginUsesCanonicalInitialURLAndPreservesPodRedirectExactly() async throws {
+        let bag = try plist(["urlBag": ["authenticateAccount": endpoint.absoluteString + "?route=a%2Fb+c",
+            "sign-sap-setup": "https://play.itunes.apple.com/setup",
+            "sign-sap-setup-cert": "https://s.mzstatic.com/sap/cert", "sign-sap-version": "200"]])
+        let initial = try SAPConfiguration.parse(bag: bag).authenticationURL
+        let pod = URL(string: "https://p42-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate?Pod=42&route=b%2Fc+d")!
+        let transport = FixtureAuthenticationTransport([.http(302, Data(), ["Location": pod.absoluteString]),
+            .http(200, try success(), responseHeaders)])
+        let signer = FixtureSigner(); let sleeps = FixtureSleeps()
+        _ = try await AppleAuthentication(transport: transport, signer: signer, persistence: FixtureAccountStore(),
+            automaticRecovery: true, sleep: { await sleeps.record($0) })
+            .login(email: "fixture@example.test", password: "secret", identity: identity, endpoint: initial)
+        let requests = await transport.requests
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertEqual(requests[0].url?.absoluteString, endpoint.absoluteString + "/?route=a%2Fb+c")
+        XCTAssertEqual(requests[1].url, pod) // Never rewrite Apple's redirect URL.
+        XCTAssertEqual(requests[0].httpBody, requests[1].httpBody)
+        XCTAssertTrue(requests.allSatisfy { $0.httpMethod == "POST" })
+        XCTAssertEqual(signer.bodies.count, 2)
+        let delays = await sleeps.values; XCTAssertTrue(delays.isEmpty)
+    }
+
     func testResolvedPodIsReusableForTwoFactorWithoutAnotherRedirect() async throws {
         let pod = URL(string: "https://p42-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate")!
         let challenge = try plist(["customerMessage": "MZFinance.BadLogin.Configurator_message"])
@@ -84,6 +106,43 @@ final class AuthenticationTests: XCTestCase {
         XCTAssertEqual(payload["password"], "secret123456")
     }
 
+    func testPreparedSAPSessionHandlesChallengeAndVerificationWithoutAnotherHandshake() async throws {
+        let bag = try plist(["urlBag": ["authenticateAccount": endpoint.absoluteString,
+            "sign-sap-setup": "https://play.itunes.apple.com/setup",
+            "sign-sap-setup-cert": "https://play.itunes.apple.com/cert", "sign-sap-version": "200"]])
+        let sapTransport = AuthenticationSAPFixture([bag,
+            try plist(["sign-sap-setup-cert": Data([1])]), try plist(["sign-sap-setup-buffer": Data([2])])])
+        let configuration = try await SAPProtocol(transport: sapTransport).bag(identity: identity)
+        let guest = AuthenticationGuestFixture()
+        let signer = try SAPSession(guest: guest, transport: sapTransport)
+        try await signer.initialize(configuration: configuration, identity: identity)
+        let pod = URL(string: "https://p42-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate/")!
+        let challenge = try plist(["customerMessage": "MZFinance.BadLogin.Configurator_message"])
+        let transport = FixtureAuthenticationTransport([.http(302, Data(), ["Location": pod.absoluteString]),
+            .http(200, challenge, [:]), .http(200, try success(), responseHeaders)])
+        let store = FixtureAccountStore(); let sleeps = FixtureSleeps(); let route = FixtureRoute()
+        let auth = AppleAuthentication(transport: transport, signer: signer, persistence: store,
+            automaticRecovery: true, sleep: { await sleeps.record($0) })
+        guard case .twoFactorRequired = try await auth.login(email: "fixture@example.test", password: "secret",
+            identity: identity, endpoint: configuration.authenticationURL, resolvedEndpoint: { await route.record($0) }) else {
+            return XCTFail("No challenge")
+        }
+        XCTAssertNil(try store.load())
+        let resolved = await route.last
+        guard case .authenticated = try await auth.login(email: "fixture@example.test", password: "secret", code: "123456",
+            identity: identity, endpoint: XCTUnwrap(resolved)) else { return XCTFail("Not verified") }
+        let setupRequests = await sapTransport.requests
+        XCTAssertEqual(setupRequests.count, 3) // One Bag, one certificate and one setup POST.
+        XCTAssertEqual(guest.initializations, 1)
+        XCTAssertEqual(guest.exchanges, 2)
+        XCTAssertEqual(guest.signedBodies.count, 3)
+        XCTAssertEqual(guest.signedBodies[0], guest.signedBodies[1]) // routing only
+        XCTAssertNotEqual(guest.signedBodies[1], guest.signedBodies[2]) // password + code
+        let requests = await transport.requests; XCTAssertEqual(requests[2].url, pod)
+        let delays = await sleeps.values; XCTAssertTrue(delays.isEmpty)
+        await signer.close()
+    }
+
     func testSigningTimeAndRedirectsShareOneRecoveryDeadline() async throws {
         let clock = FixtureAuthenticationClock()
         let signer = AdvancingAuthenticationSigner(clock: clock)
@@ -98,6 +157,19 @@ final class AuthenticationTests: XCTestCase {
         XCTAssertEqual(requests.count, 1) // second signature exceeds the shared deadline
         XCTAssertEqual(requests[0].timeoutInterval, 30)
         XCTAssertEqual(signer.calls, 2)
+    }
+
+    func testLastRequestDoesNotRoundRemainingDeadlineUpToOneSecond() async throws {
+        let clock = FixtureAuthenticationClock()
+        let transport = FixtureAuthenticationTransport([.http(200, try success(), responseHeaders)])
+        _ = try await AppleAuthentication(transport: transport, signer: FixtureSigner(), persistence: FixtureAccountStore(),
+            automaticRecovery: true, now: { clock.date })
+            .login(email: "fixture@example.test", password: "secret", identity: identity, endpoint: endpoint) { stage in
+                if stage == .signing { clock.date.addTimeInterval(119.75) }
+            }
+        let requests = await transport.requests
+        XCTAssertEqual(requests.count, 1)
+        XCTAssertEqual(requests[0].timeoutInterval, 0.25, accuracy: 0.001)
     }
 
     func testBareDocumentPairsAuthenticateOnlyWithCompleteSession() async throws {
@@ -318,6 +390,72 @@ final class AuthenticationTests: XCTestCase {
         XCTAssertEqual(rateRequests.count, 1)
     }
 
+    func testAutomaticRetryAllowanceIsNotResetByPodRedirect() async throws {
+        let pod = "https://p42-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate/"
+        let temporary = FixtureAuthenticationTransport.Reply.http(503, Data(), [:])
+        let transport = FixtureAuthenticationTransport(Array(repeating: temporary, count: 6)
+            + [.http(302, Data(), ["Location": pod])] + Array(repeating: temporary, count: 12))
+        let sleeps = FixtureSleeps(); let store = FixtureAccountStore()
+        do {
+            _ = try await AppleAuthentication(transport: transport, signer: FixtureSigner(), persistence: store,
+                automaticRecovery: true, sleep: { await sleeps.record($0) })
+                .login(email: "fixture@example.test", password: "secret", identity: identity, endpoint: endpoint)
+            XCTFail("Pod reset recovery allowance")
+        } catch { XCTAssertEqual(error as? AuthenticationError, .http(503)) }
+        let requests = await transport.requests
+        XCTAssertEqual(requests.count, 13) // 12 unusable replies and one useful redirect.
+        XCTAssertEqual(requests.last?.url?.absoluteString, pod)
+        let delays = await sleeps.values; XCTAssertEqual(delays.count, 11)
+        XCTAssertNil(try store.load())
+    }
+
+    func testNetworkAndHTTPRecoveryUseTheSameAllowance() async throws {
+        let pod = "https://p42-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate/"
+        let transport = FixtureAuthenticationTransport(Array(repeating: .error(.timedOut), count: 6)
+            + [.http(302, Data(), ["Location": pod])] + Array(repeating: .http(404, Data(), [:]), count: 12))
+        let sleeps = FixtureSleeps()
+        do {
+            _ = try await AppleAuthentication(transport: transport, signer: FixtureSigner(), persistence: FixtureAccountStore(),
+                automaticRecovery: true, sleep: { await sleeps.record($0) })
+                .login(email: "fixture@example.test", password: "secret", identity: identity, endpoint: endpoint)
+            XCTFail("Transport recovery had a separate allowance")
+        } catch { XCTAssertEqual(error as? AuthenticationError, .http(404)) }
+        let requests = await transport.requests; XCTAssertEqual(requests.count, 13)
+        let delays = await sleeps.values; XCTAssertEqual(delays.count, 11)
+    }
+
+    func testFinalAllowedRecoveryCanStillSucceedAfterPodRedirect() async throws {
+        let pod = "https://p42-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate/"
+        let transport = FixtureAuthenticationTransport(Array(repeating: .http(204, Data(), [:]), count: 6)
+            + [.http(302, Data(), ["Location": pod])] + Array(repeating: .http(404, Data(), [:]), count: 5)
+            + [.http(200, try success(), responseHeaders)])
+        let sleeps = FixtureSleeps(); let store = FixtureAccountStore()
+        guard case .authenticated = try await AppleAuthentication(transport: transport, signer: FixtureSigner(), persistence: store,
+            automaticRecovery: true, sleep: { await sleeps.record($0) })
+            .login(email: "fixture@example.test", password: "secret", code: "123456", identity: identity, endpoint: endpoint) else {
+            return XCTFail("Last eligible response was discarded")
+        }
+        let requests = await transport.requests; XCTAssertEqual(requests.count, 13)
+        let delays = await sleeps.values; XCTAssertEqual(delays.count, 11)
+        XCTAssertNotNil(try store.load())
+    }
+
+    func testLogicalCredentialAttemptDoesNotResetAutomaticRetryAllowance() async throws {
+        let failedCredential = try plist(["failureType": "-5000", "customerMessage": "Incorrect password"])
+        let transport = FixtureAuthenticationTransport(Array(repeating: .http(204, Data(), [:]), count: 6)
+            + [.http(200, failedCredential, [:])] + Array(repeating: .http(503, Data(), [:]), count: 12))
+        do {
+            _ = try await AppleAuthentication(transport: transport, signer: FixtureSigner(), persistence: FixtureAccountStore(),
+                automaticRecovery: true, sleep: { _ in })
+                .login(email: "fixture@example.test", password: "secret", code: "123456", identity: identity, endpoint: endpoint)
+            XCTFail("Logical attempt reset recovery allowance")
+        } catch { XCTAssertEqual(error as? AuthenticationError, .http(503)) }
+        let requests = await transport.requests; XCTAssertEqual(requests.count, 13)
+        let last = try ApplePlist.dictionary(XCTUnwrap(requests.last?.httpBody))
+        XCTAssertEqual(last?["attempt"] as? String, "2")
+        XCTAssertEqual(last?["password"] as? String, "secret123456")
+    }
+
     func testAppleCredentialErrorOn403IsNotTreatedAsTransientHTML() async throws {
         let transport = FixtureAuthenticationTransport([.http(403, try plist(["failureType": "bad-password", "customerMessage": "Denied"]), [:])])
         do { _ = try await login(transport); XCTFail("Accepted error") }
@@ -484,4 +622,28 @@ private final class AdvancingAuthenticationSigner: ActionSigning {
         clock.date.addTimeInterval(70)
         return "fixture-signature-not-valid"
     }
+}
+
+private actor AuthenticationSAPFixture: SAPTransport {
+    var replies: [Data]
+    private(set) var requests: [URLRequest] = []
+    init(_ replies: [Data]) { self.replies = replies }
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        requests.append(request)
+        guard !replies.isEmpty else { throw SAPError.invalidState }
+        return (replies.removeFirst(), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+    }
+}
+private final class AuthenticationGuestFixture: AppleSAPGuest {
+    let executionMode = SAPExecutionMode.interpreted
+    private(set) var initializations = 0
+    private(set) var exchanges = 0
+    private(set) var signedBodies: [Data] = []
+    func initialize(hardwareID: Data) throws { initializations += 1 }
+    func exchange(version: UInt32, hardwareID: Data, input: Data) throws -> (output: Data, state: Int32) {
+        exchanges += 1
+        return exchanges == 1 ? (Data([3]), 1) : (Data(), 0)
+    }
+    func sign(body: Data) throws -> Data { signedBodies.append(body); return Data([4]) }
+    func close() {}
 }

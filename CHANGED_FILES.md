@@ -80,6 +80,7 @@ Original revision: `d508e532e5b40d6470bab003a6cc0026d1ca7c75`. Historical source
 - `docs/BACKEND_AUDIT.md`
 - `docs/DLIPA_BINARY_AUDIT.md`
 - `docs/IPATOOL_AUDIT.md`
+- `docs/LOGIN_AUDIT.md`
 - `docs/UI_REVIEW_23010.md`
 - `scripts/build-sap-native.sh`
 - `scripts/build-unicorn-tci.sh`
