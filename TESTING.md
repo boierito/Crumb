@@ -291,3 +291,9 @@ policy are unchanged; compare cold preparation separately from verification.
 Local Swift fixture validation: 60 targeted tests passed (37 authentication,
 12 form-state, 11 SAP). Full macOS/iOS CI results are attached to the build;
 fixture responses and signatures are synthetic and do not demonstrate live login.
+
+## Branch-only 23023 clean-login test
+
+See [AUTH_TEST_BUILD.md](docs/AUTH_TEST_BUILD.md) for separate signing, reset evidence,
+report privacy and the physical matrix. Main stays at 01ad52d; production login
+protocol is unchanged. SDK fixture/real macOS Keychain tests are not iOS/Apple acceptance.

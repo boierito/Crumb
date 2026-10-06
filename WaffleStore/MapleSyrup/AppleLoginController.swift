@@ -7,7 +7,7 @@ import MapleSAP
 // MainActor owns UI state; SAPSession runs the blocking native guest away from it.
 extension AppData {
     func startAppleLogin(_ action: AppleSignInAction = .submit) {
-        guard !isAuthenticating else { return }
+        guard !isAuthenticating, !isResettingAuthenticationTest, authenticationTestResetVerified else { return }
         let input: AppleSignInSubmission
         do { input = try signInForm.begin(action) }
         catch {
@@ -18,6 +18,7 @@ extension AppData {
         if action == .requestNewCode { clearLoginPreparation() }
         isAuthenticating = true
         authenticationError = ""
+        authenticationTestReport.begin(action, verification: !input.code.isEmpty)
         authenticationTask = Task {
             defer { isAuthenticating = false; authenticationTask = nil }
             var preparation: PreparedAppleLogin?
@@ -37,7 +38,9 @@ extension AppData {
                 let signer = try await prepared.prepare { self.setAuthenticationStage($0) }
                 try Task.checkCancellation()
                 let authentication = AppleAuthentication(transport: prepared.loginTransport, signer: signer,
-                    persistence: KeychainStoreAccount(), automaticRecovery: true)
+                    persistence: KeychainStoreAccount(), diagnostic: { diagnostic in
+                        await MainActor.run { self.authenticationTestReport.diagnostic(diagnostic) }
+                    }, automaticRecovery: true)
                 guard let endpoint = prepared.endpoint else { throw CancellationError() }
                 let outcome = try await authentication.login(email: input.email, password: input.password, code: input.code,
                     identity: prepared.identity, endpoint: endpoint, resolvedEndpoint: { endpoint in
@@ -48,15 +51,19 @@ extension AppData {
                 try Task.checkCancellation()
                 switch outcome {
                 case .twoFactorRequired(let cookies):
+                    authenticationTestReport.challenge()
                     signInForm.requireVerification(for: input, cookies: cookies)
                     keepPrepared = true
                     applicationStatus = AuthenticationStage.twoFactor.rawValue
                 case .authenticated(let account):
+                    authenticationTestReport.authenticated(verification: !input.code.isEmpty)
                     applyStoreAccount(account, restored: false)
                 }
             } catch let error where error is CancellationError || Task.isCancelled {
+                authenticationTestReport.cancelled()
                 applicationStatus = "Sign-in cancelled."
             } catch {
+                authenticationTestReport.failed(error)
                 if let preparation {
                     if hasSent2FACode {
                         signInForm.updateChallengeCookies(await preparation.loginTransport.cookies())
@@ -127,6 +134,7 @@ extension AppData {
             try LegacyCredentials.remove()
             guard let account = try KeychainStoreAccount().load() else { return }
             try account.validate(identity: KeychainMachineIdentity.loadOrCreate())
+            authenticationTestReport.restored()
             applyStoreAccount(account, restored: true)
         } catch {
             authenticationError = "Saved session could not be restored (code \((error as NSError).code)). Sign in again."
@@ -135,7 +143,7 @@ extension AppData {
     }
 
     func logoutStoreAccount() {
-        guard !isAuthenticating, storeTask == nil, !showStoreVersions else { return }
+        guard !isResettingAuthenticationTest, !isAuthenticating, storeTask == nil, !showStoreVersions else { return }
         do {
             clearCodeResendCooldown()
             clearLoginPreparation()
@@ -175,6 +183,7 @@ extension AppData {
     }
 
     private func setAuthenticationStage(_ stage: AuthenticationStage) {
+        authenticationTestReport.stage(stage)
         switch stage {
         case .bag, .sap, .signing, .prepared: applicationStatus = "Preparing sign-in…"
         case .authenticating, .redirect: applicationStatus = "Connecting to Apple…"
@@ -204,6 +213,42 @@ extension AppData {
         if let error = error as? SignInInputError { return error.localizedDescription }
         if let error = error as? SAPError { return error.localizedDescription }
         return "Sign-in failed (code \((error as NSError).code))."
+    }
+
+    func resetAuthenticationTest() async {
+        guard canResetAuthenticationTest else { return }
+        isResettingAuthenticationTest = true
+        authenticationTestResetVerified = false
+        authenticationTestReport.beginReset()
+        defer { isResettingAuthenticationTest = false }
+        // No live login/Store request may overlap rotation. Await guest closure
+        // before creating a replacement identity; no old signer can use it.
+        clearCodeResendCooldown()
+        loginPreparationExpiry?.cancel()
+        loginPreparationExpiry = nil
+        let prepared = preparedAppleLogin
+        preparedAppleLogin = nil
+        ipaTool?.close()
+        ipaTool = nil
+        isAuthenticated = false
+        signInForm.cancel(clearEmail: true)
+        openVersionsAfterLogin = false
+        didRestoreStoreAccount = true
+        authenticationError = ""
+        applicationStatus = "Resetting test sign-in…"
+        await prepared?.close()
+        do {
+            let evidence = try KeychainMachineIdentity.resetForAuthenticationTest()
+            authenticationTestReport.reset(evidence)
+            authenticationTestResetVerified = true
+            hasAppBeenServed = false
+            applicationIcon = "xmark.circle.fill"
+            applicationStatus = "Test reset verified. Enter your Apple ID and password."
+        } catch {
+            authenticationTestReport.failed(error)
+            authenticationError = "Test reset could not be verified (code \((error as NSError).code)). No clean-login claim was made."
+            applicationStatus = "Test reset failed."
+        }
     }
 
 }
@@ -263,7 +308,7 @@ private enum LegacyCredentials {
             if fm.fileExists(atPath: file.path) { try fm.removeItem(at: file) }
         }
         let status = SecItemDelete([kSecClass as String: kSecClassKey,
-            kSecAttrApplicationTag as String: "com.certlium.crumb.key"] as CFDictionary)
+            kSecAttrApplicationTag as String: "com.certlium.crumb.authtest.key"] as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else { throw SAPError.keychain(status) }
     }
 }

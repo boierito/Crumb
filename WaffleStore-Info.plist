@@ -10,10 +10,10 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>com.certlium.crumb.urls</string>
+			<string>com.certlium.crumb.authtest.urls</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>crumb</string>
+				<string>crumb-authtest</string>
 			</array>
 		</dict>
 	</array>

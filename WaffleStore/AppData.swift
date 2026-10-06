@@ -30,7 +30,7 @@ final class AppData: ObservableObject {
         Storefront.catalogCountries.contains(catalogRegion) ? catalogRegion : accountCountry
     }
     func openAppSelection(_ input: String, country: String? = nil) {
-        guard !isDowngrading, storeRequestCount == 0, !showStoreVersions else { return }
+        guard !isResettingAuthenticationTest, !isDowngrading, storeRequestCount == 0, !showStoreVersions else { return }
         appLink = input
         selectedCatalogCountry = country ?? catalogCountry
         if isAuthenticated {
@@ -86,11 +86,20 @@ final class AppData: ObservableObject {
         set { signInForm.code = newValue }
     }
     var hasSent2FACode: Bool { signInForm.awaitsVerification }
-    var canSubmitAppleLogin: Bool { signInForm.canSubmit }
+    var canSubmitAppleLogin: Bool {
+        authenticationTestResetVerified && !isResettingAuthenticationTest && signInForm.canSubmit
+    }
     
     @Published var isAuthenticated: Bool = false
     @Published var isAuthenticating: Bool = false
     @Published var authenticationError: String = ""
+    @Published var authenticationTestReport = AuthenticationTestReport()
+    @Published var isResettingAuthenticationTest = false
+    @Published var authenticationTestResetVerified = false
+    var canResetAuthenticationTest: Bool {
+        !isResettingAuthenticationTest && !isAuthenticating && !isDowngrading
+            && storeRequestCount == 0 && storeTask == nil && !showStoreVersions
+    }
     @Published var isCodeResendCoolingDown = false
     var codeResendCooldownTask: Task<Void, Never>?
     var authenticationTask: Task<Void, Never>?

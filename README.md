@@ -1,4 +1,12 @@
-# Crumb
+# Crumb Test — clean-login branch
+
+**Test build 23023**, branch `feature/2fa-clean-login-test`, based on main
+`01ad52dd53b725ee71dd7c1bfbacfd36cd14a196`. This branch does not change main.
+Installs separately as **Crumb Test**, bundle `com.certlium.crumb.authtest`, with
+a distinct Keychain namespace. See [test instructions](docs/AUTH_TEST_BUILD.md).
+A verified reset gives a fresh local identity/session; Apple decides whether to request 2FA.
+
+The production description below refers to the unchanged 23022 base.
 
 <p align="center"><img src="branding/Crumb-AppIcon-1024.png" width="120" alt="Crumb icon"></p>
 

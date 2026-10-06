@@ -377,3 +377,16 @@ one challenge followed by a bounded HTTP failure and a successful retry using th
 same password+code body/pod. The existing wire protocol, recovery scheduling and
 SAP runtime are unchanged. CI compilation/fixtures cannot establish Apple latency,
 code expiry or first-login acceptance; TESTING.md includes the device checks.
+
+## Branch-only Crumb Test 23023
+
+feature/2fa-clean-login-test derives from main 01ad52d without modifying its
+checkout/ref. Test bundle/service/URL scheme are separate. The explicit local
+reset closes prepared guest/transports, blocks overlapping login/Store work,
+clears only test account/kbsync/identity, rotates identity and verifies read-back
+and absence of session records. It does not request an Apple challenge itself.
+Guest assets remain cached; authentication protocol/runtime/retries are unchanged.
+Branch-only diagnostic UI accepts fixed fields, never raw secret-bearing data,
+and reports actual challenge/verification/restoration/no-challenge outcomes.
+See docs/AUTH_TEST_BUILD.md for installation and physical limitations. Do not
+merge test reset/instrumentation into main as a production authentication fix.

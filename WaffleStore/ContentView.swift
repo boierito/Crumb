@@ -34,6 +34,7 @@ struct ContentView: View {
     private var account: some View {
         NavigationStack {
             List {
+                AuthenticationTestSection()
                 if appData.isAuthenticated {
                     Section("Signed in") {
                         Label(appData.appleId, systemImage: "person.crop.circle")
@@ -41,12 +42,12 @@ struct ContentView: View {
                     }
                     Section {
                         Button("Sign out", role: .destructive) { confirmLogout = true }
-                            .disabled(appData.isAuthenticating || appData.isDowngrading || appData.storeRequestCount > 0 || appData.showStoreVersions)
+                            .disabled(appData.isResettingAuthenticationTest || appData.isAuthenticating || appData.isDowngrading || appData.storeRequestCount > 0 || appData.showStoreVersions)
                     } footer: {
                         Text("Signing out keeps your favourites and downloaded IPAs.")
                     }
                 } else {
-                    LoginSection
+                    LoginSection.disabled(appData.isResettingAuthenticationTest)
                     Section { NavigationButtons() }
                 }
             }

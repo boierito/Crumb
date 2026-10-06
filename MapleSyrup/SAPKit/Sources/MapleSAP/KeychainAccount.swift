@@ -5,7 +5,7 @@ import Security
 public final class KeychainStoreAccount: StoreAccountPersistence {
     private let service: String
     private let account = "store-account-v2"
-    public init(service: String = "com.certlium.crumb.sap") { self.service = service }
+    public init(service: String = AuthenticationTestScope.keychainService) { self.service = service }
     private var query: [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
          kSecAttrService as String: service, kSecAttrAccount as String: account]

@@ -1,5 +1,12 @@
 # Development changelog
 
+## Test branch only — Crumb Test 23023
+
+- Separate app ID/Keychain service and explicit verified local sign-in reset.
+- Sanitized RAM-only stage/HTTP/outcome report; no server-side 2FA force claim.
+- No authentication protocol/runtime change, production reset or merge to main.
+- See docs/AUTH_TEST_BUILD.md.
+
 ## Crumb 1.0.0 — build 23022
 
 - Unifica formulario y desafío 2FA en un estado tipado, ligado a la cuenta y sólo en RAM.

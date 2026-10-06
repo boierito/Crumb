@@ -27,7 +27,7 @@ struct CrumbApp: App {
                     }
                 }
                 .onOpenURL { schemedURL in
-                    let rawURL = schemedURL.absoluteString.replacingOccurrences(of: "crumb:", with: "")
+                    let rawURL = schemedURL.absoluteString.replacingOccurrences(of: "crumb-authtest:", with: "")
                     if let appLink = rawURL.removingPercentEncoding {
                         appData.openAppSelection(appLink)
                         #if DEBUG

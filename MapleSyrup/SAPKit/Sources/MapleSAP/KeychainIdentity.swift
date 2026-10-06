@@ -4,7 +4,7 @@ import Security
 
 public enum KeychainMachineIdentity {
     private static let lock = NSLock()
-    private static let service = "com.certlium.crumb.sap"
+    private static let service = AuthenticationTestScope.keychainService
     private static let account = "machine-identity-v1"
 
     // No Apple ID, network interface MAC, private entitlement, file fallback,
@@ -12,6 +12,47 @@ public enum KeychainMachineIdentity {
     public static func loadOrCreate() throws -> MachineIdentity {
         lock.lock()
         defer { lock.unlock() }
+        return try loadOrCreateUnlocked(service: service)
+    }
+
+    // Branch-only, local reset. UI must close live SAP/Store work first. It
+    // affects only this test namespace and never asks Apple to remove trust.
+    public static func resetForAuthenticationTest() throws -> AuthenticationTestResetEvidence {
+        try resetForAuthenticationTest(service: service)
+    }
+
+    static func resetForAuthenticationTest(service: String) throws -> AuthenticationTestResetEvidence {
+        guard service == Self.service || service.hasPrefix(Self.service + ".tests.") else {
+            throw AuthenticationTestResetError.namespaceRejected
+        }
+        lock.lock()
+        defer { lock.unlock() }
+        let previous = try loadOrCreateUnlocked(service: service)
+        try KeychainStoreAccount(service: service).clear()
+        try KeychainKBSync(service: service).clear()
+        let status = SecItemDelete([kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service, kSecAttrAccount as String: account] as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw SAPError.keychain(status) }
+        let created = try loadOrCreateUnlocked(service: service)
+        let restored = try loadOrCreateUnlocked(service: service)
+        let evidence = AuthenticationTestResetEvidence(identityChanged: created != previous,
+            identityPersisted: restored == created,
+            sessionRemoved: try !containsItem(service: service, account: "store-account-v2"),
+            kbsyncRemoved: try !containsItem(service: service, account: "kbsync-v1"))
+        guard evidence.identityChanged, evidence.identityPersisted,
+              evidence.sessionRemoved, evidence.kbsyncRemoved else { throw AuthenticationTestResetError.evidenceFailed }
+        return evidence
+    }
+
+    private static func containsItem(service: String, account: String) throws -> Bool {
+        let status = SecItemCopyMatching([kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service, kSecAttrAccount as String: account,
+            kSecMatchLimit as String: kSecMatchLimitOne] as CFDictionary, nil)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw SAPError.keychain(status) }
+        return status == errSecSuccess
+    }
+
+    private static func loadOrCreateUnlocked(service: String) throws -> MachineIdentity {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service, kSecAttrAccount as String: account]
         var read = query

@@ -5,7 +5,7 @@ import Security
 // Separate from the session: only server-accepted blobs are persisted.
 public final class KeychainKBSync: KBSyncPersistence {
     private let service: String
-    public init(service: String = "com.certlium.crumb.sap") { self.service = service }
+    public init(service: String = AuthenticationTestScope.keychainService) { self.service = service }
     private struct Entry: Codable { let dsid: String; let guid: String; let blob: Data }
     private var query: [String: Any] {
         [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,

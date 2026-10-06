@@ -20,6 +20,8 @@ Original revision: `d508e532e5b40d6470bab003a6cc0026d1ca7c75`. Historical source
 - `MapleSyrup/SAPKit/Package.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/AppleAuthentication.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/AppleSignInForm.swift`
+- `MapleSyrup/SAPKit/Sources/MapleSAP/AuthenticationTestReport.swift`
+- `MapleSyrup/SAPKit/Sources/MapleSAP/AuthenticationTestScope.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/AuthenticationTransport.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/InstallationPage.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/KeychainAccount.swift`
@@ -35,6 +37,7 @@ Original revision: `d508e532e5b40d6470bab003a6cc0026d1ca7c75`. Historical source
 - `MapleSyrup/SAPKit/Sources/MapleSAP/StoreSession.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/Storefront.swift`
 - `MapleSyrup/SAPKit/Tests/MapleSAPTests/AppleSignInFormTests.swift`
+- `MapleSyrup/SAPKit/Tests/MapleSAPTests/AuthenticationTestBuildTests.swift`
 - `MapleSyrup/SAPKit/Tests/MapleSAPTests/AuthenticationTests.swift`
 - `MapleSyrup/SAPKit/Tests/MapleSAPTests/AuthenticationTransportTests.swift`
 - `MapleSyrup/SAPKit/Tests/MapleSAPTests/InstallationPageTests.swift`
@@ -50,6 +53,7 @@ Original revision: `d508e532e5b40d6470bab003a6cc0026d1ca7c75`. Historical source
 - `WaffleStore-Info.plist`
 - `WaffleStore.xcodeproj/project.pbxproj`
 - `WaffleStore/App/AppSearchView.swift`
+- `WaffleStore/App/AuthenticationTestSection.swift`
 - `WaffleStore/App/DownloadReadyView.swift`
 - `WaffleStore/App/DownloadedAppsView.swift`
 - `WaffleStore/App/FavouritesView.swift`
@@ -79,6 +83,7 @@ Original revision: `d508e532e5b40d6470bab003a6cc0026d1ca7c75`. Historical source
 - `WaffleStore/WaffleStoreApp.swift`
 - `branding/Crumb-AppIcon-1024.png`
 - `branding/README.md`
+- `docs/AUTH_TEST_BUILD.md`
 - `docs/BACKEND_AUDIT.md`
 - `docs/DLIPA_BINARY_AUDIT.md`
 - `docs/IPATOOL_AUDIT.md`

@@ -21,10 +21,10 @@ with zipfile.ZipFile(ipa) as archive:
     assert info["CFBundleShortVersionString"] == expected_version, "Wrong version"
     assert info.get("UIFileSharingEnabled") is True, "Files sharing missing"
     assert info.get("LSSupportsOpeningDocumentsInPlace") is True, "Files in-place access missing"
-    assert any("crumb" in item.get("CFBundleURLSchemes", [])
+    assert any("crumb-authtest" in item.get("CFBundleURLSchemes", [])
                for item in info.get("CFBundleURLTypes", [])), "Crumb URL scheme missing"
-    assert info["CFBundleIdentifier"] == "com.certlium.crumb", "Wrong Crumb bundle ID"
-    assert info["CFBundleDisplayName"] == "Crumb", "Wrong display name"
+    assert info["CFBundleIdentifier"] == "com.certlium.crumb.authtest", "Wrong Crumb bundle ID"
+    assert info["CFBundleDisplayName"] == "Crumb Test", "Wrong display name"
     assert info.get("CFBundleIcons", {}).get("CFBundlePrimaryIcon", {}).get("CFBundleIconFiles"), "App icon missing"
     executable = archive.read(root + info["CFBundleExecutable"])
     assert struct.unpack("<II", executable[:8]) == (0xFEEDFACF, 0x0100000C), "Expected arm64 Mach-O"
