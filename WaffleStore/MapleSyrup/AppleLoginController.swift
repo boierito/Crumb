@@ -14,7 +14,6 @@ extension AppData {
         let challengeCookies = hasSent2FACode ? pendingAuthenticationCookies : []
         isAuthenticating = true
         authenticationError = ""
-        authenticationRecovery = ""
         authenticationTask = Task {
             defer { isAuthenticating = false; authenticationTask = nil }
             var preparation: PreparedAppleLogin?
@@ -36,13 +35,7 @@ extension AppData {
                 let signer = try await prepared.prepare { self.setAuthenticationStage($0) }
                 try Task.checkCancellation()
                 let authentication = AppleAuthentication(transport: prepared.loginTransport, signer: signer,
-                    persistence: KeychainStoreAccount(), diagnostic: { event in
-                        await MainActor.run {
-                            if event.hasPrefix("authentication-recovery-attempt=") {
-                                self.authenticationRecovery = "Automatic attempt " + event.replacingOccurrences(of: "authentication-recovery-attempt=", with: "")
-                            }
-                        }
-                    }, automaticRecovery: true)
+                    persistence: KeychainStoreAccount(), automaticRecovery: true)
                 guard let endpoint = prepared.endpoint else { throw CancellationError() }
                 let outcome = try await authentication.login(email: email, password: secret, code: verification,
                     identity: prepared.identity, endpoint: endpoint, resolvedEndpoint: { endpoint in
@@ -81,7 +74,9 @@ extension AppData {
                 else { authenticationError = "Sign-in failed (code \((error as NSError).code))." }
                 code = ""
                 applicationStatus = "Sign-in failed."
+                #if DEBUG
                 print("Apple sign-in failed (code \((error as NSError).code)).")
+                #endif
             }
             if let preparation {
                 if keepPrepared, !Task.isCancelled, preparation.canReuse(for: email), preparedAppleLogin === preparation {
@@ -170,7 +165,9 @@ extension AppData {
         case .saving: applicationStatus = "Completing sign-in…"
         case .twoFactor: applicationStatus = "Enter your verification code."
         }
+        #if DEBUG
         print("Apple authentication stage: \(stage.rawValue)")
+        #endif
     }
     private func applyStoreAccount(_ account: StoreAccount, restored: Bool) {
         appleId = account.email
@@ -181,7 +178,9 @@ extension AppData {
         applicationStatus = "Signed in. Choose an app to get started."
         applicationIcon = "checkmark.circle.fill"
         applicationIconColor = .primary
+        #if DEBUG
         print("Apple authentication: \(restored ? "saved session loaded" : "DSID/token/storefront received and saved in Keychain") [values withheld]")
+        #endif
     }
 
 }

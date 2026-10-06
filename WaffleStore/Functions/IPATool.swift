@@ -22,12 +22,9 @@ final class IPATool {
                     case .bag, .latest: AppData.shared.applicationStatus = "Finding available versions…"
                     default: AppData.shared.applicationStatus = "Preparing download…"
                     }
+                    #if DEBUG
                     print("Apple Store stage: \(stage.rawValue)")
-                }
-            }, diagnostic: { event in
-                // SDK-generated fixed fields only: no URL, body, token or cookie values.
-                if event.hasPrefix("scope=purchase;") || event.hasPrefix("purchase-") || event.hasPrefix("recovery=") {
-                    print("Apple Store diagnostic: \(event)")
+                    #endif
                 }
             })
         self.transport = transport; self.store = store
@@ -39,7 +36,9 @@ final class IPATool {
         defer { AppData.shared.storeRequestCount -= 1 }
         do { return try await session().descriptor(app: app, externalVersionID: version) }
         catch {
+            #if DEBUG
             print("Apple Store failure: category=\(ResponseDiagnostic.category(error))")
+            #endif
             throw error
         }
     }

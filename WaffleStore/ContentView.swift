@@ -4,7 +4,6 @@ import PartyUI
 struct ContentView: View {
     @EnvironmentObject var appData: AppData
     @State private var confirmLogout = false
-    @State private var showLogs = false
 
     var body: some View {
         TabView(selection: $appData.selectedTab) {
@@ -48,9 +47,6 @@ struct ContentView: View {
                 } else {
                     LoginSection
                     Section { NavigationButtons() }
-                }
-                Section {
-                    DisclosureGroup("Activity log", isExpanded: $showLogs) { LogView() }
                 }
             }
             .navigationTitle("Apple account")
@@ -110,9 +106,6 @@ struct ContentView: View {
                         ProgressView()
                         VStack(alignment: .leading, spacing: 4) {
                             Text(appData.applicationStatus).font(.subheadline)
-                            if !appData.authenticationRecovery.isEmpty {
-                                Text(appData.authenticationRecovery).font(.caption).foregroundStyle(.secondary)
-                            }
                         }
                         Spacer(minLength: 0)
                         Button("Cancel") { appData.cancelAppleLogin() }

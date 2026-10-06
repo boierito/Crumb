@@ -107,7 +107,9 @@ extension AppData {
     private func storeStage(_ stage: String) {
         applicationStatus = stage; downgradeProgressDetail = stage
 
+        #if DEBUG
         print("Apple Store stage: \(stage)")
+        #endif
     }
     func deleteDownload(_ record: DownloadRecord) throws {
         try record.deleteFiles()

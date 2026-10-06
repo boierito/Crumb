@@ -79,7 +79,6 @@ final class AppData: ObservableObject {
     @Published var isAuthenticated: Bool = false
     @Published var isAuthenticating: Bool = false
     @Published var authenticationError: String = ""
-    @Published var authenticationRecovery: String = ""
     var authenticationTask: Task<Void, Never>?
     var didRestoreStoreAccount = false
     var pendingAuthenticationCookies: [StoreCookie] = []

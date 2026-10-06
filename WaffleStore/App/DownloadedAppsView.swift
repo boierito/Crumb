@@ -6,7 +6,6 @@ struct DownloadedAppsView: View {
     @EnvironmentObject var appData: AppData
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var showLogs = false
     @State private var installation: DownloadRecord?
     @State private var deletion: DownloadRecord?
     @State private var confirmDeleteAll = false
@@ -106,9 +105,6 @@ struct DownloadedAppsView: View {
                         Button("Delete all downloads", role: .destructive) { confirmDeleteAll = true }
                             .disabled(appData.isDowngrading)
                     }
-                }
-                Section {
-                    DisclosureGroup("Activity log", isExpanded: $showLogs) { LogView() }
                 }
             }
             .navigationTitle("Downloaded apps")

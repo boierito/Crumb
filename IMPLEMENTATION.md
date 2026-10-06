@@ -331,3 +331,7 @@ The user verified 23015 search/download/export/install/UI on device, but regiona
 ## Build 23017
 
 Settings no longer lists downloaded IPAs or global Export IPA/Clean Documents actions. Individual export remains in Downloads, which now owns a confirmed Delete all downloads action. Bulk cleanup only removes downloaded IPAs/matching sidecars inside Downloads, handles orphan IPAs/stale records, preserves unrelated files and rejects a symlink root. Disable bulk deletion during download; reload records even after partial failure. No broad Documents wipe.
+
+## Build 23018 — distribution UI without debugging
+
+Release has no Activity log UI, stdout pipe/capture, sign-in attempt counter or installed diagnostic callbacks. App console print statements compile only in Debug; SDK diagnostic hooks remain default no-ops for tests and reuse. Useful progress/cancel/errors, Keychain, SAP and Store recovery behavior are unchanged. Prebranding branch preserves current WaffleStore bundle ID/icon until a name is chosen. Public renaming/redistribution requires resolving missing upstream license; notices and corresponding sources remain intact.

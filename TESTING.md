@@ -215,3 +215,7 @@ and existing non-2059/session/ambiguous failure/no-paid acquisition paths.
 ## Build 23017
 
 Verify Settings has no downloaded IPA list/Data actions/history import/export. Downloads individual ShareLink still exports the chosen IPA. Delete all downloads: Cancel preserves files; confirm removes all IPA/sidecars and shows empty state; favourites/account/installed apps and unrelated files remain. Action disabled during active download. Safe deletion fixtures now cover bulk cleanup, orphan IPA/stale sidecar, idempotence, unrelated files and symlink root rejection. Device UI validation pending.
+
+## Build 23018 — distribution UI without debugging
+
+Release: Account/Downloads must not show Activity log or technical retry counters; sign-in/2FA/retry/progress/cancel and Apple errors remain usable. Verify app launch does not redirect stdout through a Pipe. Debug/Release builds and protocol tests check no integration regression; new Release UI still needs device testing. No new brand/bundle ID/icon yet.

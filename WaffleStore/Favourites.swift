@@ -37,7 +37,9 @@ enum FavouritesStore {
             return try JSONDecoder().decode([FavouriteApp].self, from: data)
                 .sorted { $0.dateAdded > $1.dateAdded }
         } catch {
+            #if DEBUG
             print("Failed to load favourites: \(error)")
+            #endif
             return []
         }
     }
@@ -68,7 +70,9 @@ enum FavouritesStore {
             let data = try JSONEncoder().encode(favourites)
             UserDefaults.standard.set(data, forKey: storageKey)
         } catch {
+            #if DEBUG
             print("Failed to save favourites: \(error)")
+            #endif
         }
     }
 }

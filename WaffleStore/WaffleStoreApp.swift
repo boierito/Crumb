@@ -8,8 +8,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-var pipe = Pipe()
-var weOnADebugBuild: Bool = false
 
 @main
 struct WaffleStoreApp: App {
@@ -17,17 +15,6 @@ struct WaffleStoreApp: App {
     @StateObject private var localizationManager = LocalizationManager.shared
     
     @AppStorage("autoCleanApp") var autoCleanApp: Bool = true
-    
-    init() {
-        ActivityLog.shared.beginCapture()
-        setvbuf(stdout, nil, _IONBF, 0)
-        dup2(pipe.fileHandleForWriting.fileDescriptor, STDOUT_FILENO)
-        #if DEBUG
-        weOnADebugBuild = true
-        #else
-        weOnADebugBuild = false
-        #endif
-    }
     
     var body: some Scene {
         WindowGroup {
@@ -43,7 +30,9 @@ struct WaffleStoreApp: App {
                     let rawURL = schemedURL.absoluteString.replacingOccurrences(of: "wafflestore:", with: "")
                     if let appLink = rawURL.removingPercentEncoding {
                         appData.openAppSelection(appLink)
+                        #if DEBUG
                         print("Successfully received app link! \(appLink)")
+                        #endif
                     }
                 }
         }
