@@ -1,4 +1,4 @@
-# Login audit — Crumb 23021
+# Login audit — Crumb 23022
 
 Compared on 2026-10-06 against `majd/ipatool` main at
 `cde7d00355e152714377b953ec57438626d3cb5a`. Automated tests cannot establish
@@ -50,7 +50,7 @@ only the two explicit allowed literals; encoded aliases remain rejected.
 
 ## Current request/state comparison
 
-| Stage | Current ipatool | Crumb 23021 |
+| Stage | Current ipatool | Crumb 23022 |
 |---|---|---|
 | Identity | Stable MAC → hardware ID/GUID | Stable six-byte Keychain identity for Bag, guest and payload |
 | Bag | Discover, validate, canonicalize initial auth path | Same; supports canonical and pod URLs advertised by Bag |
@@ -64,6 +64,55 @@ only the two explicit allowed literals; encoded aliases remain rejected.
 | HTTP recovery | Three attempts per request, 10/20s, Retry-After override | Existing automatic recovery retained, eleven retries shared across one login's routes/logical attempts, existing 120s scheduling deadline |
 | Missing Location | Error | Existing bounded iOS retry at the current validated URL; no invented destination |
 | Persistence | Keychain account, including password upstream | Account/token/cookies in Keychain, no password or code persistence |
+
+This is **not a byte-identical or runtime-identical port**. For email accounts,
+the initial URL rule, signed POST fields, user agent/content type, validated
+pod replay, logical credential attempt and password+code semantics follow the
+reference. Foundation and Go serialize XML differently; each client signs the
+exact bytes it sends, rather than signing one serialization and sending another.
+Terminal bracketed-paste handling has no counterpart in the iOS text field.
+
+The static TCI interpreter replaces upstream's executable-memory guest runtime;
+Keychain identity replaces inaccessible hardware MAC discovery. URLSession
+replaces Go's HTTP client. These are jailed-iOS adaptations, not evidence that
+Apple will accept every request. Additional automatic recovery and incomplete
+redirect handling are explicit client policy differences. ipatool closes its
+signer when Login returns the challenge; the CLI prompts and calls Login again,
+fetching Bag/creating a signer again while keeping its HTTP cookie jar. Crumb
+retains an initialized same-account guest, jar and validated pod for at most five
+minutes, avoiding that repeated preparation during normal 2FA/manual retries.
+Upstream's optional password persistence is deliberately not replicated.
+
+## 23022: UI recovery was discarding usable verification input
+
+The previous controller's general failure handler always cleared `code`,
+including HTTP/transport errors with no Apple verification rejection. After a
+bounded failure, the user had to re-enter a code or request another challenge.
+This was a client state bug; it does not prove that the previous code was still
+valid on Apple's server or explain all transient responses.
+
+`AppleSignInForm` now owns editable input and one account-bound challenge
+snapshot in RAM. Its immutable submission captures email/password/code/cookies
+before asynchronous preparation. The controller no longer coordinates separate
+pending-password, pending-email, cookie and challenge-flag fields. UI validation
+and request submission use the same rules:
+
+- A challenge requires six ASCII digits; blank/malformed input cannot silently
+  send a password-only request or start SAP/network work.
+- HTTP/transport/incomplete-response failures preserve the entered code,
+  challenge and applicable cookies. The primary action becomes **Retry
+  verification** and reuses valid preparation. There is no automatic new-code
+  request. If Apple has expired the code, its subsequent response still applies.
+- An explicit Apple verification rejection clears only the code. Local format
+  errors keep the text editable; rejected account credentials unlock the fields
+  and clear the challenge/password. Unsafe redirects still stop credential replay.
+- **Request new code** is an explicit, cooldown-protected password-only action
+  that clears old code/challenge cookies/preparation. Apple controls delivery.
+- Cancel, account change and success discard the RAM-only credentials/challenge.
+
+No authentication wire, SAP runtime, retry/backoff policy or Store/download
+change is introduced in 23022. Retaining a code/preparation removes unnecessary
+client work; live login speed and code acceptance remain device measurements.
 
 ## Changes and boundaries
 
@@ -106,7 +155,14 @@ Existing tests cover unsafe redirects, cookies, Retry-After, codes, persistence,
 cancel, Keychain and Store/download behavior. Guest signatures and Apple replies
 in these tests are fixtures, not live authentication.
 
-See the 23021 procedure in [TESTING.md](../TESTING.md) to compare normally signed
+23022 adds twelve form-state regressions and one form-to-protocol regression.
+The latter challenges once, returns twelve unusable HTTP replies during code
+submission, then succeeds on a manual retry: every verification POST retains
+the same normalized password+code body and validated pod, without requesting a
+second challenge. Successful completion clears the form's credentials. These
+checks also cover explicit rejection, resend, account binding and cancellation.
+
+See the 23021/23022 procedures in [TESTING.md](../TESTING.md) to compare normally signed
 Release builds without debugger/JIT, separating cold preparation, time to 2FA
 and time to the verified session. UI-level new-code delivery and live login
 speed remain pending physical-device verification.

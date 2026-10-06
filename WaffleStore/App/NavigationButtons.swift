@@ -13,14 +13,13 @@ struct NavigationButtons: View {
             if appData.isAuthenticating {
                 ButtonLabel(text: "Signing in…", icon: "hourglass")
             } else if appData.hasSent2FACode {
-                ButtonLabel(text: "Verify code", icon: "checkmark.shield")
+                ButtonLabel(text: appData.signInForm.isRetryingVerification ? "Retry verification" : "Verify code", icon: "checkmark.shield")
             } else {
                 ButtonLabel(text: "Sign in", icon: "key")
             }
         }
         .buttonStyle(FancyButtonStyle())
-        .disabled(appData.appleId.isEmpty || appData.authenticationPassword.isEmpty || appData.isAuthenticating)
-        .disabled(appData.hasSent2FACode ? appData.code.isEmpty : false)
+        .disabled(!appData.canSubmitAppleLogin || appData.isAuthenticating)
     }
 }
 

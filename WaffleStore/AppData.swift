@@ -72,9 +72,21 @@ final class AppData: ObservableObject {
     
     @Published var ipaTool: IPATool?
     
-    @Published var appleId: String = ""
-    @Published var password: String = ""
-    @Published var code: String = ""
+    @Published var signInForm = AppleSignInForm()
+    var appleId: String {
+        get { signInForm.email }
+        set { signInForm.email = newValue }
+    }
+    var password: String {
+        get { signInForm.password }
+        set { signInForm.password = newValue }
+    }
+    var code: String {
+        get { signInForm.code }
+        set { signInForm.code = newValue }
+    }
+    var hasSent2FACode: Bool { signInForm.awaitsVerification }
+    var canSubmitAppleLogin: Bool { signInForm.canSubmit }
     
     @Published var isAuthenticated: Bool = false
     @Published var isAuthenticating: Bool = false
@@ -83,15 +95,6 @@ final class AppData: ObservableObject {
     var codeResendCooldownTask: Task<Void, Never>?
     var authenticationTask: Task<Void, Never>?
     var didRestoreStoreAccount = false
-    var pendingAuthenticationCookies: [StoreCookie] = []
-    // In-memory challenge credentials are independent of SecureField rendering.
-    var pendingTwoFactorEmail: String?
-    var pendingTwoFactorPassword: String?
-    var authenticationPassword: String {
-        if hasSent2FACode, pendingTwoFactorEmail == appleId.trimmingCharacters(in: .whitespacesAndNewlines),
-           let pendingTwoFactorPassword { return pendingTwoFactorPassword }
-        return password
-    }
     var preparedAppleLogin: PreparedAppleLogin?
     var loginPreparationExpiry: Task<Void, Never>?
     @Published var showStoreVersions = false
@@ -105,8 +108,6 @@ final class AppData: ObservableObject {
     @Published var isDowngrading: Bool = false
     
     @Published var appLink: String = ""
-    
-    @Published var hasSent2FACode: Bool = false
     
     @Published var showPassword: Bool = false
     

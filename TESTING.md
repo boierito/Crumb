@@ -262,3 +262,32 @@ authenticated session checks restoration, not login speed.
 Fixture success cannot demonstrate live Apple acceptance, an exact failure cause
 for all transient statuses, or a login speedup. Cold native asset work and the
 120-second request-recovery scheduling window are different phases.
+
+## Crumb 1.0.0 (23022) — challenge recovery (device pending)
+
+Use a normally signed Release IPA on the same physical device/network as 23021.
+Do not erase cached assets or machine identity. The protocol and retry/backoff
+policy are unchanged; compare cold preparation separately from verification.
+
+1. A fresh sign-in may request 2FA. The verification button stays disabled until
+   a normalized six-digit ASCII code is entered (autofill/pasted spaces work).
+   Empty/malformed code must not contact Apple or trigger a password-only login.
+2. If a transient HTTP/network failure occurs during verification, the entered
+   code stays visible and Retry verification becomes available. Re-submit it
+   while still valid; do not request another code merely because a transfer failed.
+   Valid preparation/pod/cookies are reused within five minutes. A server-expired
+   code can still require replacement; retaining it cannot extend its lifetime.
+3. Explicit Apple verification rejection clears only the code, keeping the
+   account-bound challenge. Enter a new trusted-device code or use Request new
+   code; that explicit action clears old input/cookies and keeps the 30-second
+   cooldown. No automatic resend occurs. Apple controls notification delivery.
+4. Change Apple ID and Cancel clear RAM credentials/challenge. Wrong account
+   credentials unlock the input fields. Duplicate submit/resend taps are blocked.
+   A rejected unsafe redirect must still never receive credentials.
+5. Success clears password/code, then reopening restores the Keychain session.
+   Search/versions/download/export/install remain usable. Release has no debug UI
+   or stdout capture. Measure Sign in and Verify separately, excluding typing time.
+
+Local Swift fixture validation: 60 targeted tests passed (37 authentication,
+12 form-state, 11 SAP). Full macOS/iOS CI results are attached to the build;
+fixture responses and signatures are synthetic and do not demonstrate live login.

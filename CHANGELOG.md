@@ -1,5 +1,15 @@
 # Development changelog
 
+## Crumb 1.0.0 — build 23022
+
+- Unifica formulario y desafío 2FA en un estado tipado, ligado a la cuenta y sólo en RAM.
+- Conserva código/cookies/preparación ante fallos temporales; permite Retry verification sin otro challenge.
+- No inicia SAP/red con un código vacío o mal formado; no cae silenciosamente en login sin 2FA.
+- Distingue rechazo de código, formato local, credenciales rechazadas y fallos de transporte.
+- Conserva solicitud explícita de nuevo código, cooldown y limpieza al cancelar/cambiar cuenta/completar.
+- Añade trece regresiones y comparación precisa con ipatool; protocolo/backoff/TCI sin cambios.
+- Primera autenticación, tiempo real y aceptación del código aún requieren validación en dispositivo.
+
 ## Crumb 1.0.0 — build 23021
 
 - Incorpora el fix de ipatool f9aa653: URL inicial authenticate/ validada y query preservada.

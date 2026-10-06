@@ -143,6 +143,50 @@ final class AuthenticationTests: XCTestCase {
         await signer.close()
     }
 
+    func testFormRetriesSameTwoFactorCodeAfterHTTPFailureWithoutAnotherChallenge() async throws {
+        let pod = URL(string: "https://p42-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate/")!
+        let challenge = try plist(["customerMessage": "MZFinance.BadLogin.Configurator_message"])
+        let transport = FixtureAuthenticationTransport([.http(302, Data(), ["Location": pod.absoluteString]),
+            .http(200, challenge, [:])] + Array(repeating: .http(404, Data(), [:]), count: 12)
+            + [.http(200, try success(), responseHeaders)])
+        let signer = FixtureSigner(); let store = FixtureAccountStore(); let route = FixtureRoute()
+        let auth = AppleAuthentication(transport: transport, signer: signer, persistence: store,
+            automaticRecovery: true, sleep: { _ in })
+        var form = AppleSignInForm(email: "fixture@example.test", password: "secret")
+        let first = try form.begin()
+        guard case .twoFactorRequired(let cookies) = try await auth.login(email: first.email, password: first.password,
+            identity: identity, endpoint: endpoint, resolvedEndpoint: { await route.record($0) }) else {
+            return XCTFail("No challenge")
+        }
+        form.requireVerification(for: first, cookies: cookies)
+        form.code = "123456"
+        let verification = try form.begin()
+        let resolved = await route.last
+        do {
+            _ = try await auth.login(email: verification.email, password: verification.password, code: verification.code,
+                identity: identity, endpoint: XCTUnwrap(resolved))
+            XCTFail("Expected temporary HTTP failure")
+        } catch { XCTAssertEqual(form.failed(error), .retrySameSubmission) }
+        XCTAssertNil(try store.load())
+        XCTAssertTrue(form.isRetryingVerification)
+        let retry = try form.begin()
+        guard case .authenticated(let account) = try await auth.login(email: retry.email, password: retry.password,
+            code: retry.code, identity: identity, endpoint: XCTUnwrap(resolved)) else { return XCTFail("Not authenticated") }
+        form.authenticated(email: account.email)
+        let requests = await transport.requests
+        XCTAssertEqual(requests.count, 15)
+        for request in requests.dropFirst(2) {
+            XCTAssertEqual(request.url, pod)
+            let payload = try ApplePlist.dictionary(XCTUnwrap(request.httpBody))
+            XCTAssertEqual(payload?["password"] as? String, "secret123456")
+            XCTAssertEqual(request.httpBody, requests[2].httpBody)
+        }
+        XCTAssertEqual(signer.bodies.count, 15)
+        XCTAssertEqual(form.password, "")
+        XCTAssertEqual(form.code, "")
+        XCTAssertFalse(form.awaitsVerification)
+    }
+
     func testSigningTimeAndRedirectsShareOneRecoveryDeadline() async throws {
         let clock = FixtureAuthenticationClock()
         let signer = AdvancingAuthenticationSigner(clock: clock)

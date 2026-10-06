@@ -32,7 +32,9 @@ assets are fetched at runtime and are not bundled in the repository or IPA.
 2. Sign/install with ksign and a certificate, SideStore, AltStore, Sideloadly or a
    compatible conventional sideloader. Retain `com.certlium.crumb` where possible.
 3. Sign in with your Apple ID. When Apple requests 2FA, enter its six-digit code
-   and choose **Verify code**. **Request new code** starts a fresh signed challenge
+   and choose **Verify code**. A temporary failure preserves the entered code;
+   **Retry verification** retries it without requesting another challenge.
+   **Request new code** starts a fresh signed challenge
    without retyping the password; Apple controls delivery. A 30-second cooldown
    prevents rapid repeats. A code can also be obtained in trusted-device account settings.
 4. Search/select an app and version. Choose **Download and install** or download
@@ -47,13 +49,15 @@ with the same signing identity/bundle ID preserves its own data and Keychain acc
 
 ## Current status and limits
 
-Current source is Crumb **1.0.0, build 23021**. The originating WaffleStore
+Current source is Crumb **1.0.0, build 23022**. The originating WaffleStore
 integration was tested by boierito on a physical iPhone running iOS 27.0.1 using
 ksign/certificate without JIT, including login/2FA, versions, download/export and installation.
 Crumb’s first-login/2FA recovery and new-code changes still require physical-device confirmation.
 Automated tests use fixtures and do not demonstrate Apple’s acceptance of a live login.
-Build 23021 incorporates ipatool’s canonical initial authentication URL, fixes
-trailing-slash validation and shares automatic retry allowances across Store pods.
+Build 23022 keeps the canonical authentication URL and shared retry budget from
+23021, and unifies sign-in state so network failures do not discard a 2FA code
+without an explicit Apple verification rejection. Blank/malformed verification
+cannot accidentally start a password-only login.
 See the [login audit](docs/LOGIN_AUDIT.md) for evidence and the device timing comparison.
 
 - Apple can return intermittent empty/HTML authentication responses. Recovery is bounded and cancellable.

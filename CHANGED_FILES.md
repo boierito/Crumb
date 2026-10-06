@@ -19,6 +19,7 @@ Original revision: `d508e532e5b40d6470bab003a6cc0026d1ca7c75`. Historical source
 - `MapleSyrup/NativeSAP/packageipa/zip_headers.go`
 - `MapleSyrup/SAPKit/Package.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/AppleAuthentication.swift`
+- `MapleSyrup/SAPKit/Sources/MapleSAP/AppleSignInForm.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/AuthenticationTransport.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/InstallationPage.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/KeychainAccount.swift`
@@ -33,6 +34,7 @@ Original revision: `d508e532e5b40d6470bab003a6cc0026d1ca7c75`. Historical source
 - `MapleSyrup/SAPKit/Sources/MapleSAP/StoreRetry.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/StoreSession.swift`
 - `MapleSyrup/SAPKit/Sources/MapleSAP/Storefront.swift`
+- `MapleSyrup/SAPKit/Tests/MapleSAPTests/AppleSignInFormTests.swift`
 - `MapleSyrup/SAPKit/Tests/MapleSAPTests/AuthenticationTests.swift`
 - `MapleSyrup/SAPKit/Tests/MapleSAPTests/AuthenticationTransportTests.swift`
 - `MapleSyrup/SAPKit/Tests/MapleSAPTests/InstallationPageTests.swift`

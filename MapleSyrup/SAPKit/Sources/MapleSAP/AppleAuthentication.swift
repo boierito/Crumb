@@ -25,7 +25,7 @@ public enum AuthenticationError: Error, LocalizedError, Equatable {
         case .rateLimited: return "Apple rate limited sign-in. Wait before trying again."
         case .retryLater: return "Apple requested a wait longer than 30 seconds. Try again later."
         case .network(let code): return "Authentication network request failed (code \(code)). Check your connection."
-        case .redirectUnavailable(let status): return "Apple returned an incomplete sign-in redirect (HTTP \(status)). Sign-in was not confirmed. Try again or request a new code."
+        case .redirectUnavailable(let status): return "Apple returned an incomplete sign-in redirect (HTTP \(status)). Sign-in was not confirmed. Try again with the same verification code if it is still valid."
         case .invalidRedirect: return "Apple authentication endpoint or redirect was rejected. No credentials were forwarded."
         case .tooManyRedirects: return "Apple returned too many authentication redirects."
         case .invalidSession: return "The saved Store session is invalid. Sign in again."

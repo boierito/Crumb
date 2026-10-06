@@ -130,7 +130,7 @@ struct ContentView: View {
                                 .frame(maxWidth: .infinity, minHeight: 28)
                         }
                         .buttonStyle(.borderedProminent)
-                        .disabled(appData.isAuthenticating || appData.isCodeResendCoolingDown || appData.authenticationPassword.isEmpty)
+                        .disabled(appData.isAuthenticating || appData.isCodeResendCoolingDown || !appData.signInForm.canRequestNewCode)
                         Button { appData.changeAppleAccount() } label: {
                             Label("Change Apple ID", systemImage: "person.crop.circle")
                                 .frame(maxWidth: .infinity, minHeight: 28)

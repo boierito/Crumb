@@ -19,7 +19,7 @@ The Bag supplies SAP endpoints, authentication URL and Store download/purchase
 endpoints. Redirect destinations are validated before any credential replay.
 Native XML/Document/Protocol replies are normalized; account/2FA errors remain
 specific. Temporary HTML/empty HTTP failures use bounded automatic recovery
-(12 HTTP attempts per endpoint, with one 120-second window per UI login), separate ephemeral
+(at most eleven transient retries shared across routes/logical attempts, with one 120-second scheduling window per UI login/verification), separate ephemeral
 URLSessions and preserved cookies. Retry-After is respected, cancellation is
 available, and the single -5000 logical retry follows ipatool. Signing and
 redirects share that window; a slow signature cannot reset the network timeout.
@@ -353,3 +353,27 @@ Repository: https://github.com/boierito/Crumb. Merged its initial README commit 
 Re-audited current ipatool `cde7d00355e152714377b953ec57438626d3cb5a`; the previous comparison missed `f9aa653` (October 5), which canonicalizes the initial Bag authentication URL to authenticate/ after strict validation, preserving the host and encoded query. Ported into SAPConfiguration/AuthenticationEndpoint; legitimate canonical/pod Bag URLs are accepted. HTTP path validation uses URLComponents.percentEncodedPath rather than comparing it to URL.path (which can strip a trailing slash). Unsafe/encoded paths remain rejected before normalization; Apple redirects retain their exact URL and POST body.
 
 Factored the existing deadline/retry allowance into one AuthenticationRecoveryBudget per user login/verification. Changing pods or logical attempt does not refill automatic retries; HTTP/network errors share the allowance, normal routing/2FA incur no sleep. Reference non-automatic retry behavior and backoff/Retry-After remain; fractional remaining time no longer rounds up. Native SAP/TCI, user agent, cookie isolation, prepared signer reuse, RAM-only credentials and Release logging policy unchanged. Nine regressions added; see docs/LOGIN_AUDIT.md for trace arithmetic and precise limits. Live Apple login latency and first-login/new-code UI still require physical-device testing.
+
+## Crumb 1.0.0 (23022) — typed sign-in and 2FA recovery
+
+Crumb is an adaptation, not a one-to-one runtime/wire-byte copy of ipatool. The
+current email authentication semantics follow upstream cde7d0; the jailed TCI,
+URLSession, stable Keychain identity, password-free persistence and prepared
+challenge reuse differ. docs/LOGIN_AUDIT.md records these differences explicitly.
+
+The controller previously cleared the code on every error, even when Apple had
+not rejected verification. AppleSignInForm replaces scattered pending credentials,
+cookies and challenge flag with one account-bound RAM state. UI validation and
+immutable submission share the same rules, preventing blank/malformed challenged
+input from falling back to password-only login. Transient failures preserve the
+code/challenge and valid SAP preparation; Retry verification resubmits the same
+code. Only explicit verification rejection clears the code; account rejection
+unlocks credentials. New-code delivery remains an explicit action with cooldown,
+not an automatic reaction to a network error. Cancellation/account change/success
+clear the challenge and form credentials; nothing new is persisted or logged.
+
+Twelve state tests and a full form-to-protocol fixture cover these rules, including
+one challenge followed by a bounded HTTP failure and a successful retry using the
+same password+code body/pod. The existing wire protocol, recovery scheduling and
+SAP runtime are unchanged. CI compilation/fixtures cannot establish Apple latency,
+code expiry or first-login acceptance; TESTING.md includes the device checks.
