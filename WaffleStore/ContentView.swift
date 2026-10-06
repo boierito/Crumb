@@ -118,7 +118,7 @@ struct ContentView: View {
                 }
             }
             if appData.hasSent2FACode {
-                Section(header: HeaderLabel(text: "Verification Code".localized, icon: "key.viewfinder")) {
+                Section {
                     TextField("2FA Code".localized, text: $appData.code)
                         .modifier(TextFieldBackground())
                         .keyboardType(.numberPad)
@@ -138,6 +138,8 @@ struct ContentView: View {
                         .buttonStyle(.bordered)
                         .disabled(appData.isAuthenticating)
                     }
+                } header: {
+                    HeaderLabel(text: "Verification Code".localized, icon: "key.viewfinder")
                 } footer: {
                     Text("Apple decides when to send a code. You can also obtain one in your trusted device’s Apple account settings.")
                 }
