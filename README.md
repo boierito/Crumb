@@ -5,105 +5,47 @@
 [![Build IPA](https://github.com/boierito/Crumb/actions/workflows/build-ipa.yml/badge.svg)](https://github.com/boierito/Crumb/actions/workflows/build-ipa.yml)
 [![Protocol tests](https://github.com/boierito/Crumb/actions/workflows/sap-tests.yml/badge.svg)](https://github.com/boierito/Crumb/actions/workflows/sap-tests.yml)
 
-Crumb is an iOS App Store downloader and version selector based on
-[nxtcoreee3/WaffleStore](https://github.com/nxtcoreee3/WaffleStore).
-It runs inside the normal iOS sandbox, without jailbreak, TrollStore or external JIT.
-Bundle ID: **`com.certlium.crumb`**. Minimum iOS: **16.4**; development prioritizes iOS 27.
+Crumb lets you find App Store apps, choose a version and download its IPA on your
+iPhone or iPad. It is based on WaffleStore and runs as a normally sideloaded app,
+without jailbreak, TrollStore or external JIT.
 
 ## Features
 
-- Apple ID login and 2FA, with sessions and stable machine identity in Keychain.
-- App search by name, App Store link/ID or bundle ID; favourites and five navigation tabs.
-- Version selection by `externalVersionId`, with IPA version/build verification.
-- Existing account license checks and acquisition attempts for verified free apps only.
-- IPA downloads with progress, individual export, installation handoff and confirmed deletion/bulk cleanup.
-- Release builds without activity logs, stdout capture or debug controls.
+- Sign in with your Apple ID and two-factor authentication. Sessions are stored
+  in Keychain; passwords and verification codes are not saved.
+- Search by app name, App Store link, app ID or bundle ID, and save favourites.
+- Browse available versions and download the latest release or an older version.
+- Obtain free-app licenses through your account when Apple permits it.
+- Track downloads, check the downloaded version and build, and install or export
+  individual IPAs through the share sheet.
+- Manage downloaded IPAs and delete them individually or all at once.
 
-The modern SAP/authentication/Store flow is adapted from
-[majd/ipatool](https://github.com/majd/ipatool). A statically linked interpreter
-executes the guest SAP code; Crumb does not embed or launch the ipatool CLI.
-Passwords and verification codes are never persisted. Proprietary Apple guest
-assets are fetched at runtime and are not bundled in the repository or IPA.
+App availability, licenses and installation remain subject to Apple's account
+and device restrictions. Browsing another region does not guarantee a download.
 
-## Install and use
+## Installation
 
-1. Open a successful [Build IPA run](https://github.com/boierito/Crumb/actions/workflows/build-ipa.yml)
-   and download its **Crumb-Release** artifact. Extract `Crumb-Release.ipa`.
-2. Sign/install with ksign and a certificate, SideStore, AltStore, Sideloadly or a
-   compatible conventional sideloader. Retain `com.certlium.crumb` where possible.
-3. Sign in with your Apple ID. When Apple requests 2FA, enter its six-digit code
-   and choose **Verify code**. A temporary failure preserves the entered code;
-   **Retry verification** retries it without requesting another challenge.
-   **Request new code** starts a fresh signed challenge
-   without retyping the password; Apple controls delivery. A 30-second cooldown
-   prevents rapid repeats. A code can also be obtained in trusted-device account settings.
-4. Search/select an app and version. Choose **Download and install** or download
-   the IPA for later use. Confirm the iOS installation prompt and keep the installer open.
-5. **Downloads** contains each IPA’s Install, Export and Details actions. Swipe or
-   use its menu to delete one IPA; **Delete all downloads** removes downloaded
-   files/records, without uninstalling apps or deleting their data.
+Download **Crumb-Release.ipa** from the [latest release](https://github.com/boierito/Crumb/releases/latest)
+and sign it with SideStore, AltStore, Sideloadly, ksign with a certificate or another
+compatible sideloader. Requires **iOS 16.4 or later**.
 
-Crumb installs separately from WaffleStore. Existing WaffleStore sessions,
-favourites and downloaded IPAs are not automatically migrated. Updating Crumb
-with the same signing identity/bundle ID preserves its own data and Keychain access.
+Sign in, find an app and choose the version you want. Downloaded IPAs are available
+in **Downloads**, where you can install, export or delete them.
 
-## Current status and limits
+## Origins and credits
 
-Current source is Crumb **1.0.0, build 23022**. The originating WaffleStore
-integration was tested by boierito on a physical iPhone running iOS 27.0.1 using
-ksign/certificate without JIT, including login/2FA, versions, download/export and installation.
-Crumb’s first-login/2FA recovery and new-code changes still require physical-device confirmation.
-Automated tests use fixtures and do not demonstrate Apple’s acceptance of a live login.
-Build 23022 keeps the canonical authentication URL and shared retry budget from
-23021, and unifies sign-in state so network failures do not discard a 2FA code
-without an explicit Apple verification rejection. Blank/malformed verification
-cannot accidentally start a password-only login.
-See the [login audit](docs/LOGIN_AUDIT.md) for evidence and the device timing comparison.
+Crumb builds on [WaffleStore](https://github.com/nxtcoreee3/WaffleStore), whose roots
+include [MuffinStore Jailed](https://github.com/mineek/MuffinStoreJailed-Public) and
+[PancakeStore](https://github.com/jailbreakdotparty/PancakeStore). Its modern Apple
+authentication and download backend adapts logic from
+[ipatool](https://github.com/majd/ipatool) to run inside the iOS sandbox.
 
-- Apple can return intermittent empty/HTML authentication responses. Recovery is bounded and cancellable.
-- Cross-region free-app acquisition remains unresolved: Apple can return **2059**.
-  Catalog region selection does not promise a license or download from that region.
-- No automatic paid purchases, FairPlay decryption or IPA re-signing.
-- The original installer uses Safari/`itms-services` and **api.palera.in** for an HTTPS
-  manifest containing app name/bundle/build and a loopback URL. Credentials and
-  IPA bytes are not uploaded to that service. Serving bytes/opening Safari is not
-  proof that iOS installed an app; export remains available if installation is rejected.
-- iOS 26, iPad and complete app/data-retention compatibility remain to be validated.
+- **mineek, lunginspector, skadz, jailbreak.party and nxtcoreee3** — original projects
+  and contributions that Crumb is based on.
+- **[boierito](https://github.com/boierito)** — Crumb coordination and device testing.
+- **[Majd Alfhaily / ipatool](https://github.com/majd/ipatool)** — modern backend reference, MIT licensed.
+- **OpenAI Codex and ImageGen** — AI-assisted implementation and app icon. **AI slop.**
 
-See [TESTING.md](TESTING.md) for device scenarios and the verification matrix.
-
-## Build
-
-The original project structure is retained: `WaffleStore.xcodeproj`, scheme
-`WaffleStore`; the product is **Crumb.app**. CI uses macOS 15, Xcode 26 and Go 1.25.1.
-
-```sh
-xcodebuild -project WaffleStore.xcodeproj -scheme WaffleStore \
-  -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
-  -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO build
-```
-
-GitHub Actions builds Debug/Release IPAs on push to main/feature/release/fix branches,
-saves artifacts with corresponding native sources/notices, and supports manual runs.
-`v*` tags create **draft prereleases**, not automatic public releases.
-The protocol workflow runs Swift tests, safe file-deletion tests, Go race tests and
-TCI checks with executable mappings denied. See [IMPLEMENTATION.md](IMPLEMENTATION.md).
-
-## Credits, provenance and licenses
-
-Crumb integration/coordination and iOS 27 device testing: [boierito](https://github.com/boierito).
-Original contributors: mineek, lunginspector, skadz, jailbreak.party and nxtcoreee3,
-including [MuffinStoreJailed](https://github.com/mineek/MuffinStoreJailed-Public),
-[PancakeStore](https://github.com/jailbreakdotparty/PancakeStore) and WaffleStore.
-Modern backend reference: [Majd Alfhaily / ipatool](https://github.com/majd/ipatool), MIT.
-
-**AI slop:** developed with OpenAI Codex; the selected icon was generated with ImageGen.
-Original history and attributions are preserved. See [branding](branding/README.md),
-[CHANGED_FILES.md](CHANGED_FILES.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
-WaffleStore’s original revision contains **no license granting independent redistribution**.
-This repository does not invent that permission or relicense the entire project as MIT.
-Upstream permission or replacement of unlicensed material remains necessary before
-independent redistributed releases. Unicorn/TCI includes GPL-derived code; notices
-and modified corresponding sources accompany build artifacts. Public source alone
-is not a blanket redistribution grant. No proprietary Apple guest binaries are included.
+For build instructions and technical details, see [IMPLEMENTATION.md](IMPLEMENTATION.md)
+and [TESTING.md](TESTING.md). Licensing and third-party attributions are documented
+in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); the project as a whole is not MIT licensed.
