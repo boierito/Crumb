@@ -49,3 +49,16 @@ authentication and download backend adapts logic from
 For build instructions and technical details, see [IMPLEMENTATION.md](IMPLEMENTATION.md)
 and [TESTING.md](TESTING.md). Licensing and third-party attributions are documented
 in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); the project as a whole is not MIT licensed.
+
+## Experimental IPA decryption
+
+In Downloads, open an app’s options and choose **Decrypt IPA…**. Import a private
+`fairplay-enrollment.bin` model generated with [DrWhax/ipatool](https://github.com/DrWhax/ipatool#fairplay-decryption)
+on a supported Mac. The model must match the account and SINF selector of the
+personalized IPA. Only supported modern enrollments from new accounts work;
+older or migrated profiles are unsupported. Crumb does not recover enrollment keys.
+
+Processing runs offline on the device. The original IPA is preserved. Export the
+result before closing the sheet; temporary outputs and the imported model copy
+are removed when finished. The exported IPA must be signed before installation.
+The decoder is experimental; on-device compatibility still needs validation.

@@ -15,4 +15,5 @@ int WaffleSAPKBSync(char *cache, unsigned char *hardware, size_t length, uint64_
 int WafflePrepareIPA(char *source, char *destination, unsigned char *input, size_t length, unsigned char **output, size_t *outputLength);
 
 int WaffleInspectIPA(char *url, char *bundle, unsigned char **output, size_t *outputLength);
+int WaffleDecryptIPA(char *source, char *destination, char *report, char *model);
 #endif

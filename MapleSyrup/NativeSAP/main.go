@@ -11,6 +11,7 @@ import "C"
 import (
 	"context"
 	"encoding/json"
+	"github.com/majd/ipatool/v2/internal/fairplay"
 	"github.com/majd/ipatool/v2/internal/sap/assets"
 	"github.com/majd/ipatool/v2/internal/sap/machine"
 	"github.com/majd/ipatool/v2/wafflebridge/packageipa"
@@ -199,3 +200,23 @@ func WaffleSAPFree(pointer *C.uchar, length C.size_t) {
 	}
 }
 func main() {}
+
+// WaffleDecryptIPA returns stage codes only; private model material never crosses the ABI.
+//
+//export WaffleDecryptIPA
+func WaffleDecryptIPA(source, destination, report, model *C.char) C.int {
+	if source == nil || destination == nil || report == nil || model == nil {
+		return 1
+	}
+	if C.GoString(model) == "" {
+		return 1
+	}
+	_, err := fairplay.DecryptIPA(fairplay.DecryptOptions{
+		InputPath: C.GoString(source), OutputPath: C.GoString(destination),
+		ReportPath: C.GoString(report), ModelPath: C.GoString(model),
+	})
+	if err != nil {
+		return 9
+	}
+	return 0
+}

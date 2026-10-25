@@ -56,3 +56,12 @@ source alone does not resolve an incompatible combination or missing upstream
 grant. Apple CommerceKit/CoreFP/StoreAgent binaries have their
 own proprietary terms; downloading them from Apple does not grant a right to
 bundle them in a redistributed IPA. No such binaries have been copied here.
+
+### DrWhax/ipatool portable FairPlay decoder
+
+The native build imports `internal/fairplay` from DrWhax/ipatool commit
+`e94fcd7362036a1b2269e5b555232f20d8cd273e` under its MIT license. Its license
+and corresponding modified sources are included in the existing native source
+archive. Crumb adds iOS to the Unix permission/platform checks and to case
+insensitive path comparisons. The recovery helper and private enrollment keys
+are not bundled. The existing SAP backend remains pinned independently.
