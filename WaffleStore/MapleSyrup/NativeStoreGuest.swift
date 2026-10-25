@@ -105,8 +105,16 @@ nonisolated final class NativeRetainedKBSyncGenerator: KBSyncGenerator, @uncheck
               let nativeStatus = report["native_status"] as? Int,
               let completed = report["emulator_completed"] as? Bool,
               let imported = report["import_succeeded"] as? Bool else { throw StoreError.invalidResponse }
-        let files = report["state_files"] as? [String: String] ?? [:]
-        let bytes = files.values.reduce(0) { $0 + (Data(base64Encoded: $1)?.count ?? 0) }
+        // Go encodes nil []byte as JSON null. A mixed map (one empty lock
+        // file and one real SIDB) cannot bridge to [String: String] in Swift.
+        // Count entries independently, and decode only valid base64 strings.
+        let files = report["state_files"] as? [String: Any] ?? [:]
+        let bytes = files.values.reduce(0) { count, value in
+            guard let encoded = value as? String, let decoded = Data(base64Encoded: encoded) else {
+                return count
+            }
+            return count + decoded.count
+        }
         let context = try JSONEncoder().encode(["schema":"crumb-fairplay-context-v2", "hardware_id":identity.hardwareID.base64EncodedString(), "dsid":String(dsid), "producer":"retained-storeagent", "keybag_consumer":"storeagent-10.9-import-keybag"])
         return (context, state, "Keybag consumer completed=\(completed); native status=\(nativeStatus); import succeeded=\(imported); virtual state files=\(files.count), bytes=\(bytes). A portable enrollment model has not been produced.")
     }
