@@ -43,10 +43,12 @@ final class FairPlayLab: ObservableObject {
     @Published var output: URL?
     @Published var diagnostic: URL?
     @Published var captureArchive: URL?
+    @Published var enrollmentStages: [String: Bool] = [:]
     @Published var input: URL?
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("FairPlayLab-" + UUID().uuidString)
     private var task: Task<Void, Never>?
     private var transactions = 0
+    private var auditedTransactions = -1
     func log(_ section: String, _ text: String) {
         let line = "[\(Date().formatted(date: .omitted, time: .standard))] \(text)"
         if logs[section] == "Pending" { logs[section] = line }
@@ -92,6 +94,10 @@ final class FairPlayLab: ObservableObject {
                                       "keybag_present": transaction.keybag != nil, "files": files]
         try FairPlayNative.privateWrite(JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted]), to: directory.appendingPathComponent("manifest.json"))
         transactions += 1
+        auditedTransactions = -1
+        captureArchive = nil
+        diagnostic = nil
+        enrollmentStages = [:]
         log("Transaction", "Validated exchange \(transactions): kbsync \(transaction.kbsync.count) bytes; keybag \(transaction.keybag?.count ?? 0) bytes; SINF count \(transaction.sinfs.count). Capture saved privately.")
     }
     func download(_ text: String, account: StoreAccount) {
@@ -167,6 +173,13 @@ final class FairPlayLab: ObservableObject {
             return
         }
         let archive = root.appendingPathComponent("Private-FairPlay-capture.zip")
+        // Once checked, the same immutable transaction does not need to be
+        // zipped, inspected and logged again by Prepare exports.
+        if auditedTransactions == transactions,
+           captureArchive != nil,
+           FileManager.default.fileExists(atPath: archive.path) {
+            return
+        }
         let exported = try await Task.detached {
             try FairPlayNative.run("export", source: captures, destination: archive)
         }.value
@@ -186,7 +199,28 @@ final class FairPlayLab: ObservableObject {
               value["ok"] as? Bool == true else {
             throw NSError(domain: "Crumb.FairPlayLab.CaptureAnalysis", code: 2)
         }
+        guard let analyzed = value["result"] as? [String: Any],
+              let transactions = analyzed["transactions"] as? [[String: Any]],
+              !transactions.isEmpty,
+              transactions.count == self.transactions,
+              analyzed["ready_to_decrypt"] as? Bool == false else {
+            throw NSError(domain: "Crumb.FairPlayLab.IncompleteAudit", code: 3)
+        }
+        // Only the native analyzer's sanitized flags are surfaced here. A
+        // legacy SIDB never becomes a portable frame or decrypt-ready model.
+        let bridges = transactions.compactMap { $0["enrollment_bridge"] as? [String: Any] }
+        guard bridges.count == transactions.count else {
+            throw NSError(domain: "Crumb.FairPlayLab.InvalidStageFlags", code: 4)
+        }
+        enrollmentStages = [
+            "Native keybag import": transactions.allSatisfy { $0["consumer_import_succeeded"] as? Bool == true },
+            "Legacy SIDB captured": bridges.allSatisfy { $0["legacy_sidb_observed"] as? Bool == true },
+            "Portable raw state verified": bridges.allSatisfy { $0["portable_raw_state_verified"] as? Bool == true },
+            "Enrollment frame verified": bridges.allSatisfy { $0["portable_enrollment_frame_verified"] as? Bool == true },
+            "Portable model validated": bridges.allSatisfy { $0["validated_portable_model"] as? Bool == true }
+        ]
         captureArchive = archive
+        auditedTransactions = self.transactions
         log("Enrollment", "Verified current capture locally. The following report contains counts and readiness flags only, not private state bytes.")
         log("Enrollment", analysis)
     }
@@ -209,6 +243,8 @@ final class FairPlayLab: ObservableObject {
         guard !busy else { return }
         try? FileManager.default.removeItem(at: root)
         input = nil; output = nil; diagnostic = nil; captureArchive = nil; transactions = 0
+        auditedTransactions = -1
+        enrollmentStages = [:]
         logs = ["Components": "Pending", "Transaction": "Pending", "Inspection": "Pending", "Enrollment": "Pending", "Decryption": "Blocked: compatible model required."]
     }
 }
@@ -244,6 +280,24 @@ struct FairPlayLabView: View {
                         .disabled(lab.input == nil)
                     Button("Import an older capture ZIP (optional)") { importingCapture = true; importing = true }
                     Text("A zero StoreAgent status means keybag import was accepted. It does not produce the portable enrollment frame or raw-state source needed for decryption.")
+                }
+                if !lab.enrollmentStages.isEmpty {
+                    Section("Enrollment readiness") {
+                        ForEach(["Native keybag import", "Legacy SIDB captured",
+                                 "Portable raw state verified", "Enrollment frame verified",
+                                 "Portable model validated"], id: \.self) { stage in
+                            HStack {
+                                Text(stage)
+                                Spacer()
+                                Image(systemName: lab.enrollmentStages[stage] == true
+                                      ? "checkmark.circle.fill" : "minus.circle")
+                                    .foregroundStyle(lab.enrollmentStages[stage] == true
+                                                     ? Color.green : Color.orange)
+                            }
+                        }
+                        Text("Native import and a nonempty legacy SIDB do not establish portable enrollment or decrypted plaintext.")
+                            .font(.footnote)
+                    }
                 }
                 Section("4 · Test with an existing model") {
                     Button("Import model and decrypt") { importingCapture = false; importing = true }.disabled(lab.input == nil)
