@@ -103,12 +103,12 @@ func WaffleKBSyncConsume(handle C.uint64_t, output **C.uchar, length *C.size_t) 
 	if output == nil || length == nil || len(g.keybag) == 0 {
 		return 1
 	}
-	status, files, err := g.agent.ImportKeybag(g.keybag)
+	status, files, ioTrace, err := g.agent.ImportKeybag(g.keybag)
 	// Keybags are single-use. Discard the retained copy immediately after the
 	// emulated call, not only when the whole download session is closed.
 	clear(g.keybag)
 	g.keybag = nil
-	result := map[string]any{"consumer": "storeagent-10.9-import-keybag", "native_status": status, "emulator_completed": err == nil, "import_succeeded": err == nil && status == 0, "portable_model_ready": false, "state_files": files}
+	result := map[string]any{"consumer": "storeagent-10.9-import-keybag", "native_status": status, "emulator_completed": err == nil, "import_succeeded": err == nil && status == 0, "portable_model_ready": false, "state_files": files, "virtual_io": ioTrace}
 	defer func() {
 		for _, b := range files {
 			clear(b)
