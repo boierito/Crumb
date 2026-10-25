@@ -59,6 +59,7 @@ p.write_text(s)
 p = p.parent / 'decrypt_test.go'; s = p.read_text().replace('image.sliceOffset+uint64(layout.cryptOffset),', 'image.sliceOffset+uint64(layout.cryptOffset)+uint64(page*pageBytes),')
 p.write_text(s)
 PATCH
+cp "$ROOT/MapleSyrup/NativeSAP/fairplayinspect.go" "$SOURCE/internal/fairplay/"
 (cd "$SOURCE" && go get golang.org/x/arch@v0.32.0 && go test ./internal/fairplay)
 python3 "$ROOT/scripts/prepare-fairplay-portable.py" "$WORK/ipatool-$FAIRPLAY_REV/tools/fairplay-recovery" "$SOURCE/wafflebridge/recovery"
 cp "$ROOT/MapleSyrup/NativeSAP/fairplaylab.go" "$SOURCE/wafflebridge/"

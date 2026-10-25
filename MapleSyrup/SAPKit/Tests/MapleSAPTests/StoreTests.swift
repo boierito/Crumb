@@ -71,11 +71,11 @@ extension StoreTests {
     private func bag() throws -> Data { try plist(["urlBag": ["volumeStoreDownloadProduct": "https://downloaddispatch.itunes.apple.com/WebObjects/DownloadDispatch.woa/wa/ent/download",
         "redownloadProduct": "https://downloaddispatch.itunes.apple.com/r/redownload", "updateProduct": "https://downloaddispatch.itunes.apple.com/up/updateProduct",
         "buyProduct": "https://buy.itunes.apple.com/WebObjects/MZBuy.woa/wa/buyProduct"]]) }
-    private func session(_ transport: StoreFixtureTransport, cache: StoreFixtureCache = StoreFixtureCache(), generator: StoreFixtureGenerator = StoreFixtureGenerator(), diagnostic: @escaping (String) async -> Void = { _ in }) throws -> StoreSession {
+    private func session(_ transport: StoreFixtureTransport, cache: StoreFixtureCache = StoreFixtureCache(), generator: StoreFixtureGenerator = StoreFixtureGenerator(), diagnostic: @escaping (String) async -> Void = { _ in }, capture: (@Sendable (FairPlayTransaction) async -> Void)? = nil) throws -> StoreSession {
         let identity = try MachineIdentity(hardwareID: Data([2, 1, 2, 3, 4, 5]))
         let account = StoreAccount(email: "fixture@example.invalid", name: "Test", dsid: "12345", passwordToken: "fixture-token", storefront: "143505-1,29", pod: "42", guid: identity.guid,
             authenticationURL: URL(string: "https://p42-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate")!)
-        return try StoreSession(account: account, identity: identity, transport: transport, generator: generator, persistence: cache, diagnostic: diagnostic)
+        return try StoreSession(account: account, identity: identity, transport: transport, generator: generator, persistence: cache, diagnostic: diagnostic, capture: capture)
     }
     func testEntUsesSameIdentityAndCachesOnlyAcceptedBlob() async throws {
         let cache = StoreFixtureCache(); let generator = StoreFixtureGenerator()
@@ -415,5 +415,33 @@ extension StoreTests {
         catch { XCTAssertEqual(error as? StoreError, .apple("", "Subscription required")) }
         let requests = await transport.requests
         XCTAssertEqual(requests.count, 4)
+    }
+}
+
+private actor CapturedFairPlayTransactions {
+    var values: [FairPlayTransaction] = []
+    func append(_ value: FairPlayTransaction) { values.append(value) }
+}
+extension StoreTests {
+    func testFairPlayCaptureUsesExactAcceptedRequestAndReply() async throws {
+        let capture = CapturedFairPlayTransactions()
+        let keybag = Data("response-keybag".utf8)
+        var root = try PropertyListSerialization.propertyList(from: reply(), format: nil) as! [String: Any]
+        root["keybag"] = keybag
+        let transport = StoreFixtureTransport([.init(status: 200, data: try bag()), .init(status: 200, data: try plist(root))])
+        _ = try await session(transport, capture: { await capture.append($0) }).descriptor(app: app, externalVersionID: "999")
+        let values = await capture.values
+        XCTAssertEqual(values.count, 1)
+        XCTAssertEqual(values.first?.kbsync, Data("fresh-fixture-blob".utf8))
+        XCTAssertEqual(values.first?.keybag, keybag)
+    }
+    func testFairPlayCaptureRejectsMismatchedAppReply() async throws {
+        let capture = CapturedFairPlayTransactions()
+        let transport = StoreFixtureTransport([.init(status: 200, data: try bag()), .init(status: 200, data: try reply(version: "888"))])
+        do {
+            _ = try await session(transport, capture: { await capture.append($0) }).descriptor(app: app, externalVersionID: "999")
+        } catch { }
+        let count = await capture.values.count
+        XCTAssertEqual(count, 0)
     }
 }

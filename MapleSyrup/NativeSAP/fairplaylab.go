@@ -77,6 +77,9 @@ func labRun(r labRequest) (any, error) {
 		}
 		return map[string]any{"private_capture": true}, nil
 	case "selftest":
+		if !state.VerifyResource() || !frame.VerifyResource() || !sidb.VerifyResource() {
+			return nil, fmt.Errorf("resource integrity")
+		}
 		a, e := state.Evaluate(make([]byte, 224), nil)
 		if e != nil {
 			return nil, e
@@ -104,33 +107,7 @@ func labRun(r labRequest) (any, error) {
 		}
 		return map[string]any{"state": "passed", "frame": "passed", "sidb": "passed", "synthetic": true, "revision": "ef98227"}, nil
 	case "inspect":
-		z, e := zip.OpenReader(r.Source)
-		if e != nil {
-			return nil, e
-		}
-		defer z.Close()
-		sinfs, supfs, images := 0, 0, 0
-		for _, f := range z.File {
-			if len(f.Name) > 5 && f.Name[len(f.Name)-5:] == ".sinf" {
-				sinfs++
-			}
-			if len(f.Name) > 5 && f.Name[len(f.Name)-5:] == ".supf" {
-				supfs++
-			}
-			if f.UncompressedSize64 > 32 {
-				rd, e := f.Open()
-				if e == nil {
-					var head [4]byte
-					rd.Read(head[:])
-					rd.Close()
-					if head == [4]byte{0xcf, 0xfa, 0xed, 0xfe} || head == [4]byte{0xca, 0xfe, 0xba, 0xbe} {
-						images++
-					}
-				}
-			}
-		}
-		d := fairplay.DoctorFairPlay("", r.Source, r.Model)
-		return map[string]any{"sinf_count": sinfs, "supf_count": supfs, "macho_candidates": images, "parsed_sinf_count": len(d.SINF), "model_supplied": r.Model != "", "enrollment_generation": "not implemented"}, nil
+		return fairplay.InspectPortableIPA(r.Source)
 	case "state":
 		return state.Evaluate(r.Input, nil)
 	case "frame":

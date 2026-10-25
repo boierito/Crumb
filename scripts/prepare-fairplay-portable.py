@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Turn pinned standalone evaluators into isolated, testable in-process packages."""
-import pathlib, re, sys
+import pathlib, re, sys, hashlib
 source, target = map(pathlib.Path, sys.argv[1:])
 for stage, tag in [('state','fairplaystate'), ('frame','fairplayframe'), ('sidb','fairplaysidb')]:
     out = target / stage
@@ -42,5 +42,12 @@ func Evaluate(input, frame []byte) ([]byte, error) {
     recovered, err := dpRecover(&dpTarget{server:server}); if err != nil { return nil, err }
     return json.Marshal(recovered.modelJSON())
 }
-'''.replace('func Recover', 'func Recover'))
+''')
         p=out/'api.go'; p.write_text(p.read_text().replace('import "fmt"','import ("fmt"; "encoding/json")'))
+
+    api = out / 'api.go'
+    text = api.read_text()
+    text = text.replace('import "fmt"', 'import ("fmt"; "crypto/sha256")').replace('"encoding/json")', '"encoding/json"; "crypto/sha256")')
+    expected = hashlib.sha256((source/'profiles'/name).read_bytes()).hexdigest()
+    text += '\nfunc VerifyResource() bool { return fmt.Sprintf("%x", sha256.Sum256(embeddedModelBytes())) == "' + expected + '" }\n'
+    api.write_text(text)

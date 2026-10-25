@@ -150,7 +150,7 @@ final class FairPlayLab: ObservableObject {
             if FileManager.default.fileExists(atPath: captures.path) {
                 let archive = self.root.appendingPathComponent("Private-FairPlay-capture.zip")
                 _ = try await Task.detached { try FairPlayNative.run("export", source: captures, destination: archive) }.value
-                self.captureArchive = archive
+                if FileManager.default.fileExists(atPath: archive.path) { self.captureArchive = archive }
             }
         }
     }
