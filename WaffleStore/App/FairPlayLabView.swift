@@ -208,10 +208,9 @@ final class FairPlayLab: ObservableObject {
         }
         // Only the native analyzer's sanitized flags are surfaced here. A
         // legacy SIDB never becomes a portable frame or decrypt-ready model.
-        let bridges = transactions.compactMap { $0["enrollment_bridge"] as? [String: Any] }
-        guard bridges.count == transactions.count else {
-            throw NSError(domain: "Crumb.FairPlayLab.InvalidStageFlags", code: 4)
-        }
+        // Alternative download routes may have no matched keybag or consumer
+        // report. Represent those stages as unavailable, not as an invalid ZIP.
+        let bridges = transactions.map { ($0["enrollment_bridge"] as? [String: Any]) ?? [:] }
         enrollmentStages = [
             "Native keybag import": transactions.allSatisfy { $0["consumer_import_succeeded"] as? Bool == true },
             "Legacy SIDB captured": bridges.allSatisfy { $0["legacy_sidb_observed"] as? Bool == true },
