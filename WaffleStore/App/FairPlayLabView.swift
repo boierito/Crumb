@@ -113,7 +113,12 @@ final class FairPlayLab: ObservableObject {
     @Published var enrollmentStages: [String: Bool] = [:]
     @Published var nativeRecoveryVerified = false
     @Published var input: URL? {
-        didSet { if oldValue != input { output = nil; nativeRecoveryVerified = false } }
+        didSet {
+            if oldValue != input {
+                output = nil; nativeRecoveryVerified = false
+                for stage in ["Portable raw state verified", "Enrollment frame verified", "Portable model validated"] { enrollmentStages[stage] = false }
+            }
+        }
     }
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("FairPlayLab-" + UUID().uuidString)
     private var task: Task<Void, Never>?
@@ -213,6 +218,36 @@ final class FairPlayLab: ObservableObject {
             self.log("Inspection", "Model recovery requires a modern native enrollment folder. This legacy keybag capture does not supply the required native state.")
         }
     }
+    func recoverCurrentCapture() {
+        guard let input else { return }
+        perform {
+            self.output = nil
+            self.nativeRecoveryVerified = false
+            for stage in ["Portable raw state verified", "Enrollment frame verified", "Portable model validated"] { self.enrollmentStages[stage] = false }
+            try await self.analyzeCurrentCaptureFiles()
+            guard let archive = self.captureArchive else { throw CocoaError(.fileReadNoSuchFile) }
+            let destination = self.root.appendingPathComponent(UUID().uuidString + ".recovery")
+            defer {
+                try? FileManager.default.removeItem(at: destination.appendingPathComponent("models"))
+                try? FileManager.default.removeItem(at: destination.appendingPathComponent("private-report.json"))
+            }
+            self.log("Enrollment", "Trying the complete retained SIDB with its original hardware identity. Compatibility is unproven until source/frame, model and target IPA checks pass.")
+            let result = try await Task.detached {
+                try FairPlayNative.run("recover-capture", source: archive, destination: destination, ipa: input)
+            }.value
+            self.log("Enrollment", result)
+            if let data = result.data(using: .utf8),
+               let value = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+               value["ok"] as? Bool == true {
+                self.nativeRecoveryVerified = true
+                self.output = destination.appendingPathComponent("processed.ipa")
+                self.enrollmentStages["Portable raw state verified"] = true
+                self.enrollmentStages["Enrollment frame verified"] = true
+                self.enrollmentStages["Portable model validated"] = true
+                self.log("Decryption", "Capture-derived model matched the target IPA. Plaintext is not independently authenticated; completion does not prove 100% correctness.")
+            } else { try? FileManager.default.removeItem(at: destination) }
+        }
+    }
     func recoverEnrollment(_ selected: URL) {
         nativeRecoveryVerified = false
         guard let input else { return }
@@ -225,7 +260,7 @@ final class FairPlayLab: ObservableObject {
                 if access { selected.stopAccessingSecurityScopedResource() }
                 try? FileManager.default.removeItem(at: source)
                 // Only the processed IPA may remain for export.
-                try? FileManager.default.removeItem(at: destination.appendingPathComponent("fairplay-enrollment.bin"))
+                try? FileManager.default.removeItem(at: destination.appendingPathComponent("models"))
                 try? FileManager.default.removeItem(at: destination.appendingPathComponent("private-report.json"))
             }
             self.log("Enrollment", "Importing modern native enrollment. Legacy StoreAgent captures cannot supply these inputs.")
@@ -400,8 +435,10 @@ struct FairPlayLabView: View {
                     }
                 }
                 Section("4 · Recover or import an enrollment") {
+                    Button("Attempt recovery from current capture") { lab.recoverCurrentCapture() }.disabled(lab.input == nil)
+                    Text("Experimental compatibility attempt using the complete retained SIDB and its original identity. Rejection leaves enrollment unverified.")
                     Button("Recover model from native enrollment folder") { importingEnrollment = true; importingCapture = false; importing = true }.disabled(lab.input == nil)
-                    if lab.nativeRecoveryVerified { Label("Native source and frame cross-checked; model matches target SINF", systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
+                    if lab.nativeRecoveryVerified { Label("Derived source and frame cross-checked; model matches target SINF", systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
                     Text("Requires a modern native enrollment capture from your own App Store account, including its hardware identity and state files. The current StoreAgent capture is a separate format.")
                     Button("Import model or model folder and decrypt") { importingEnrollment = false; importingCapture = false; importing = true }.disabled(lab.input == nil)
                     Text("Import one model file or a folder of selector-bound .bin models. Each executable uses its associated license. Output plaintext is not authenticated.")

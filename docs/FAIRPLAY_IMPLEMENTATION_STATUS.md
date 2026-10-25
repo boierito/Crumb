@@ -325,3 +325,32 @@ las suites del decoder, state/frame/SIDB, rawsource y contratos del laboratorio
 con `-race`. El parser de Swift no detectó errores de sintaxis en la vista
 modificada; esto no sustituye compilación/typechecking con Xcode. Los tests
 locales no incluyen una inscripción privada real ni una IPA real descifrada.
+
+
+## 13. Intento directo desde la captura retenida — build 23032
+
+`Attempt recovery from current capture` conecta el ZIP de la sesión con el motor
+portátil. Valida su manifiesto y los hashes de las entradas utilizadas; exige
+una sola transacción, importación nativa aceptada y la identidad original de seis
+bytes de `context.json`. Pasa el **SIDB completo sin modificar** al filesystem
+virtual del runtime, junto con las licencias, SUPF y ejecutable de la IPA.
+Cada SINF objetivo debe coincidir por SHA-256 con uno de la transacción capturada.
+
+Esto implementa una **hipótesis de compatibilidad**, no demuestra que el formato
+legado sea compatible. No se cortan bytes del SIDB ni se fabrica estado o claves.
+El motor debe derivar un source/frame coherentes, validarlos con los evaluadores
+anteriores, producir modelos que validen los SINF y procesar todas las imágenes.
+Solo después pueden actualizarse los indicadores derivados. Una incompatibilidad
+produce `legacy_state_not_compatible` y no publica ninguna IPA de salida.
+
+La operación procesa dominios SINF independientes y deduplica packs idénticos
+antes de validar la IPA con el registro resultante. Los modelos temporales y
+estados se borran al terminar. El plaintext sigue marcado como no autenticado.
+
+Pruebas locales nuevas: identidad original y SIDB de 883 bytes preservados
+íntegros, rechazo de identidad ausente/inválida, validación del frame en un slot
+posterior y rechazo de frame distinto. Decoder y contratos del laboratorio pasan
+con `-race`; el parser Swift acepta la vista. **No se ha ejecutado una captura
+privada real con esta ruta; su compatibilidad y el descifrado real siguen sin
+validarse.** La build 23031 aprobó Debug/Release y todas las suites de GitHub; la
+23032 agrega este intento directo y requiere su propia compilación y prueba.

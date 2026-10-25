@@ -27,9 +27,11 @@ func WaffleFairPlayLab(input *C.char, output **C.uchar, length *C.size_t) C.int 
 		result["stage"] = r.Operation
 		result["code"] = "validation_failed"
 		message := strings.ToLower(e.Error())
-		if r.Operation == "recover-enrollment" {
+		if r.Operation == "recover-enrollment" || r.Operation == "recover-capture" {
 			for _, item := range []struct{ fragment, code string }{
 				{"schema required", "modern_native_capture_required"},
+				{"legacy state not compatible", "legacy_state_not_compatible"},
+				{"not bound to captured transaction", "capture_ipa_mismatch"},
 				{"state and one installed sinf required", "missing_native_enrollment_state"},
 				{"state and enrollment frame disagree", "enrollment_frame_mismatch"},
 				{"target ipa validation failed", "model_ipa_mismatch"},

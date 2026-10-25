@@ -125,3 +125,72 @@ func bindImageMaterials(inventory ipaInventory, files map[string]*zip.File, reso
 	}
 	return result, nil
 }
+
+// PortableEnrollmentInput is private input material, not a diagnostic object.
+type PortableEnrollmentInput struct {
+	ExecutablePath, SINFSHA256 string
+	Files                      map[string][]byte
+}
+
+func PortableEnrollmentInputs(source string) ([]PortableEnrollmentInput, error) {
+	inventory, archive, err := openIPAInventory(source)
+	if err != nil {
+		return nil, err
+	}
+	defer archive.Close()
+	files := map[string]*zip.File{}
+	names := map[string]bool{}
+	for _, file := range archive.File {
+		files[file.Name] = file
+		names[file.Name] = true
+	}
+	var result []PortableEnrollmentInput
+	good := false
+	defer func() {
+		if !good {
+			for _, input := range result {
+				for _, data := range input.Files {
+					clear(data)
+				}
+			}
+		}
+	}()
+	seen := map[string]bool{}
+	total := 0
+	for _, image := range inventory.images {
+		sinf, err := imageSINFMember(image.member, names)
+		if err != nil {
+			return nil, err
+		}
+		if seen[sinf] {
+			continue
+		}
+		seen[sinf] = true
+		input := PortableEnrollmentInput{ExecutablePath: "/" + image.member, Files: map[string][]byte{}}
+		result = append(result, input)
+		for _, item := range []struct{ member, key string }{
+			{image.member, "/" + path.Base(image.member)},
+			{sinf, path.Base(image.member) + ".sinf"},
+			{image.supfMember, path.Base(image.supfMember)},
+		} {
+			file := files[item.member]
+			if file == nil || file.UncompressedSize64 > 64<<20 {
+				return nil, fmt.Errorf("portable enrollment input limit")
+			}
+			data, err := zipBytes(file)
+			if err != nil {
+				return nil, err
+			}
+			input.Files[item.key] = data
+			total += len(data)
+			if total > 128<<20 {
+				return nil, fmt.Errorf("portable enrollment input limit")
+			}
+			if item.member == sinf {
+				result[len(result)-1].SINFSHA256 = digest(data)
+			}
+		}
+	}
+	good = true
+	return result, nil
+}
