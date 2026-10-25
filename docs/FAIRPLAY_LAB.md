@@ -118,3 +118,27 @@ an enrollment model or authenticated plaintext.
 Header reference: phracker/MacOSX-SDKs, MacOSX10.9.sdk, CarbonCore/Headers/Files.h
 (Apple SDK declarations). No SDK header, Apple binary or private control data is
 bundled by this change.
+
+
+## Build 23026: distinguish failed import from successful enrollment
+
+Capture v3 analysis now reports one of four observed consumer stages:
+`not_observed`, `emulator_failed`, `native_rejected`, or
+`native_returned_zero`. A successfully completed emulator call, a nonempty
+state file, and a zero native return are separate observations. None can be
+promoted to `ready_to_decrypt` without independently validated enrollment
+state and plaintext verification. For a rejected native call, the next missing
+stage is `accepted_keybag_import`, not the previously misleading
+`keybag_consumer` implementation placeholder.
+
+The capture importer checks native result consistency, state-file bounds,
+and names; it publishes counts and status only. Synthetic v3 fixtures test
+native status -42052, emulator failure, native zero return, inconsistent
+status flags, and omission of private data from diagnostics. The retained
+KBSync comparison copy is cleared, and the keybag copy is cleared immediately
+after its single consumer call.
+
+No private capture is checked in. Next experiment: test a **fresh, matched
+transaction on-device** with build 23026 and compare its sanitized native
+status and state sizes against the offline -42052 replay. Replaying v3 with
+a newly constructed StoreAgent context cannot prove original-context import.
