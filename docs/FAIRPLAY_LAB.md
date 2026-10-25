@@ -151,3 +151,32 @@ arguments, paths, file data, register values, or account identifiers are
 recorded. The `virtual_io` field is added to **private** consumer-state.json
 only; the ordinary public laboratory summary remains counts/status only.
 This can narrow down future native -42052 failures without exporting secrets.
+
+
+## Build 23027: V4 device evidence and catalog-write diagnostics
+
+An independently captured **private** V4 transaction reproduced a successfully
+completed emulator call followed by native status `-50` (import rejected).
+Its integrity-verified manifest showed 196-byte kbsync, 904-byte keybag, and
+one SINF. The exported virtual state contained **two entries**: an empty
+lock file and an **865-byte SIDB**. The public UI reported 0 files/0 bytes
+because it tried to cast a JSON dictionary containing one `null` value to
+`[String: String]`; the all-or-nothing conversion failed. The Swift summary
+now counts mixed `null` and base64 byte strings correctly, without logging
+any file contents.
+
+The V4 guest trace contained 21 events. It reached `FSPathMakeRef` and
+`FSGetCatalogInfo` with zero return values, then a negative return from
+`FSSetCatalogInfo`. This is the **leading suspected source** of the observed
+`-50` paramErr; it is not yet proven which parameter was rejected. The next
+build annotates only that catalog-write event with one of
+`unsupported_catalog_mask`, `missing_catalog_info`, or
+`unknown_catalog_reference`, plus a bounded catalog flag mask (<=0xffff).
+It does **not** log the FSRef, pointers, paths, SIDB bytes, DSID or keybag.
+Unsupported operations still fail closed, rather than being silently accepted.
+
+**Next test**: install build 23027 and capture a new transaction in the same
+producer context. Compare the private catalog-write `detail` and `mask`
+against the status and generated state sizes. Do not check private capture
+archives into this public repository. Status zero and SIDB creation are
+insufficient to mark any decrypted IPA as validated.
