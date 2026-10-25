@@ -215,3 +215,64 @@ func TestAnalyzeV3RejectsContradictoryConsumerReports(t *testing.T) {
 		}
 	}
 }
+
+
+// V6 shape is modeled with synthetic bytes: a successful native call can
+// create a nonempty SIDB and a null/empty lock-file entry, but must never be
+// mistaken for verified enrollment or permission to decrypt any IPA.
+func TestAnalyzeV3AcceptedConsumerWithMixedVirtualFiles(t *testing.T) {
+	const sentinel = "NEVER-EXPORT-PRIVATE-STATE-CANARY"
+	sidb := make([]byte, 862)
+	copy(sidb, []byte(sentinel))
+	p := captureV3Fixture(t, map[string]any{
+		"native_status":        0,
+		"emulator_completed":    true,
+		"import_succeeded":     true,
+		"portable_model_ready": false,
+		"state_files": map[string][]byte{
+			".sid.lockFile": nil,
+			"SC Info.sidb": sidb,
+		},
+		"virtual_io": map[string]any{
+			"total_calls": 21,
+			"truncated":   false,
+			"recent": []map[string]any{
+				{"operation": "_FSSetCatalogInfo", "outcome": "zero", "mask": 3072},
+			},
+		},
+	})
+	result, err := analyzeCapture(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["ready_to_decrypt"] != false {
+		t.Fatal("native import was incorrectly promoted to decryption readiness")
+	}
+	transactions := result["transactions"].([]map[string]any)
+	if len(transactions) != 1 {
+		t.Fatalf("expected exactly one synthetic transaction, got %d", len(transactions))
+	}
+	got := transactions[0]
+	if got["keybag_consumer"] != "native_returned_zero" ||
+		got["consumer_import_succeeded"] != true ||
+		got["consumer_native_status"] != int32(0) ||
+		got["consumer_state_files"] != 2 ||
+		got["consumer_state_nonempty_files"] != 1 ||
+		got["consumer_state_bytes"] != 862 {
+		t.Fatalf("incorrect sanitized accepted-import counts: %+v", got)
+	}
+	stages := got["missing_stages"].([]string)
+	if len(stages) != 2 || stages[0] != "raw_state_orchestration" ||
+		stages[1] != "validated_enrollment_model" {
+		t.Fatalf("accepted keybag must still require distinct enrollment stages: %v", stages)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, canary := range []string{sentinel, "SC Info.sidb", ".sid.lockFile", "virtual_io"} {
+		if strings.Contains(string(encoded), canary) {
+			t.Fatal("private virtual filesystem data or diagnostic leaked into summary")
+		}
+	}
+}
