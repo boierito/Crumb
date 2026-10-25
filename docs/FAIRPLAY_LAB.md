@@ -243,3 +243,35 @@ StoreAgent output is incompatible. Do not treat arbitrary SIDB bytes as a
 A new **synthetic** v3 capture test guards accepted-import classification,
 the presence of empty plus nonempty virtual files, and separation between
 native success and decrypt readiness. The private V6 archive is not in Git.
+
+
+## Build 23029: local enrollment-stage audit after successful V6 import
+
+V6 demonstrated a correct native StoreAgent return value of zero and a
+nonempty virtual legacy `SC Info.sidb`. It did **not** provide the required
+modern fairplayd raw-state source, 16-byte enrollment frame, or an authenticated
+portable model. The embedded macOS 26A428 evaluators are build-specific; an
+unstructured legacy SIDB blob cannot be treated as an evaluator input.
+
+The native capture analyzer now returns a **sanitized** `enrollment_bridge`
+object with the observed legacy SIDB length and independent boolean gates for
+portable raw-state source, enrollment frame, and model validation. All three
+remain false until separately implemented and demonstrated. Synthetic tests
+check that successful StoreAgent import does not make `ready_to_decrypt` true,
+including mixed null lock files and nonempty virtual SIDB state. No real
+account files, identifiers, or byte sequences are added to the repository.
+
+The FairPlay Laboratory now has **Verify current capture — no import required**.
+It exports the on-device current-session capture into an owner-only ZIP,
+applies complete iOS file protection to that ZIP, validates the manifest and
+SINF through the existing native analyzer, and displays **Enrollment logs**
+containing counts and stage flags only. `Prepare exports` also runs the same
+audit *before* generating `diagnostic.json`, so diagnostics include these
+checks without forcing users to reimport their own private ZIP. Importing an
+**older** capture remains optional. Private captured content is not exposed by
+the enrollment log. The private ZIP still must not be checked into GitHub.
+
+Next required engineering work is a rigorously validated bridge from a
+matching enrollment to the pinned modern portable evaluator, including a
+reproducible frame and raw-state source and an independent IPA decryption
+authentication check. This build does not claim to recover that model.
