@@ -180,3 +180,33 @@ producer context. Compare the private catalog-write `detail` and `mask`
 against the status and generated state sizes. Do not check private capture
 archives into this public repository. Status zero and SIDB creation are
 insufficient to mark any decrypted IPA as validated.
+
+
+## Build 23028: replay V5's observed Carbon catalog flags
+
+Private on-device V5 after build 23027 reported synthetic self-tests passing;
+matched download artifacts: 196-byte kbsync, 888-byte keybag, and one SINF.
+The manifest hashes validated and the virtual state had an empty lock file
+plus a nonempty 878-byte SIDB. Native import still returned `-50`.
+
+The private, bounded VFS trace identified the exact rejected call:
+`_FSSetCatalogInfo` with `detail=unsupported_catalog_mask`,
+`mask=3072` (`0xC00`). The old shim accepted only `0x400`.
+Per Apple's historical Carbon File Manager `Files.h`, `0x400`
+is `kFSCatInfoPermissions` and `0x800` is `kFSCatInfoFinderInfo`.
+The FSCatalogInfo structure contains 16 bytes of Finder info at
+offset 72 for this guest ABI, with permission fields beginning at 56.
+
+The virtual filesystem now explicitly supports permission and Finder-info
+fields in combination, persists the Finder metadata per virtual file, and
+provides corresponding `FSGetCatalogInfo` readback. It applies only fields
+selected by `whichInfo`, so updating Finder metadata cannot accidentally
+zero permissions. Unsupported flag sets still fail closed.
+Synthetic regression tests exercise `0xC00` roundtrips, Finder-only
+preservation, and rejection of unsupported masks. This is **ABI
+compatibility**, not decryption or a verified portable enrollment state.
+
+Next on-device experiment: build 23028, use the same App Store app and
+record whether `_FSSetCatalogInfo` becomes `zero` and which operation
+comes next. Check sanitized native status, file counts/sizes and bounded
+virtual-I/O trace without sharing raw blobs or identifiers in the repository.
