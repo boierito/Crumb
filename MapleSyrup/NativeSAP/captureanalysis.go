@@ -71,7 +71,8 @@ func analyzeCapture(source string) (map[string]any, error) {
 		}
 		prefix := path.Dir(name)
 		seen := map[string]bool{}
-		summary := map[string]any{"schema": manifest.Schema, "integrity": "verified", "keybag_consumer": "not implemented", "ready_to_recover": false, "generation_context_metadata": false}
+		consumerStage := "not_observed"
+		summary := map[string]any{"schema": manifest.Schema, "integrity": "verified", "keybag_consumer": consumerStage, "ready_to_recover": false, "generation_context_metadata": false}
 		sinfs := 0
 		for _, entry := range manifest.Files {
 			if path.Base(entry.Name) != entry.Name || seen[entry.Name] {
@@ -100,24 +101,54 @@ func analyzeCapture(source string) (map[string]any, error) {
 				summary["keybag_bytes"] = len(b)
 			case entry.Name == "consumer-state.json":
 				var report struct {
-					Status    int32             `json:"native_status"`
-					Completed bool              `json:"emulator_completed"`
-					Imported  bool              `json:"import_succeeded"`
+					Consumer  string            `json:"consumer"`
+					Status    *int32            `json:"native_status"`
+					Completed *bool             `json:"emulator_completed"`
+					Imported  *bool             `json:"import_succeeded"`
+					Ready     *bool             `json:"portable_model_ready"`
 					Files     map[string][]byte `json:"state_files"`
 				}
-				if json.Unmarshal(b, &report) != nil {
+				if json.Unmarshal(b, &report) != nil || report.Consumer == "" ||
+					report.Status == nil || report.Completed == nil || report.Imported == nil ||
+					report.Ready == nil || *report.Ready ||
+					*report.Imported != (*report.Completed && *report.Status == 0) ||
+					len(report.Files) > 32 {
 					return nil, fmt.Errorf("capture_consumer_report")
 				}
-				bytes := 0
-				for _, data := range report.Files {
+				// JSON encodes state-file bytes as base64. Clear decoded data, even on rejection.
+				defer func() {
+					for _, data := range report.Files {
+						clear(data)
+					}
+				}()
+				bytes, nonempty := 0, 0
+				for name, data := range report.Files {
+					if name == "" || name == "." || path.Base(name) != name ||
+						strings.Contains(name, "\\") || len(data) > 4<<20 {
+						return nil, fmt.Errorf("capture_consumer_report")
+					}
 					bytes += len(data)
-					clear(data)
+					if len(data) > 0 {
+						nonempty++
+					}
+					if bytes > 4<<20 {
+						return nil, fmt.Errorf("capture_consumer_report")
+					}
 				}
-				summary["consumer_native_status"] = report.Status
-				summary["consumer_emulator_completed"] = report.Completed
-				summary["consumer_import_succeeded"] = report.Imported
+				summary["consumer_native_status"] = *report.Status
+				summary["consumer_emulator_completed"] = *report.Completed
+				summary["consumer_import_succeeded"] = *report.Imported
+				summary["consumer_state_files"] = len(report.Files)
+				summary["consumer_state_nonempty_files"] = nonempty
 				summary["consumer_state_bytes"] = bytes
-				summary["keybag_consumer"] = "attempted"
+				switch {
+				case !*report.Completed:
+					consumerStage = "emulator_failed"
+				case *report.Imported:
+					consumerStage = "native_returned_zero"
+				default:
+					consumerStage = "native_rejected"
+				}
 			case entry.Name == "context.json":
 				var context map[string]string
 				if json.Unmarshal(b, &context) != nil || context["schema"] != "crumb-fairplay-context-v2" {
@@ -146,7 +177,17 @@ func analyzeCapture(source string) (map[string]any, error) {
 			}
 		}
 		summary["sinf_count"] = sinfs
-		summary["missing_stages"] = []string{"keybag_consumer", "raw_state_orchestration", "validated_enrollment_model"}
+		summary["keybag_consumer"] = consumerStage
+		missing := []string{}
+		switch consumerStage {
+		case "not_observed":
+			missing = append(missing, "observed_keybag_import")
+		case "emulator_failed":
+			missing = append(missing, "completed_keybag_import")
+		case "native_rejected":
+			missing = append(missing, "accepted_keybag_import")
+		}
+		summary["missing_stages"] = append(missing, "raw_state_orchestration", "validated_enrollment_model")
 		reports = append(reports, summary)
 	}
 	if len(reports) == 0 {
