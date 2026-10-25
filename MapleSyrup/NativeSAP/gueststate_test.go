@@ -191,3 +191,36 @@ func TestGuestStateDarwinPathAndCatalogContract(t *testing.T) {
 		t.Fatal("unknown descriptor accepted")
 	}
 }
+
+
+// The private trace may record error classes, but never guest paths, pointers,
+// file content, account identity, or a complete unbounded syscall history.
+func TestGuestStateTraceIsBoundedAndPathFree(t *testing.T) {
+	engine, err := unicorn.New(context.Background())
+	if err != nil { t.Fatal(err) }
+	defer engine.Close()
+	s, err := newShims(engine, nil, nil)
+	if err != nil { t.Fatal(err) }
+	const privatePathCanary = "/Users/Shared/private-account-material"
+	if err = s.fsOpen(privatePathCanary, 0x202); err != nil { t.Fatal(err) }
+	traceRead := s.traceGuestOperation("_read", func() error { return s.setResult(8192) })
+	for i := 0; i < guestStateTraceLimit+5; i++ {
+		if err = traceRead(); err != nil { t.Fatal(err) }
+	}
+	traceMissing := s.traceGuestOperation("_lstat", func() error { return s.fsError(2) })
+	if err = traceMissing(); err != nil { t.Fatal(err) }
+	trace := s.guestStateTrace()
+	if trace["total_calls"] != uint64(guestStateTraceLimit+6) ||
+		trace["truncated"] != true { t.Fatal("trace call count or ring limit") }
+	events, ok := trace["recent"].([]guestStateEvent)
+	if !ok || len(events) != guestStateTraceLimit { t.Fatal("trace not bounded") }
+	last := events[len(events)-1]
+	if last.Operation != "_lstat" || last.Outcome != "errno" || last.Errno != 2 {
+		t.Fatalf("incorrect sanitized trace result: %+v", last)
+	}
+	for _, event := range events {
+		if event.Operation != "_read" && event.Operation != "_lstat" {
+			t.Fatal("trace contains unexpected name")
+		}
+	}
+}
