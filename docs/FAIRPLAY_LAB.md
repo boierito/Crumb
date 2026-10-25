@@ -142,3 +142,12 @@ No private capture is checked in. Next experiment: test a **fresh, matched
 transaction on-device** with build 23026 and compare its sanitized native
 status and state sizes against the offline -42052 replay. Replaying v3 with
 a newly constructed StoreAgent context cannot prove original-context import.
+
+
+The retained guest also records the last 64 virtual filesystem operations as
+fixed operation labels and coarse results (zero, nonzero, errno, negative status,
+or emulator failure). Error entries can carry numeric errno only. No guest
+arguments, paths, file data, register values, or account identifiers are
+recorded. The `virtual_io` field is added to **private** consumer-state.json
+only; the ordinary public laboratory summary remains counts/status only.
+This can narrow down future native -42052 failures without exporting secrets.
