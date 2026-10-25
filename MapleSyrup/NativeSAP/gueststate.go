@@ -26,12 +26,16 @@ type guestStateFS struct {
 	trace       []guestStateEvent
 	traceCalls  uint64
 	traceErrno  uint32
+	traceHint   string
+	traceMask   uint64
 }
 
 type guestStateEvent struct {
 	Operation string `json:"operation"`
 	Outcome   string `json:"outcome"`
 	Errno     uint32 `json:"errno,omitempty"`
+	Detail    string `json:"detail,omitempty"`
+	Mask      uint64 `json:"mask,omitempty"`
 }
 
 func (s *shims) rfs() *guestStateFS {
@@ -358,8 +362,14 @@ func (s *shims) traceGuestOperation(name string, handler shimHandler) shimHandle
 	return func() error {
 		fs := s.rfs()
 		fs.traceErrno = 0
+		fs.traceHint = ""
+		fs.traceMask = 0
 		err := handler()
 		entry := guestStateEvent{Operation: name}
+		if name == "_FSSetCatalogInfo" {
+			entry.Detail = fs.traceHint
+			entry.Mask = fs.traceMask
+		}
 		switch {
 		case err != nil:
 			entry.Outcome = "emulator_failure"
@@ -796,7 +806,17 @@ func (s *shims) fsSetCatalogInfo() error {
 	if e != nil {
 		return e
 	}
-	if mask != 0x400 || info == 0 {
+	// Metadata flags are public ABI constants, not private material. Record only
+	// small expected masks; never publish register values that might be pointers.
+	if mask <= 0xffff {
+		s.rfs().traceMask = mask
+	}
+	if mask != 0x400 {
+		s.rfs().traceHint = "unsupported_catalog_mask"
+		return s.setResult(0xffffffce)
+	}
+	if info == 0 {
+		s.rfs().traceHint = "missing_catalog_info"
 		return s.setResult(0xffffffce)
 	}
 	b, e := s.engine.MemRead(ref, 80)
@@ -808,6 +828,7 @@ func (s *shims) fsSetCatalogInfo() error {
 	clear(b)
 	p, ok := s.rfs().refs[token]
 	if !ok {
+		s.rfs().traceHint = "unknown_catalog_reference"
 		return s.setResult(0xffffffce)
 	}
 	b, e = s.engine.MemRead(info, 148)
