@@ -141,6 +141,20 @@ func analyzeCapture(source string) (map[string]any, error) {
 				summary["consumer_state_files"] = len(report.Files)
 				summary["consumer_state_nonempty_files"] = nonempty
 				summary["consumer_state_bytes"] = bytes
+				// This explicitly separates the legacy StoreAgent virtual state
+				// from the modern, build-specific portable enrollment inputs.
+				// Never infer a 16-byte frame or 192/224-byte raw-state source
+				// from a successful call or an opaque SIDB container.
+				legacySIDB := report.Files["SC Info.sidb"]
+				summary["enrollment_bridge"] = map[string]any{
+					"legacy_import_accepted":          *report.Imported,
+					"legacy_sidb_observed":            len(legacySIDB) > 0,
+					"legacy_sidb_bytes":               len(legacySIDB),
+					"portable_raw_state_verified":      false,
+					"portable_enrollment_frame_verified": false,
+					"validated_portable_model":         false,
+					"status":                           "missing_portable_enrollment_source",
+				}
 				switch {
 				case !*report.Completed:
 					consumerStage = "emulator_failed"
