@@ -210,3 +210,36 @@ Next on-device experiment: build 23028, use the same App Store app and
 record whether `_FSSetCatalogInfo` becomes `zero` and which operation
 comes next. Check sanitized native status, file counts/sizes and bounded
 virtual-I/O trace without sharing raw blobs or identifiers in the repository.
+
+
+## V6 / build 23028: on-device native import accepted
+
+A fresh same-context transaction on iOS produced native status **0** with
+`emulator_completed=true` and `import_succeeded=true`. All five manifest
+entries in the private V6 ZIP passed SHA-256 and byte-length checks. The
+bounded trace contained **21 operations**: `FSPathMakeRef`,
+`FSGetCatalogInfo`, and `FSSetCatalogInfo(0xC00)` now all returned zero.
+The private virtual state contained **two entries**, one empty lock file
+and one **862-byte** SIDB. Input sizes were kbsync **196 bytes**, keybag
+**904 bytes**, and one SINF.
+
+**This closes the previously failing virtual catalog-write compatibility
+step; it does not close FairPlay recovery.** In particular:
+- The accepted StoreAgent keybag consumer is not a verified enrollment model.
+- The captured SIDB is a product of a guest virtual filesystem, not a
+  documented replacement for the modern fairplayd enrollment frame or
+  its missing raw state/orchestration.
+- On-device inspection still reports two encrypted images / 712
+  encrypted pages. The portable model remains unavailable.
+- The native status means *only* that the observed wrapper returned zero.
+  Successful IPA plaintext authentication, signing and launch have not
+  been demonstrated.
+
+Next engineering stage: specify and validate the bridge from this accepted
+guest state to the exact raw-state inputs and matching enrollment model
+required by the pinned portable evaluator, or demonstrate that the legacy
+StoreAgent output is incompatible. Do not treat arbitrary SIDB bytes as a
+192/224-byte state input, and never publish account/device material.
+A new **synthetic** v3 capture test guards accepted-import classification,
+the presence of empty plus nonempty virtual files, and separation between
+native success and decrypt readiness. The private V6 archive is not in Git.
