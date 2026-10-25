@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -92,4 +93,125 @@ func TestPrivateCaptureExternal(t *testing.T) {
 	}
 	encoded, _ := json.Marshal(result)
 	t.Log(string(encoded)) // Only the explicit non-secret summary.
+}
+
+ 
+// All v3 fixtures use public synthetic blobs; no account, device, or keybag
+// captured from an iPhone is stored in the repository or test output.
+func captureV3Fixture(t *testing.T, overrides map[string]any) string {
+	t.Helper()
+	atom := func(tag string, b []byte) []byte {
+		out := make([]byte, 8+len(b))
+		binary.BigEndian.PutUint32(out, uint32(len(out)))
+		copy(out[4:], tag)
+		copy(out[8:], b)
+		return out
+	}
+	fields := append(atom("user", make([]byte, 4)), atom("key ", make([]byte, 4))...)
+	fields = append(fields, atom("priv", make([]byte, 440))...)
+	report := map[string]any{
+		"consumer": "storeagent-10.9-import-keybag",
+		"native_status": -42052,
+		"emulator_completed": true,
+		"import_succeeded": false,
+		"portable_model_ready": false,
+		"state_files": map[string][]byte{"fixture.sidb": []byte("SYNTHETIC-SECRET-CANARY")},
+	}
+	for k, v := range overrides {
+		report[k] = v
+	}
+	consumer, err := json.Marshal(report)
+	if err != nil { t.Fatal(err) }
+	blobs := map[string][]byte{
+		"kbsync.bin": make([]byte, 196),
+		"keybag.bin": make([]byte, 904),
+		"sinf-0.bin": atom("sinf", atom("schi", fields)),
+		"context.json": []byte(`{"schema":"crumb-fairplay-context-v2"}`),
+		"consumer-state.json": consumer,
+	}
+	entries := []map[string]string{}
+	for name, blob := range blobs {
+		checksum := sha256.Sum256(blob)
+		entries = append(entries, map[string]string{"name": name, "bytes": strconv.Itoa(len(blob)),
+			"sha256": hex.EncodeToString(checksum[:])})
+	}
+	manifest, err := json.Marshal(map[string]any{"schema": "crumb-fairplay-capture-v3", "files": entries})
+	if err != nil { t.Fatal(err) }
+	p := filepath.Join(t.TempDir(), "v3.zip")
+	f, err := os.Create(p)
+	if err != nil { t.Fatal(err) }
+	w := zip.NewWriter(f)
+	for name, blob := range blobs {
+		entry, err := w.Create("run/" + name)
+		if err != nil { t.Fatal(err) }
+		if _, err = entry.Write(blob); err != nil { t.Fatal(err) }
+	}
+	entry, err := w.Create("run/manifest.json")
+	if err != nil { t.Fatal(err) }
+	if _, err = entry.Write(manifest); err != nil { t.Fatal(err) }
+	if err = w.Close(); err != nil { t.Fatal(err) }
+	if err = f.Close(); err != nil { t.Fatal(err) }
+	return p
+}
+
+func TestAnalyzeV3ConsumerStagesAndPrivacy(t *testing.T) {
+	cases := []struct {
+		name string
+		overrides map[string]any
+		stage string
+		missing string
+	}{
+		{"rejected", nil, "native_rejected", "accepted_keybag_import"},
+		{"zero-return", map[string]any{"native_status": 0, "import_succeeded": true},
+			"native_returned_zero", ""},
+		{"emulator-failed", map[string]any{"native_status": 0, "emulator_completed": false,
+			"state_files": map[string][]byte{}}, "emulator_failed", "completed_keybag_import"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := analyzeCapture(captureV3Fixture(t, tc.overrides))
+			if err != nil { t.Fatal(err) }
+			if result["ready_to_decrypt"] != false { t.Fatal("unvalidated model was accepted") }
+			summary := result["transactions"].([]map[string]any)[0]
+			if summary["keybag_consumer"] != tc.stage || summary["ready_to_recover"] != false {
+				t.Fatalf("incorrect readiness for %s", tc.name)
+			}
+			missing := summary["missing_stages"].([]string)
+			if tc.missing != "" && (len(missing) < 1 || missing[0] != tc.missing) {
+				t.Fatalf("wrong missing stage: %v", missing)
+			}
+			if missing[len(missing)-1] != "validated_enrollment_model" {
+				t.Fatal("unverified model treated as recovered")
+			}
+			if tc.name == "rejected" {
+				if summary["consumer_native_status"] != int32(-42052) ||
+					summary["consumer_state_bytes"] != len("SYNTHETIC-SECRET-CANARY") ||
+					summary["consumer_state_nonempty_files"] != 1 {
+					t.Fatal("consumer result counts do not match")
+				}
+			}
+			data, err := json.Marshal(result)
+			if err != nil { t.Fatal(err) }
+			if strings.Contains(string(data), "SYNTHETIC-SECRET-CANARY") ||
+				strings.Contains(string(data), "hardware_id") ||
+				strings.Contains(string(data), "dsid") {
+				t.Fatal("private state or identity leaked into the diagnostic")
+			}
+		})
+	}
+}
+
+func TestAnalyzeV3RejectsContradictoryConsumerReports(t *testing.T) {
+	cases := []map[string]any{
+		{"native_status": -42052, "import_succeeded": true},
+		{"emulator_completed": false, "import_succeeded": true},
+		{"portable_model_ready": true},
+		{"native_status": nil},
+		{"state_files": map[string][]byte{"../escape.sidb": []byte("bad")}},
+	}
+	for i, tc := range cases {
+		if _, err := analyzeCapture(captureV3Fixture(t, tc)); err == nil {
+			t.Fatalf("accepted contradictory consumer report case %d", i)
+		}
+	}
 }
