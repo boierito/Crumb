@@ -8,17 +8,23 @@ final class IPATool {
     let account: StoreAccount
     private var store: StoreSession?
     private var transport: AppleAuthenticationTransport?
+    private let retainedGenerator: NativeRetainedKBSyncGenerator?
     private let capture: (@Sendable (FairPlayTransaction) async -> Void)?
-    init(account: StoreAccount, capture: (@Sendable (FairPlayTransaction) async -> Void)? = nil) {
+    init(account: StoreAccount, capture: (@Sendable (FairPlayTransaction) async -> Void)? = nil, retainedGenerator: NativeRetainedKBSyncGenerator? = nil) {
+        self.retainedGenerator = retainedGenerator
         self.account = account; self.capture = capture
     }
     var appleId: String { account.email }
-    func close() { transport?.close(); transport = nil; store = nil }
+    func close() { retainedGenerator?.close(); transport?.close(); transport = nil; store = nil }
     private func session() throws -> StoreSession {
         if let store = store { return store }
         let transport = AppleAuthenticationTransport(cookies: account.cookies)
+        let generator: KBSyncGenerator
+        let persistence: KBSyncPersistence
+        if let retainedGenerator { generator = retainedGenerator; persistence = NoKBSyncPersistence() }
+        else { generator = NativeKBSyncGenerator(); persistence = KeychainKBSync() }
         let store = try StoreSession(account: account, identity: KeychainMachineIdentity.loadOrCreate(),
-            transport: transport, generator: NativeKBSyncGenerator(), persistence: KeychainKBSync(), progress: { stage in
+            transport: transport, generator: generator, persistence: persistence, progress: { stage in
                 await MainActor.run {
                     switch stage {
                     case .purchase: AppData.shared.applicationStatus = "Obtaining free app…"

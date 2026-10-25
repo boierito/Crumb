@@ -67,7 +67,7 @@ final class FairPlayLab: ObservableObject {
             self.log("Components", result)
         }
     }
-    func capture(_ transaction: FairPlayTransaction) throws {
+    func capture(_ transaction: FairPlayTransaction, retained: NativeRetainedKBSyncGenerator) throws {
         let directory = root.appendingPathComponent("captures").appendingPathComponent(UUID().uuidString)
         try FairPlayNative.privateDirectory(directory)
         var files: [[String: String]] = []
@@ -79,7 +79,13 @@ final class FairPlayLab: ObservableObject {
             try FairPlayNative.privateWrite(data, to: directory.appendingPathComponent(name))
             files.append(["name": name, "bytes": String(data.count), "sha256": SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()])
         }
-        let manifest: [String: Any] = ["schema": "crumb-fairplay-capture-v1", "route": "validated-ent-download",
+        if transaction.keybag != nil {
+            let context = try retained.bind(transaction)
+            try FairPlayNative.privateWrite(context, to: directory.appendingPathComponent("context.json"))
+            files.append(["name":"context.json", "bytes":String(context.count), "sha256":SHA256.hash(data: context).map { String(format:"%02x",$0) }.joined()])
+            log("Transaction", "Matched generation context retained through reply; private identity metadata saved. Keybag consumption is not implemented.")
+        }
+        let manifest: [String: Any] = ["schema": "crumb-fairplay-capture-v2", "route": "validated-ent-download",
                                       "keybag_present": transaction.keybag != nil, "files": files]
         try FairPlayNative.privateWrite(JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted]), to: directory.appendingPathComponent("manifest.json"))
         transactions += 1
@@ -89,16 +95,18 @@ final class FairPlayLab: ObservableObject {
         perform {
             guard self.input == nil else { return }
             self.transactions = 0
+            let retained = NativeRetainedKBSyncGenerator()
             let tool = IPATool(account: account, capture: { value in
                 await MainActor.run {
-                    do { try self.capture(value) }
+                    do { try self.capture(value, retained: retained) }
                     catch { self.log("Transaction", "Private capture could not be saved; download may continue.") }
                 }
-            })
+            }, retainedGenerator: retained)
             defer { tool.close() }
             self.log("Transaction", "Looking up app and requesting latest accessible version.")
             let app = try await tool.lookup(text)
             let descriptor = try await tool.descriptor(app: app)
+            tool.close() // Release the retained emulator before the CDN transfer.
             if self.transactions == 0 { self.log("Transaction", "Descriptor used an alternative route: no matched ent keybag captured.") }
             let source = self.root.appendingPathComponent("download.ipa")
             _ = try await CDNDownload(destination: source, progress: { _,_,_ in }).run(descriptor.url)
@@ -109,6 +117,15 @@ final class FairPlayLab: ObservableObject {
             try? FileManager.default.removeItem(at: source)
             self.input = destination
             self.log("Transaction", "IPA downloaded and prepared. Original retained until this test is erased.")
+        }
+    }
+    func analyzeCapture(_ selected: URL) {
+        perform {
+            let access = selected.startAccessingSecurityScopedResource()
+            defer { if access { selected.stopAccessingSecurityScopedResource() } }
+            self.log("Inspection", "Validating capture ZIP, manifest hashes and SINF structure. No account data will be logged.")
+            let result = try await Task.detached { try FairPlayNative.run("analyze-capture", source: selected) }.value
+            self.log("Inspection", result)
         }
     }
     func inspect() {
@@ -170,6 +187,7 @@ struct FairPlayLabView: View {
     @StateObject private var lab = FairPlayLab()
     @State private var appInput = ""
     @State private var importing = false
+    @State private var importingCapture = false
     var body: some View {
         NavigationStack {
             Form {
@@ -188,11 +206,12 @@ struct FairPlayLabView: View {
                     }
                 }
                 Section("3 · Inspect and identify missing material") {
+                    Button("Import and analyze private capture ZIP") { importingCapture = true; importing = true }
                     Button("Inspect IPA") { lab.inspect() }.disabled(lab.input == nil)
                     Text("Enrollment generation: not implemented. The upstream still needs private state inputs; captured keybags are not enrollment models.")
                 }
                 Section("4 · Test with an existing model") {
-                    Button("Import model and decrypt") { importing = true }.disabled(lab.input == nil)
+                    Button("Import model and decrypt") { importingCapture = false; importing = true }.disabled(lab.input == nil)
                     if let output = lab.output { ShareLink("Export decrypted IPA", item: output) }
                     Text("Sign the exported IPA before installation. Record whether it installs and opens; compilation and structural checks alone do not prove correct plaintext.")
                 }
@@ -215,8 +234,10 @@ struct FairPlayLabView: View {
             .navigationTitle("FairPlay Laboratory")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() }.disabled(lab.busy) } }
             .interactiveDismissDisabled(lab.busy)
-            .fileImporter(isPresented: $importing, allowedContentTypes: [.data]) { result in
-                if case .success(let url) = result { lab.decrypt(url) }
+            .fileImporter(isPresented: $importing, allowedContentTypes: importingCapture ? [.zip] : [.data]) { result in
+                if case .success(let url) = result {
+                    if importingCapture { lab.analyzeCapture(url) } else { lab.decrypt(url) }
+                }
             }
             .onDisappear { lab.erase() }
         }

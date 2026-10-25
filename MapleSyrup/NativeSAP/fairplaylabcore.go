@@ -22,6 +22,8 @@ type labRequest struct {
 
 func labRun(r labRequest) (any, error) {
 	switch r.Operation {
+	case "analyze-capture":
+		return analyzeCapture(r.Source)
 	case "export":
 		file, e := os.Create(r.Destination)
 		if e != nil {
@@ -43,7 +45,7 @@ func labRun(r labRequest) (any, error) {
 				return fmt.Errorf("symlink")
 			}
 			name := entry.Name()
-			if name != "manifest.json" && name != "kbsync.bin" && name != "keybag.bin" && !strings.HasPrefix(name, "sinf-") {
+			if name != "manifest.json" && name != "context.json" && name != "kbsync.bin" && name != "keybag.bin" && !strings.HasPrefix(name, "sinf-") {
 				return fmt.Errorf("unexpected capture file")
 			}
 			relative, e := filepath.Rel(r.Source, path)

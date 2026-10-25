@@ -64,3 +64,44 @@ nonisolated enum NativePackage {
         return try JSONDecoder().decode(Info.self, from: Data(bytes: output, count: length))
     }
 }
+
+// Laboratory only. The normal download generator and persistence are unchanged.
+nonisolated final class NativeRetainedKBSyncGenerator: KBSyncGenerator, @unchecked Sendable {
+    private let lock = NSLock()
+    private var handle: UInt64 = 0
+    private var identity: MachineIdentity?
+    private var dsid: UInt64 = 0
+    func generate(identity: MachineIdentity, dsid: UInt64) throws -> Data {
+        lock.lock(); defer { lock.unlock() }
+        WaffleKBSyncClose(handle); handle = 0
+        let cache = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("MapleSAP")
+        try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+        var output: UnsafeMutablePointer<UInt8>?; var count = 0
+        let status = cache.path.withCString { path in
+            identity.hardwareID.withUnsafeBytes { bytes in
+                WaffleKBSyncOpen(UnsafeMutablePointer(mutating: path), UnsafeMutablePointer(mutating: bytes.bindMemory(to: UInt8.self).baseAddress), identity.hardwareID.count, dsid, &handle, &output, &count)
+            }
+        }
+        defer { WaffleSAPFree(output, count) }
+        guard status == 0, let output, count > 0, count <= 16 << 20 else { throw StoreError.native(Int32(status)) }
+        self.identity = identity; self.dsid = dsid
+        return Data(bytes: output, count: count)
+    }
+    func bind(_ transaction: FairPlayTransaction) throws -> Data {
+        lock.lock(); defer { lock.unlock() }
+        guard let identity, let keybag = transaction.keybag else { throw StoreError.invalidResponse }
+        let status = transaction.kbsync.withUnsafeBytes { blob in
+            keybag.withUnsafeBytes { bag in
+                WaffleKBSyncBind(handle, UnsafeMutablePointer(mutating: blob.bindMemory(to: UInt8.self).baseAddress), transaction.kbsync.count, UnsafeMutablePointer(mutating: bag.bindMemory(to: UInt8.self).baseAddress), keybag.count)
+            }
+        }
+        guard status == 0 else { throw StoreError.native(Int32(status)) }
+        // Private replay metadata, never included in public diagnostics.
+        return try JSONEncoder().encode(["schema":"crumb-fairplay-context-v2", "hardware_id":identity.hardwareID.base64EncodedString(), "dsid":String(dsid), "producer":"retained-storeagent", "keybag_consumer":"not implemented"])
+    }
+    func close() {
+        lock.lock(); defer { lock.unlock() }
+        WaffleKBSyncClose(handle); handle = 0; identity = nil; dsid = 0
+    }
+    deinit { close() }
+}

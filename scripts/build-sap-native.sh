@@ -62,10 +62,13 @@ PATCH
 cp "$ROOT/MapleSyrup/NativeSAP/fairplayinspect.go" "$SOURCE/internal/fairplay/"
 (cd "$SOURCE" && go get golang.org/x/arch@v0.32.0 && go test ./internal/fairplay)
 python3 "$ROOT/scripts/prepare-fairplay-portable.py" "$WORK/ipatool-$FAIRPLAY_REV/tools/fairplay-recovery" "$SOURCE/wafflebridge/recovery"
+cp "$ROOT/MapleSyrup/NativeSAP/captureanalysis.go" "$SOURCE/wafflebridge/"
 cp "$ROOT/MapleSyrup/NativeSAP/fairplaylab.go" "$ROOT/MapleSyrup/NativeSAP/fairplaylabcore.go" "$SOURCE/wafflebridge/"
 mkdir -p "$SOURCE/wafflebridge/labtest"
-cp "$ROOT/MapleSyrup/NativeSAP/fairplaylabcore.go" "$ROOT/MapleSyrup/NativeSAP/fairplaylab_test.go" "$SOURCE/wafflebridge/labtest/"
+cp "$ROOT/MapleSyrup/NativeSAP/captureanalysis.go" "$ROOT/MapleSyrup/NativeSAP/captureanalysis_test.go" "$ROOT/MapleSyrup/NativeSAP/fairplaylabcore.go" "$ROOT/MapleSyrup/NativeSAP/fairplaylab_test.go" "$SOURCE/wafflebridge/labtest/"
 (cd "$SOURCE" && go test ./wafflebridge/recovery/... ./wafflebridge/labtest)
+cp "$ROOT/MapleSyrup/NativeSAP/kbsyncretained.go" "$SOURCE/internal/sap/machine/"
+cp "$ROOT/MapleSyrup/NativeSAP/kbsyncbridge.go" "$SOURCE/wafflebridge/"
 SDK=$(xcrun --sdk iphoneos --show-sdk-path)
 CLANG=$(xcrun --sdk iphoneos --find clang)
 cd "$SOURCE"
