@@ -184,6 +184,67 @@ func TestGuestStateDarwinPathAndCatalogContract(t *testing.T) {
 	if binary.LittleEndian.Uint16(stat[4:]) != 0100640 {
 		t.Fatal("permission change not reflected by lstat")
 	}
+	// Carbon catalog flags 0x400 (permissions) + 0x800 (Finder info) are
+	// exercised together by the real V5 producer. Read both back after a
+	// combined write; do not accept the flags without preserving their data.
+	if call(s.fsGetCatalogInfo, base+768, 0xc00, base+1600, 0, 0, 0) != 0 {
+		t.Fatal("combined catalog read failed")
+	}
+	catalog, _ = engine.MemRead(base+1600, 148)
+	binary.LittleEndian.PutUint16(catalog[66:], 0100644)
+	for i := 0; i < 16; i++ {
+		catalog[72+i] = byte(0xa0 + i)
+	}
+	if e = engine.MemWrite(base+1600, catalog); e != nil {
+		t.Fatal(e)
+	}
+	combined := s.traceGuestOperation("_FSSetCatalogInfo", s.fsSetCatalogInfo)
+	if call(combined, base+768, 0xc00, base+1600) != 0 {
+		t.Fatal("combined permission + Finder info update failed")
+	}
+	if call(s.fsGetCatalogInfo, base+768, 0xc00, base+1600, 0, 0, 0) != 0 {
+		t.Fatal("combined catalog readback failed")
+	}
+	back, _ := engine.MemRead(base+1600, 148)
+	if binary.LittleEndian.Uint16(back[66:]) != 0100644 {
+		t.Fatal("combined catalog write did not preserve permissions")
+	}
+	for i := 0; i < 16; i++ {
+		if back[72+i] != byte(0xa0+i) {
+			t.Fatal("combined catalog write did not preserve Finder info")
+		}
+	}
+	// Finder-only writes must leave permissions untouched even when the
+	// caller's unused permission field is zero.
+	for i := 0; i < 16; i++ {
+		back[72+i] = byte(0x50 + i)
+	}
+	for i := 56; i < 72; i++ {
+		back[i] = 0
+	}
+	if e = engine.MemWrite(base+1600, back); e != nil {
+		t.Fatal(e)
+	}
+	if call(combined, base+768, 0x800, base+1600) != 0 {
+		t.Fatal("Finder-only catalog write failed")
+	}
+	if call(s.fsGetCatalogInfo, base+768, 0xc00, base+1600, 0, 0, 0) != 0 {
+		t.Fatal("Finder-only readback failed")
+	}
+	back, _ = engine.MemRead(base+1600, 148)
+	if binary.LittleEndian.Uint16(back[66:]) != 0100644 {
+		t.Fatal("Finder-only write clobbered permissions")
+	}
+	for i := 0; i < 16; i++ {
+		if back[72+i] != byte(0x50+i) {
+			t.Fatal("Finder-only update not stored")
+		}
+	}
+	traceAfterWrites := s.guestStateTrace()["recent"].([]guestStateEvent)
+	lastWrite := traceAfterWrites[len(traceAfterWrites)-1]
+	if lastWrite.Operation != "_FSSetCatalogInfo" || lastWrite.Outcome != "zero" || lastWrite.Mask != 0x800 {
+		t.Fatalf("expected clean, bounded metadata-only trace for Finder write: %+v", lastWrite)
+	}
 	if call(s.fsGetCatalogInfo, base+768, 0x400000, base+1600, 0, 0, 0) == 0 {
 		t.Fatal("unsupported security object was silently accepted")
 	}
