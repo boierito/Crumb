@@ -8,7 +8,10 @@ final class IPATool {
     let account: StoreAccount
     private var store: StoreSession?
     private var transport: AppleAuthenticationTransport?
-    init(account: StoreAccount) { self.account = account }
+    private let capture: (@Sendable (FairPlayTransaction) async -> Void)?
+    init(account: StoreAccount, capture: (@Sendable (FairPlayTransaction) async -> Void)? = nil) {
+        self.account = account; self.capture = capture
+    }
     var appleId: String { account.email }
     func close() { transport?.close(); transport = nil; store = nil }
     private func session() throws -> StoreSession {
@@ -26,7 +29,7 @@ final class IPATool {
                     print("Apple Store stage: \(stage.rawValue)")
                     #endif
                 }
-            })
+            }, capture: capture)
         self.transport = transport; self.store = store
         return store
     }

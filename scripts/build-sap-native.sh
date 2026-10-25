@@ -35,11 +35,11 @@ for name in ['assets.go','storeagent.go']:
     path.write_text(source)
 PY
 # Portable offline decoder only; preserve the existing SAP guest revision.
-FAIRPLAY_REV=e94fcd7362036a1b2269e5b555232f20d8cd273e
+FAIRPLAY_REV=ef98227e061838320424744d21a513baba7ade28
 curl -fL --retry 3 "https://github.com/DrWhax/ipatool/archive/$FAIRPLAY_REV.tar.gz" -o "$WORK/fairplay.tar.gz"
 python3 - "$WORK/fairplay.tar.gz" <<'CHECK'
 import hashlib, sys
-if hashlib.sha256(open(sys.argv[1], 'rb').read()).hexdigest() != '98f0b7e48bfed8dc1c940208ce84cd5287bd3c689e607de401e38937fc7df085':
+if hashlib.sha256(open(sys.argv[1], 'rb').read()).hexdigest() != '49f169ef2e14c89e3b55a9528057e7db66f236ca5425ff00e47d32f64dddf44d':
     raise SystemExit('FairPlay source integrity mismatch')
 CHECK
 tar -xzf "$WORK/fairplay.tar.gz" -C "$WORK"
@@ -51,8 +51,18 @@ p = pathlib.Path(sys.argv[1]); s = p.read_text()
 s = s.replace('runtime.GOOS != "darwin" && runtime.GOOS != "linux"', 'runtime.GOOS != "darwin" && runtime.GOOS != "linux" && runtime.GOOS != "ios"')
 s = s.replace('runtime.GOOS == "darwin" || runtime.GOOS == "windows"', 'runtime.GOOS == "darwin" || runtime.GOOS == "windows" || runtime.GOOS == "ios"')
 p.write_text(s)
+p = p.parent / 'decrypt.go'; s = p.read_text()
+s = s.replace('record[:16], image.sliceOffset+uint64(image.layout.cryptOffset),', 'record[:16], image.sliceOffset+uint64(image.layout.cryptOffset)+uint64(index*pageBytes),')
+s = s.replace('first := output[start : start+pageBytes]', 'auditStart := start\n    if isARM64InstructionSet(image.layout.cpuType) {\n        for auditStart < end {\n            _, words, _ := auditARM64FirstPage(output[auditStart:auditStart+pageBytes], uint64(auditStart), image.layout.instructionRanges)\n            if words > 0 { break }; auditStart += pageBytes\n        }\n        if auditStart >= end { return nil, fmt.Errorf("no encrypted instruction page") }\n    }\n    first := output[auditStart : auditStart+pageBytes]')
+s = s.replace('auditARM64FirstPage(first, uint64(start),', 'auditARM64FirstPage(first, uint64(auditStart),')
+p.write_text(s)
+p = p.parent / 'decrypt_test.go'; s = p.read_text().replace('image.sliceOffset+uint64(layout.cryptOffset),', 'image.sliceOffset+uint64(layout.cryptOffset)+uint64(page*pageBytes),')
+p.write_text(s)
 PATCH
 (cd "$SOURCE" && go get golang.org/x/arch@v0.32.0 && go test ./internal/fairplay)
+python3 "$ROOT/scripts/prepare-fairplay-portable.py" "$WORK/ipatool-$FAIRPLAY_REV/tools/fairplay-recovery" "$SOURCE/wafflebridge/recovery"
+cp "$ROOT/MapleSyrup/NativeSAP/fairplaylab.go" "$SOURCE/wafflebridge/"
+(cd "$SOURCE" && go test ./wafflebridge/recovery/...)
 SDK=$(xcrun --sdk iphoneos --show-sdk-path)
 CLANG=$(xcrun --sdk iphoneos --find clang)
 cd "$SOURCE"
@@ -78,6 +88,8 @@ for name,root in sorted(modules.items()):
     pieces.append(name+'\n'+'\n'.join(found))
 pathlib.Path(sys.argv[2]).write_text('\n\n'.join(pieces))
 PY
+cat "$WORK/ipatool-$FAIRPLAY_REV/tools/fairplay-recovery/LICENSE-DARKPHOENIX.txt" >> "$OUTPUT/GoThirdPartyNotices.txt"
+cp "$WORK/ipatool-$FAIRPLAY_REV/tools/fairplay-recovery/LICENSE-DARKPHOENIX.txt" "$SOURCE/wafflebridge/recovery/"
 cp "$OUTPUT/libWaffleSAP.h" "$OUTPUT/SAP-generated-ABI.h"
 cp "$SOURCE/LICENSE" "$OUTPUT/IPATOOL-LICENSE"
 tar -czf "$OUTPUT/ipatool-sap-corresponding-source.tar.gz" -C "$WORK" "$(basename "$SOURCE")"

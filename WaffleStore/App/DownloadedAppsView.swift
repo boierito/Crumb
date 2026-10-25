@@ -66,7 +66,7 @@ struct DownloadedAppsView: View {
                             Spacer(minLength: 0)
                             Menu {
                                 Button { decryption = record } label: {
-                                    Label("Decrypt IPA…", systemImage: "lock.open")
+                                    Label("FairPlay Laboratory…", systemImage: "lock.open")
                                 }
 
                                 Button(role: .destructive) { requestDeletion(record) } label: {
@@ -118,7 +118,7 @@ struct DownloadedAppsView: View {
              .toolbar {
                 if !embedded { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
             }
-            .sheet(item: $decryption) { FairPlayDecryptView(record: $0) }
+            .sheet(item: $decryption) { FairPlayLabView(record: $0) }
             .sheet(item: $installation) { OTAInstallationView(record: $0, startImmediately: true) }
             .alert("Delete downloaded IPA?", isPresented: $confirmDeletion) {
                 if let record = deletion {

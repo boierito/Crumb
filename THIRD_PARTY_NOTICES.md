@@ -65,3 +65,10 @@ and corresponding modified sources are included in the existing native source
 archive. Crumb adds iOS to the Unix permission/platform checks and to case
 insensitive path comparisons. The recovery helper and private enrollment keys
 are not bundled. The existing SAP backend remains pinned independently.
+
+FairPlay Laboratory updates the portable FairPlay source pin to
+`ef98227e061838320424744d21a513baba7ade28`. The generated state/frame/SIDB
+operations and sanitized embedded models are adapted to separate Go packages;
+corresponding sources remain in the native source archive. The partial recovery
+algorithm's Apache-2.0 attribution is in `LICENSE-DARKPHOENIX.txt` alongside those
+sources. No private enrollment model is embedded in Crumb.

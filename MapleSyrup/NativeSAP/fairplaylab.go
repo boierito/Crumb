@@ -1,0 +1,186 @@
+package main
+
+/*
+#include <stdlib.h>
+*/
+import "C"
+import (
+	"archive/zip"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"github.com/majd/ipatool/v2/internal/fairplay"
+	"github.com/majd/ipatool/v2/wafflebridge/recovery/frame"
+	"github.com/majd/ipatool/v2/wafflebridge/recovery/sidb"
+	"github.com/majd/ipatool/v2/wafflebridge/recovery/state"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+type labRequest struct {
+	Operation, Source, Destination, Report, Model string
+	Input, Frame                                  []byte
+}
+
+func labRun(r labRequest) (any, error) {
+	switch r.Operation {
+	case "export":
+		file, e := os.Create(r.Destination)
+		if e != nil {
+			return nil, e
+		}
+		defer file.Close()
+		if e = file.Chmod(0600); e != nil {
+			return nil, e
+		}
+		writer := zip.NewWriter(file)
+		e = filepath.WalkDir(r.Source, func(path string, entry os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() {
+				return nil
+			}
+			if entry.Type()&os.ModeSymlink != 0 {
+				return fmt.Errorf("symlink")
+			}
+			name := entry.Name()
+			if name != "manifest.json" && name != "kbsync.bin" && name != "keybag.bin" && !strings.HasPrefix(name, "sinf-") {
+				return fmt.Errorf("unexpected capture file")
+			}
+			relative, e := filepath.Rel(r.Source, path)
+			if e != nil {
+				return e
+			}
+			dst, e := writer.Create(filepath.ToSlash(relative))
+			if e != nil {
+				return e
+			}
+			src, e := os.Open(path)
+			if e != nil {
+				return e
+			}
+			defer src.Close()
+			_, e = io.Copy(dst, src)
+			return e
+		})
+		closeErr := writer.Close()
+		if e != nil {
+			return nil, e
+		}
+		if closeErr != nil {
+			return nil, closeErr
+		}
+		return map[string]any{"private_capture": true}, nil
+	case "selftest":
+		a, e := state.Evaluate(make([]byte, 224), nil)
+		if e != nil {
+			return nil, e
+		}
+		b, e := frame.Evaluate(make([]byte, 16), nil)
+		if e != nil {
+			return nil, e
+		}
+		f := sha256.Sum256([]byte("ipatool public SIDB frame fixture"))
+		i := sha256.Sum256([]byte("ipatool public SIDB block fixture"))
+		c, e := sidb.Evaluate(i[:16], f[:16])
+		if e != nil {
+			return nil, e
+		}
+		hashes := []string{}
+		for _, v := range [][]byte{a, b, c} {
+			h := sha256.Sum256(v)
+			hashes = append(hashes, hex.EncodeToString(h[:]))
+		}
+		expected := []string{"9e9f0073f8732cd41f7afa3106b5d25c068864e4974814944186664865b3aa93", "7d3b5648332a3ca5df0971442b796a4df472c09e63e9861756d982c2ff3d5fb4", "fa60630407415ac643265feb92f467340dd4bc63fb3f37cf308a6619436cb898"}
+		for n := range hashes {
+			if hashes[n] != expected[n] {
+				return nil, fmt.Errorf("fixture mismatch")
+			}
+		}
+		return map[string]any{"state": "passed", "frame": "passed", "sidb": "passed", "synthetic": true, "revision": "ef98227"}, nil
+	case "inspect":
+		z, e := zip.OpenReader(r.Source)
+		if e != nil {
+			return nil, e
+		}
+		defer z.Close()
+		sinfs, supfs, images := 0, 0, 0
+		for _, f := range z.File {
+			if len(f.Name) > 5 && f.Name[len(f.Name)-5:] == ".sinf" {
+				sinfs++
+			}
+			if len(f.Name) > 5 && f.Name[len(f.Name)-5:] == ".supf" {
+				supfs++
+			}
+			if f.UncompressedSize64 > 32 {
+				rd, e := f.Open()
+				if e == nil {
+					var head [4]byte
+					rd.Read(head[:])
+					rd.Close()
+					if head == [4]byte{0xcf, 0xfa, 0xed, 0xfe} || head == [4]byte{0xca, 0xfe, 0xba, 0xbe} {
+						images++
+					}
+				}
+			}
+		}
+		d := fairplay.DoctorFairPlay("", r.Source, r.Model)
+		return map[string]any{"sinf_count": sinfs, "supf_count": supfs, "macho_candidates": images, "parsed_sinf_count": len(d.SINF), "model_supplied": r.Model != "", "enrollment_generation": "not implemented"}, nil
+	case "state":
+		return state.Evaluate(r.Input, nil)
+	case "frame":
+		return frame.Evaluate(r.Input, nil)
+	case "sidb":
+		return sidb.Recover(r.Frame, 2)
+	case "decrypt":
+		if r.Model == "" {
+			return nil, fmt.Errorf("model required")
+		}
+		v, e := fairplay.DecryptIPA(fairplay.DecryptOptions{InputPath: r.Source, OutputPath: r.Destination, ReportPath: r.Report, ModelPath: r.Model})
+		if e != nil {
+			return nil, e
+		}
+		return map[string]any{"images": v.EncryptedImages, "pages": v.DecryptedPages, "completed": true, "plaintext_authenticated": false}, nil
+	}
+	return nil, fmt.Errorf("unsupported operation")
+}
+
+//export WaffleFairPlayLab
+func WaffleFairPlayLab(input *C.char, output **C.uchar, length *C.size_t) C.int {
+	if input == nil || output == nil || length == nil {
+		return 1
+	}
+	var r labRequest
+	if json.Unmarshal([]byte(C.GoString(input)), &r) != nil {
+		return 1
+	}
+	start := time.Now()
+	v, e := labRun(r)
+	// Do not expose native error strings: they may contain private file paths/material.
+	result := map[string]any{"operation": r.Operation, "ok": e == nil, "milliseconds": time.Since(start).Milliseconds()}
+	if e != nil {
+		result["stage"] = r.Operation
+		result["code"] = "validation_failed"
+		message := strings.ToLower(e.Error())
+		for _, category := range []string{"model", "sinf", "supf", "codedirectory", "arm64", "zip", "permission", "space", "profile"} {
+			if strings.Contains(message, category) {
+				result["stage"] = r.Operation + "/" + category
+				break
+			}
+		}
+	} else {
+		result["result"] = v
+	}
+	data, e := json.Marshal(result)
+	if e != nil {
+		return 2
+	}
+	*output = (*C.uchar)(C.CBytes(data))
+	*length = C.size_t(len(data))
+	return 0
+}

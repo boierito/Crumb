@@ -8,6 +8,7 @@ struct SettingsView: View {
     @Environment(\.openURL) private var openURL
     
     @AppStorage("autoCleanApp") var autoCleanApp: Bool = true
+    @State private var fairPlayLab = false
     @StateObject private var localizationManager = LocalizationManager.shared
     
     private var appVersionString: String {
@@ -19,6 +20,7 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
+                Section { Button("FairPlay Laboratory") { fairPlayLab = true } }
                 Section(header: HeaderLabel(text: "About".localized, icon: "info.circle")) {
                     VStack(alignment: .leading, spacing: 10) {
                         AppInfoCell()
@@ -73,6 +75,7 @@ struct SettingsView: View {
                     LinkCreditCell(image: Image(systemName: "shippingbox"), name: "majd / ipatool", description: "MIT-licensed reference for SAP, Apple authentication and App Store downloads.", url: "https://github.com/majd/ipatool")
                 }
             }
+            .sheet(isPresented: $fairPlayLab) { FairPlayLabView() }
             .navigationTitle("Settings".localized)
             .toolbar {
                 if !embedded { ToolbarItem(placement: .topBarTrailing) {

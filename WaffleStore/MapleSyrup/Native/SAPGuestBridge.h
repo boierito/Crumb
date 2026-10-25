@@ -16,4 +16,5 @@ int WafflePrepareIPA(char *source, char *destination, unsigned char *input, size
 
 int WaffleInspectIPA(char *url, char *bundle, unsigned char **output, size_t *outputLength);
 int WaffleDecryptIPA(char *source, char *destination, char *report, char *model);
+int WaffleFairPlayLab(char *input, unsigned char **output, size_t *length);
 #endif

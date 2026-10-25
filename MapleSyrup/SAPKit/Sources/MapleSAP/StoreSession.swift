@@ -14,13 +14,16 @@ public actor StoreSession {
     private var busy = false
     private let sleep: (TimeInterval) async throws -> Void
     private let progress: (StoreStage) async -> Void
+    private let capture: (@Sendable (FairPlayTransaction) async -> Void)?
     private let diagnostic: (String) async -> Void
     public init(account: StoreAccount, identity: MachineIdentity, transport: AuthenticationTransport,
                 generator: KBSyncGenerator, persistence: KBSyncPersistence = NoKBSyncPersistence(),
                 progress: @escaping (StoreStage) async -> Void = { _ in },
                 diagnostic: @escaping (String) async -> Void = { _ in },
+                capture: (@Sendable (FairPlayTransaction) async -> Void)? = nil,
                 sleep: @escaping (TimeInterval) async throws -> Void = { try await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000)) }) throws {
         try account.validate(identity: identity)
+        self.capture = capture
         self.account = account; self.identity = identity; self.transport = transport
         self.generator = generator; self.persistence = persistence; self.sleep = sleep; self.progress = progress; self.diagnostic = diagnostic
     }
@@ -170,7 +173,11 @@ public actor StoreSession {
         body["serialNumber"] = (Data([0x54, 0xc8, 0xb0, 0xa9, 0x88]) + identity.hardwareID.dropFirst(2)).base64EncodedString()
         await progress(.ent)
         let root = try await post(url, body: body, token: true, ent: true)
-        return try StoreParsing.download(root, app: app, version: version, email: account.email)
+        let result = try StoreParsing.download(root, app: app, version: version, email: account.email)
+        if let capture {
+            await capture(FairPlayTransaction(kbsync: blob, keybag: FairPlayTransaction.keybag(root), sinfs: result.sinfs))
+        }
+        return result
     }
     private func payload(_ app: StoreApp, version: String, key: String) -> [String: Any] {
         ["creditDisplay": "", "guid": identity.guid, "salableAdamId": NSNumber(value: UInt64(app.id) ?? 0), "serialNumber": "0", key: version]

@@ -62,3 +62,10 @@ Processing runs offline on the device. The original IPA is preserved. Export the
 result before closing the sheet; temporary outputs and the imported model copy
 are removed when finished. The exported IPA must be signed before installation.
 The decoder is experimental; on-device compatibility still needs validation.
+
+### FairPlay Laboratory
+
+Settings → FairPlay Laboratory provides on-device synthetic self-tests,
+transaction capture, IPA inspection, four visible log panels and private export.
+It does not yet generate enrollment from an Apple login. See the
+[device test guide](docs/FAIRPLAY_LAB.md) for the exact procedure and limitations.
