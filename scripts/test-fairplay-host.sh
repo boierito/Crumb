@@ -11,7 +11,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 REV=ef98227e061838320424744d21a513baba7ade28
-curl -fL --retry 3 "https://github.com/DrWhax/ipatool/archive/$REV.tar.gz" -o "$WORK/fairplay.tar.gz"
+cp "$ROOT/third_party/archives/ipatool-fairplay-$REV.tar.gz" "$WORK/fairplay.tar.gz"
 python3 - "$WORK/fairplay.tar.gz" <<'PY'
 import hashlib, pathlib, sys
 if hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest() != '49f169ef2e14c89e3b55a9528057e7db66f236ca5425ff00e47d32f64dddf44d':

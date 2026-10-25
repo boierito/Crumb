@@ -39,7 +39,7 @@ for name in ['assets.go','storeagent.go']:
 PY
 # Portable offline decoder only; preserve the existing SAP guest revision.
 FAIRPLAY_REV=ef98227e061838320424744d21a513baba7ade28
-curl -fL --retry 3 "https://github.com/DrWhax/ipatool/archive/$FAIRPLAY_REV.tar.gz" -o "$WORK/fairplay.tar.gz"
+cp "$ROOT/third_party/archives/ipatool-fairplay-$FAIRPLAY_REV.tar.gz" "$WORK/fairplay.tar.gz"
 python3 - "$WORK/fairplay.tar.gz" <<'CHECK'
 import hashlib, sys
 if hashlib.sha256(open(sys.argv[1], 'rb').read()).hexdigest() != '49f169ef2e14c89e3b55a9528057e7db66f236ca5425ff00e47d32f64dddf44d':

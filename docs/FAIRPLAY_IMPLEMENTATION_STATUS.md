@@ -396,3 +396,15 @@ La compilación nativa deja de recompilar dos veces el enorme CFG para ejecutar
 los mismos tests de host: las suites completas rawsource/lab siguen en el job
 Linux `fairplay-portable`, y el build nativo compila el motor para iOS y ejecuta
 las suites state/frame/SIDB y los checks SAP existentes.
+
+
+### Reproducibilidad de las dependencias de 23033
+
+La primera ejecución de CI de la 23033 falló al descargar fuentes: las dos URLs
+fijadas de DrWhax/ipatool pasaron a devolver HTTP 404. No fue un fallo de la nueva
+validación de locks. Se preservaron en `third_party/archives` ambas distribuciones
+públicas previamente fijadas, con **los mismos SHA-256 ya verificados**. La de
+`ef98227` se reprodujo desde el objeto Git local y coincidió byte por byte con el
+hash histórico; la de `f7242cc` es la descarga original verificada. Build y tests
+las leen ahora desde el checkout, conservando las comprobaciones de integridad
+y licencias incluidas. No contienen capturas privadas ni modelos recuperados.
