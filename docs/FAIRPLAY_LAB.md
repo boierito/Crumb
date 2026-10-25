@@ -90,3 +90,31 @@ does not establish whether the live same-context transaction will be accepted.
 The fresh transaction path now executes this actual operation, rather than only
 retaining the response. Download and export remain available after a consumer
 rejection. Portable enrollment recovery remains unimplemented.
+
+## Build 23025: correct the virtual filesystem operations used by import
+
+The supplied v3 control verified all manifest hashes and confirmed native
+-42023 with no nonempty state. A local syscall trace found that F_GETPATH and
+lstat still used the generic failing stubs, despite referring to virtual nodes.
+The laboratory now models descriptor flags and F_GETPATH, stat/lstat of existing
+virtual nodes, opaque FSRef round trips, and the requested Carbon catalog
+permissions operations. Unknown security-object requests remain rejected.
+
+Catalog layouts follow Files.h in the macOS 10.9 SDK: FSRef is opaque (80 bytes);
+FSCatalogInfo is packed to 2-byte alignment, and the LP64 permissions mode is at
+byte 66. These guest structures never become native host filesystem references.
+Permission changes affect the isolated VFS only; private app captures retain
+their real iOS file protection and 0600 permissions.
+
+Regression tests cover the actual F_GETPATH/lstat failure, invalid descriptors,
+FSRef lookup and round trips, the packed permissions layout, consistent inode
+IDs, and permission updates. The offline v3 replay then wrote 287–306 bytes of
+virtual state and advanced past the previously missing Carbon operations. Its
+final native status became -42052 with no emulator exception. This replay uses
+a freshly generated context, so it is not a substitute for a live same-context
+transaction. Neither writing a state file nor native status zero is treated as
+an enrollment model or authenticated plaintext.
+
+Header reference: phracker/MacOSX-SDKs, MacOSX10.9.sdk, CarbonCore/Headers/Files.h
+(Apple SDK declarations). No SDK header, Apple binary or private control data is
+bundled by this change.

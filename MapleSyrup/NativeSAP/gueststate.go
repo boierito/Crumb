@@ -5,18 +5,22 @@ import (
 	"io"
 	"path"
 	"strings"
+	"unicode/utf16"
 )
 
 type guestStateFile struct {
-	access     uint64
-	appendMode bool
-	position   int64
-	name       string
+	access          uint64
+	appendMode      bool
+	descriptorFlags uint64
+	position        int64
+	name            string
 }
 type guestStateFS struct {
-	files map[string][]byte
-	open  map[uint64]*guestStateFile
-	next  uint64
+	permissions map[string]guestPermissions
+	refs        map[[80]byte]string
+	files       map[string][]byte
+	open        map[uint64]*guestStateFile
+	next        uint64
 }
 
 func (s *shims) rfs() *guestStateFS {
@@ -210,11 +214,11 @@ func (s *shims) fsFstat() error {
 	if f == nil {
 		return s.fsError(9)
 	}
-	b := make([]byte, 144)
-	binary.LittleEndian.PutUint16(b[4:], 0100600)
-	binary.LittleEndian.PutUint64(b[8:], 1)
-	binary.LittleEndian.PutUint64(b[96:], uint64(len(s.rfs().files[f.name])))
-	binary.LittleEndian.PutUint32(b[112:], 4096)
+	perm := s.nodePermissions(f.name)
+	b := guestStatBytes(perm.mode, uint64(len(s.rfs().files[f.name])))
+	binary.LittleEndian.PutUint64(b[8:], uint64(guestNodeID(f.name)))
+	binary.LittleEndian.PutUint32(b[16:], perm.uid)
+	binary.LittleEndian.PutUint32(b[20:], perm.gid)
 	if e = s.engine.MemWrite(out, b); e != nil {
 		return e
 	}
@@ -244,6 +248,12 @@ func (s *shims) enableGuestState() error {
 		{[]string{"_open", "_open$UNIX2003"}, s.guestOpen}, {[]string{"_read", "_read$UNIX2003"}, s.guestRead},
 		{[]string{"_write", "_write$UNIX2003"}, s.fsWrite}, {[]string{"_lockf", "_fsync"}, s.fsLock},
 		{[]string{"_close", "_close$UNIX2003"}, s.fsClose}, {[]string{"_lseek", "_lseek$UNIX2003"}, s.fsSeek},
+		{[]string{"_FSSetCatalogInfo"}, s.fsSetCatalogInfo},
+		{[]string{"_FSGetCatalogInfo"}, s.fsGetCatalogInfo},
+		{[]string{"_FSPathMakeRef"}, s.fsPathMakeRef},
+		{[]string{"_FSRefMakePath"}, s.fsRefMakePath},
+		{[]string{"_fcntl", "_fcntl$UNIX2003"}, s.fsFcntl},
+		{[]string{"_lstat", "_lstat$INODE64", "_stat", "_stat$INODE64"}, s.fsLstat},
 		{[]string{"_fstat", "_fstat$INODE64"}, s.fsFstat}, {[]string{"_mkdir"}, s.fsMkdir}, {[]string{"_Gestalt"}, s.guestGestalt},
 	} {
 		for _, name := range entry.names {
@@ -330,4 +340,422 @@ func (s *shims) guestStateSnapshot() map[string][]byte {
 		out[path.Base(name)] = append([]byte(nil), data...)
 	}
 	return out
+}
+
+// Darwin stat64 layout, shared by fstat and lstat. These are virtual nodes only.
+func guestStatBytes(mode uint16, size uint64) []byte {
+	b := make([]byte, 144)
+	binary.LittleEndian.PutUint32(b[0:], 1)
+	binary.LittleEndian.PutUint16(b[4:], mode)
+	binary.LittleEndian.PutUint16(b[6:], 1)
+	binary.LittleEndian.PutUint64(b[8:], 1)
+	binary.LittleEndian.PutUint64(b[96:], size)
+	binary.LittleEndian.PutUint64(b[104:], (size+511)/512)
+	binary.LittleEndian.PutUint32(b[112:], 4096)
+	return b
+}
+func (s *shims) fsLstat() error {
+	ptr, e := s.argument(0)
+	if e != nil {
+		return e
+	}
+	out, e := s.argument(1)
+	if e != nil {
+		return e
+	}
+	p, e := s.readCString(ptr)
+	if e != nil {
+		return e
+	}
+	var mode uint16
+	var size uint64
+	switch p {
+	case "/", "/Users":
+		mode = 0040755
+	case "/Users/Shared":
+		mode = 0041777
+	case storeAgentSCInfoPath:
+		mode = 0040700
+	default:
+		if !guestStatePath(p) {
+			return s.fsError(2)
+		}
+		data, ok := s.rfs().files[p]
+		if !ok {
+			return s.fsError(2)
+		}
+		mode = 0100600
+		size = uint64(len(data))
+	}
+	if out == 0 {
+		return s.fsError(14)
+	}
+	perm := s.nodePermissions(p)
+	mode = perm.mode
+	b := guestStatBytes(mode, size)
+	binary.LittleEndian.PutUint64(b[8:], uint64(guestNodeID(p)))
+	binary.LittleEndian.PutUint32(b[16:], perm.uid)
+	binary.LittleEndian.PutUint32(b[20:], perm.gid)
+	if e = s.engine.MemWrite(out, b); e != nil {
+		return e
+	}
+	return s.setResult(0)
+}
+func (s *shims) fsFcntl() error {
+	fd, e := s.argument(0)
+	if e != nil {
+		return e
+	}
+	command, e := s.argument(1)
+	if e != nil {
+		return e
+	}
+	file := s.rfs().open[fd]
+	if file == nil && fd != coreFPFile {
+		return s.fsError(9)
+	}
+	switch command {
+	case 1:
+		if file == nil {
+			return s.setResult(0)
+		}
+		return s.setResult(file.descriptorFlags)
+	case 2:
+		flags, e := s.argument(2)
+		if e != nil {
+			return e
+		}
+		if file != nil {
+			file.descriptorFlags = flags & 1
+		}
+		return s.setResult(0)
+	case 48, 51: // descriptor flags/advisory cache/sync; one isolated guest, no host descriptor.
+		return s.setResult(0)
+	case 3: // F_GETFL
+		if file == nil {
+			return s.setResult(0)
+		}
+		flags := file.access
+		if file.appendMode {
+			flags |= 8
+		}
+		return s.setResult(flags)
+	case 4: // F_SETFL changes append behavior, never the access mode.
+		flags, e := s.argument(2)
+		if e != nil {
+			return e
+		}
+		if file != nil {
+			file.appendMode = flags&8 != 0
+		}
+		return s.setResult(0)
+	case 8, 9: // F_SETLK/F_SETLKW: no other guest shares this filesystem.
+		return s.setResult(0)
+	case 50: // F_GETPATH, bounded to Darwin's MAXPATHLEN.
+		if file == nil {
+			return s.fsError(22)
+		}
+		out, e := s.argument(2)
+		if e != nil {
+			return e
+		}
+		if out == 0 {
+			return s.fsError(14)
+		}
+		if len(file.name) >= 1024 {
+			return s.fsError(63)
+		}
+		if e = s.engine.MemWrite(out, append([]byte(file.name), 0)); e != nil {
+			return e
+		}
+		return s.setResult(0)
+	default:
+		return s.fsError(22)
+	}
+}
+
+// FSRef is opaque to callers. This token is valid only within this isolated VFS.
+func (s *shims) fsPathMakeRef() error {
+	ptr, e := s.argument(0)
+	if e != nil {
+		return e
+	}
+	out, e := s.argument(1)
+	if e != nil {
+		return e
+	}
+	isDir, e := s.argument(2)
+	if e != nil {
+		return e
+	}
+	p, e := s.readCString(ptr)
+	if e != nil {
+		return e
+	}
+	directory := p == "/" || p == "/Users" || p == "/Users/Shared" || p == storeAgentSCInfoPath
+	if !directory {
+		if !guestStatePath(p) {
+			return s.setResult(0xffffffd5)
+		}
+		if _, ok := s.rfs().files[p]; !ok {
+			return s.setResult(0xffffffd5)
+		}
+	} // fnfErr
+	if out == 0 {
+		return s.setResult(0xffffffce)
+	}
+	fs := s.rfs()
+	if fs.refs == nil {
+		fs.refs = map[[80]byte]string{}
+	}
+	var token [80]byte
+	copy(token[:], "CrumbVFS")
+	found := false
+	for candidate, name := range fs.refs {
+		if name == p {
+			token = candidate
+			found = true
+			break
+		}
+	}
+	if !found {
+		if len(fs.refs) >= 64 {
+			return s.setResult(0xffffffce)
+		}
+		binary.LittleEndian.PutUint64(token[8:], uint64(len(fs.refs)+1))
+		fs.refs[token] = p
+	}
+	if e = s.engine.MemWrite(out, token[:]); e != nil {
+		return e
+	}
+	if isDir != 0 {
+		var value byte
+		if directory {
+			value = 1
+		}
+		if e = s.engine.MemWrite(isDir, []byte{value}); e != nil {
+			return e
+		}
+	}
+	return s.setResult(0)
+}
+func (s *shims) fsRefMakePath() error {
+	ref, e := s.argument(0)
+	if e != nil {
+		return e
+	}
+	out, e := s.argument(1)
+	if e != nil {
+		return e
+	}
+	maximum, e := s.argument(2)
+	if e != nil {
+		return e
+	}
+	bytes, e := s.engine.MemRead(ref, 80)
+	if e != nil {
+		return e
+	}
+	var token [80]byte
+	copy(token[:], bytes)
+	clear(bytes)
+	name, ok := s.rfs().refs[token]
+	if !ok || out == 0 || uint64(len(name)+1) > maximum {
+		return s.setResult(0xffffffce)
+	}
+	if e = s.engine.MemWrite(out, append([]byte(name), 0)); e != nil {
+		return e
+	}
+	return s.setResult(0)
+}
+
+func guestNodeID(p string) uint32 {
+	switch p {
+	case "/":
+		return 2
+	case "/Users":
+		return 3
+	case "/Users/Shared":
+		return 4
+	case storeAgentSCInfoPath:
+		return 5
+	}
+	id := uint32(2166136261)
+	for _, c := range []byte(p) {
+		id ^= uint32(c)
+		id *= 16777619
+	}
+	return id | 0x100
+}
+func (s *shims) fsGetCatalogInfo() error {
+	ref, e := s.argument(0)
+	if e != nil {
+		return e
+	}
+	mask, e := s.argument(1)
+	if e != nil {
+		return e
+	}
+	catalog, e := s.argument(2)
+	if e != nil {
+		return e
+	}
+	outName, e := s.argument(3)
+	if e != nil {
+		return e
+	}
+	spec, e := s.argument(4)
+	if e != nil {
+		return e
+	}
+	parent, e := s.argument(5)
+	if e != nil {
+		return e
+	}
+	if spec != 0 || mask & ^uint64(0xc41e) != 0 {
+		return s.setResult(0xffffffce)
+	}
+	bytes, e := s.engine.MemRead(ref, 80)
+	if e != nil {
+		return e
+	}
+	var token [80]byte
+	copy(token[:], bytes)
+	clear(bytes)
+	p, ok := s.rfs().refs[token]
+	if !ok {
+		return s.setResult(0xffffffce)
+	}
+	directory := p == "/" || p == "/Users" || p == "/Users/Shared" || p == storeAgentSCInfoPath
+	if catalog != 0 {
+		b := make([]byte, 148) // Files.h: #pragma pack(2), LP64 FSPermissionInfo includes an 8-byte pointer.
+		if mask&2 != 0 && directory {
+			binary.LittleEndian.PutUint16(b, 0x10)
+		}
+		if mask&4 != 0 {
+			binary.LittleEndian.PutUint16(b[2:], 1)
+		}
+		if mask&8 != 0 {
+			binary.LittleEndian.PutUint32(b[4:], guestNodeID(path.Dir(p)))
+		}
+		if mask&0x10 != 0 {
+			binary.LittleEndian.PutUint32(b[8:], guestNodeID(p))
+		}
+		if mask&0x400 != 0 {
+			perm := s.nodePermissions(p)
+			binary.LittleEndian.PutUint32(b[56:], perm.uid)
+			binary.LittleEndian.PutUint32(b[60:], perm.gid)
+			binary.LittleEndian.PutUint16(b[66:], perm.mode)
+		}
+		if mask&0x4000 != 0 && !directory {
+			size := uint64(len(s.rfs().files[p]))
+			binary.LittleEndian.PutUint64(b[108:], size)
+			binary.LittleEndian.PutUint64(b[116:], (size+4095)&^4095)
+		}
+		if e = s.engine.MemWrite(catalog, b); e != nil {
+			return e
+		}
+	} else if mask != 0 {
+		return s.setResult(0xffffffce)
+	}
+	if outName != 0 {
+		units := utf16.Encode([]rune(path.Base(p)))
+		if len(units) > 255 {
+			return s.setResult(0xffffffce)
+		}
+		b := make([]byte, 512)
+		binary.LittleEndian.PutUint16(b, uint16(len(units)))
+		for i, v := range units {
+			binary.LittleEndian.PutUint16(b[2+2*i:], v)
+		}
+		if e = s.engine.MemWrite(outName, b); e != nil {
+			return e
+		}
+	}
+	if parent != 0 {
+		var parentToken [80]byte
+		found := false
+		parentPath := path.Dir(p)
+		for candidate, name := range s.rfs().refs {
+			if name == parentPath {
+				parentToken = candidate
+				found = true
+				break
+			}
+		}
+		if !found {
+			if len(s.rfs().refs) >= 64 {
+				return s.setResult(0xffffffce)
+			}
+			copy(parentToken[:], "CrumbVFS")
+			binary.LittleEndian.PutUint64(parentToken[8:], uint64(len(s.rfs().refs)+1))
+			s.rfs().refs[parentToken] = parentPath
+		}
+		if e = s.engine.MemWrite(parent, parentToken[:]); e != nil {
+			return e
+		}
+	}
+	return s.setResult(0)
+}
+
+type guestPermissions struct {
+	uid, gid uint32
+	mode     uint16
+}
+
+func (s *shims) nodePermissions(p string) guestPermissions {
+	if v, ok := s.rfs().permissions[p]; ok {
+		return v
+	}
+	switch p {
+	case "/", "/Users":
+		return guestPermissions{mode: 0040755}
+	case "/Users/Shared":
+		return guestPermissions{mode: 0041777}
+	case storeAgentSCInfoPath:
+		return guestPermissions{mode: 0040700}
+	}
+	return guestPermissions{mode: 0100600}
+}
+func (s *shims) fsSetCatalogInfo() error {
+	ref, e := s.argument(0)
+	if e != nil {
+		return e
+	}
+	mask, e := s.argument(1)
+	if e != nil {
+		return e
+	}
+	info, e := s.argument(2)
+	if e != nil {
+		return e
+	}
+	if mask != 0x400 || info == 0 {
+		return s.setResult(0xffffffce)
+	}
+	b, e := s.engine.MemRead(ref, 80)
+	if e != nil {
+		return e
+	}
+	var token [80]byte
+	copy(token[:], b)
+	clear(b)
+	p, ok := s.rfs().refs[token]
+	if !ok {
+		return s.setResult(0xffffffce)
+	}
+	b, e = s.engine.MemRead(info, 148)
+	if e != nil {
+		return e
+	}
+	defer clear(b)
+	value := s.nodePermissions(p)
+	value.uid = binary.LittleEndian.Uint32(b[56:])
+	value.gid = binary.LittleEndian.Uint32(b[60:])
+	value.mode = value.mode&0170000 | binary.LittleEndian.Uint16(b[66:])&07777
+	if s.rfs().permissions == nil {
+		s.rfs().permissions = map[string]guestPermissions{}
+	}
+	s.rfs().permissions[p] = value
+	return s.setResult(0)
 }
