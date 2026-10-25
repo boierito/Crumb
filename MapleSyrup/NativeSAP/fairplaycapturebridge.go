@@ -195,7 +195,7 @@ func recoverCaptureEnrollment(source, ipa, destination string) (any, error) {
 	defer input.clear()
 	domains, err := fairplay.PortableEnrollmentInputs(ipa)
 	if err != nil {
-		return nil, recoveryFailure("ipa-inventory", "ipa_inventory_failed", err)
+		return nil, enrollmentInventoryFailure(err)
 	}
 	defer func() {
 		for _, domain := range domains {

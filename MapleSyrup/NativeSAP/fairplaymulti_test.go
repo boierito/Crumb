@@ -2,6 +2,9 @@ package fairplay
 
 import (
 	"archive/zip"
+	"bytes"
+	"encoding/binary"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -16,7 +19,9 @@ func TestImageSINFBoundaries(t *testing.T) {
 		{"main", "Payload/A.app/A", []string{"Payload/A.app/SC_Info/A.sinf"}, "Payload/A.app/SC_Info/A.sinf"},
 		{"extension", "Payload/A.app/PlugIns/B.appex/B", []string{"Payload/A.app/SC_Info/A.sinf", "Payload/A.app/PlugIns/B.appex/SC_Info/B.sinf"}, "Payload/A.app/PlugIns/B.appex/SC_Info/B.sinf"},
 		{"framework inherits owning app", "Payload/A.app/Frameworks/F.framework/F", []string{"Payload/A.app/SC_Info/A.sinf"}, "Payload/A.app/SC_Info/A.sinf"},
-		{"extension cannot inherit", "Payload/A.app/PlugIns/B.appex/B", []string{"Payload/A.app/SC_Info/A.sinf"}, ""},
+		{"extension shares app license", "Payload/A.app/PlugIns/B.appex/B", []string{"Payload/A.app/SC_Info/A.sinf"}, "Payload/A.app/SC_Info/A.sinf"},
+		{"nested app cannot inherit", "Payload/A.app/Watch/W.app/W", []string{"Payload/A.app/SC_Info/A.sinf"}, ""},
+		{"extension local ambiguity cannot inherit", "Payload/A.app/PlugIns/B.appex/B", []string{"Payload/A.app/SC_Info/A.sinf", "Payload/A.app/PlugIns/B.appex/SC_Info/C.sinf", "Payload/A.app/PlugIns/B.appex/SC_Info/D.sinf"}, ""},
 		{"unrelated app", "Payload/A.app/A", []string{"Payload/B.app/SC_Info/B.sinf"}, ""},
 		{"ambiguous exact", "Payload/A.app/A", []string{"Payload/A.app/SC_Info/A.sinf", "Payload/A.app/SC_Info/A.v5.sinf"}, ""},
 		{"exact beats unrelated", "Payload/A.app/A", []string{"Payload/A.app/SC_Info/A.sinf", "Payload/A.app/SC_Info/B.sinf"}, "Payload/A.app/SC_Info/A.sinf"},
@@ -104,5 +109,104 @@ func TestMultiSINFSelectsIndependentEnrollmentModels(t *testing.T) {
 	}
 	if _, err := resolveImageMaterials(inventory, files, registry); err == nil {
 		t.Fatal("accepted incomplete model registry")
+	}
+}
+
+// Match the reported topology: two encrypted ARM64 images, one application
+// license and one SUPF per image. Put the extension first to catch order bias.
+func sharedLicenseIPAFixture(t *testing.T, licenses map[string][]byte) string {
+	t.Helper()
+	target := filepath.Join(t.TempDir(), "shared.ipa")
+	file, err := os.Create(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := zip.NewWriter(file)
+	put := func(name string, data []byte) {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := entry.Write(data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	supf := make([]byte, 60)
+	supf[0] = 5
+	for offset, value := range map[int]uint32{4: 52, 8: 1, 12: 44, 16: cpuTypeARM64, 20: 0, 24: 1} {
+		binary.BigEndian.PutUint32(supf[offset:], value)
+	}
+	for _, member := range []string{"Payload/A.app/PlugIns/B.appex/B", "Payload/A.app/A"} {
+		blob := make([]byte, 8204)
+		copy(blob, thinHeader(true, true))
+		put(member, blob)
+		put(filepath.ToSlash(filepath.Dir(member))+"/SC_Info/"+filepath.Base(member)+".supf", supf)
+	}
+	for name, data := range licenses {
+		put(name, data)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return target
+}
+
+func TestPortableInputsSharedAppLicense(t *testing.T) {
+	license := []byte("synthetic-license")
+	source := sharedLicenseIPAFixture(t, map[string][]byte{"Payload/A.app/SC_Info/A.sinf": license})
+	inspection, err := InspectPortableIPA(source)
+	if err != nil || inspection["encrypted_images"] != 2 || inspection["sinf_count"] != 1 || inspection["supf_count"] != 2 {
+		t.Fatalf("fixture geometry: %v / %v", inspection, err)
+	}
+	inputs, err := PortableEnrollmentInputs(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inputs) != 1 || inputs[0].ExecutablePath != "/Payload/A.app/A" ||
+		!bytes.Equal(inputs[0].Files["A.sinf"], license) || inputs[0].SINFSHA256 != digest(license) {
+		t.Fatalf("wrong domain or representative: %v", inputs)
+	}
+	if _, found := inputs[0].Files["A.supf"]; !found {
+		t.Fatal("missing owner's SUPF")
+	}
+	archive, err := zip.OpenReader(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer archive.Close()
+	files := map[string]*zip.File{}
+	for _, file := range archive.File {
+		files[file.Name] = file
+	}
+	inventory := ipaInventory{images: []encryptedImage{{member: "Payload/A.app/A"}, {member: "Payload/A.app/PlugIns/B.appex/B"}}}
+	calls := 0
+	bound, err := bindImageMaterials(inventory, files, func(blob []byte) (KeyMaterial, error) {
+		calls++
+		if !bytes.Equal(blob, license) {
+			t.Fatal("wrong license")
+		}
+		return KeyMaterial{}, nil
+	})
+	if err != nil || calls != 1 || len(bound) != 2 {
+		t.Fatalf("shared domain binding: %v, calls=%d, images=%d", err, calls, len(bound))
+	}
+}
+
+func TestPortableInputsSafeFailureCodes(t *testing.T) {
+	for _, test := range []struct {
+		licenses map[string][]byte
+		code     string
+	}{
+		{map[string][]byte{}, "ipa_sinf_missing"},
+		{map[string][]byte{"Payload/A.app/SC_Info/A.sinf": {}, "Payload/A.app/SC_Info/C.sinf": {}}, "ipa_sinf_ambiguous"},
+	} {
+		_, err := PortableEnrollmentInputs(sharedLicenseIPAFixture(t, test.licenses))
+		var classified *EnrollmentInputError
+		if !errors.As(err, &classified) || classified.Code != test.code || err.Error() != test.code {
+			t.Fatalf("unsafe or wrong diagnostic: %v", err)
+		}
 	}
 }

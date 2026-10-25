@@ -3,15 +3,17 @@ package fairplay
 
 import (
 	"archive/zip"
+	"errors"
 	"fmt"
 	"os"
 	"path"
+	"sort"
 	"strings"
 )
 
 // Bind by executable name first, then by the nearest enclosing bundle's sole
-// SC_Info license. Never inherit a containing app's license across an appex/app
-// boundary, and never guess between licenses based on ZIP order.
+// SC_Info license. Extensions and frameworks can share their containing app's
+// license. Never cross an app boundary or guess between licenses by ZIP order.
 func imageSINFMember(member string, names map[string]bool) (string, error) {
 	directory, base := path.Dir(member), path.Base(member)
 	var exact []string
@@ -25,7 +27,7 @@ func imageSINFMember(member string, names map[string]bool) (string, error) {
 		return exact[0], nil
 	}
 	if len(exact) > 1 {
-		return "", fmt.Errorf("%s: ambiguous executable SINF", member)
+		return "", enrollmentInputFailure("ipa_sinf_ambiguous", nil)
 	}
 	for dir := directory; dir != "." && dir != "/"; dir = path.Dir(dir) {
 		var candidates []string
@@ -39,13 +41,30 @@ func imageSINFMember(member string, names map[string]bool) (string, error) {
 			return candidates[0], nil
 		}
 		if len(candidates) > 1 {
-			return "", fmt.Errorf("%s: ambiguous bundle SINF", member)
+			return "", enrollmentInputFailure("ipa_sinf_ambiguous", nil)
 		}
-		if strings.HasSuffix(dir, ".app") || strings.HasSuffix(dir, ".appex") {
+		if strings.HasSuffix(dir, ".app") {
 			break
 		}
 	}
-	return "", fmt.Errorf("%s: no associated SINF", member)
+	return "", enrollmentInputFailure("ipa_sinf_missing", nil)
+}
+
+// EnrollmentInputError exposes a fixed diagnostic code, never archive paths or
+// license bytes. Keep the private cause for internal error chaining only.
+type EnrollmentInputError struct {
+	Code  string
+	cause error
+}
+
+func (e *EnrollmentInputError) Error() string { return e.Code }
+func (e *EnrollmentInputError) Unwrap() error { return e.cause }
+func enrollmentInputFailure(code string, cause error) error {
+	var classified *EnrollmentInputError
+	if errors.As(cause, &classified) {
+		return cause
+	}
+	return &EnrollmentInputError{Code: code, cause: cause}
 }
 
 type imageMaterial struct {
@@ -135,7 +154,7 @@ type PortableEnrollmentInput struct {
 func PortableEnrollmentInputs(source string) ([]PortableEnrollmentInput, error) {
 	inventory, archive, err := openIPAInventory(source)
 	if err != nil {
-		return nil, err
+		return nil, enrollmentInputFailure("ipa_structure_invalid", err)
 	}
 	defer archive.Close()
 	files := map[string]*zip.File{}
@@ -155,6 +174,28 @@ func PortableEnrollmentInputs(source string) ([]PortableEnrollmentInput, error) 
 			}
 		}
 	}()
+	// Prefer the executable beside the owning SC_Info directory. An extension
+	// preceding its main executable in ZIP order must not become the enrollment
+	// target just because they share a license.
+	owners := map[string]string{}
+	for _, image := range inventory.images {
+		sinf, err := imageSINFMember(image.member, names)
+		if err != nil {
+			return nil, err
+		}
+		previous := owners[sinf]
+		score := func(member string) int {
+			if path.Dir(member) == path.Dir(path.Dir(sinf)) {
+				return 0
+			}
+			return strings.Count(member, "/") + 1
+		}
+		if previous == "" || score(image.member) < score(previous) ||
+			(score(image.member) == score(previous) && image.member < previous) {
+			owners[sinf] = image.member
+		}
+	}
+	sort.Slice(inventory.images, func(i, j int) bool { return inventory.images[i].member < inventory.images[j].member })
 	seen := map[string]bool{}
 	total := 0
 	for _, image := range inventory.images {
@@ -162,7 +203,7 @@ func PortableEnrollmentInputs(source string) ([]PortableEnrollmentInput, error) 
 		if err != nil {
 			return nil, err
 		}
-		if seen[sinf] {
+		if seen[sinf] || owners[sinf] != image.member {
 			continue
 		}
 		seen[sinf] = true
@@ -174,17 +215,20 @@ func PortableEnrollmentInputs(source string) ([]PortableEnrollmentInput, error) 
 			{image.supfMember, path.Base(image.supfMember)},
 		} {
 			file := files[item.member]
-			if file == nil || file.UncompressedSize64 > 64<<20 {
-				return nil, fmt.Errorf("portable enrollment input limit")
+			if file == nil {
+				return nil, enrollmentInputFailure("ipa_input_member_missing", nil)
+			}
+			if file.UncompressedSize64 > 64<<20 {
+				return nil, enrollmentInputFailure("ipa_input_size_limit", nil)
 			}
 			data, err := zipBytes(file)
 			if err != nil {
-				return nil, err
+				return nil, enrollmentInputFailure("ipa_input_read_failed", err)
 			}
 			input.Files[item.key] = data
 			total += len(data)
 			if total > 128<<20 {
-				return nil, fmt.Errorf("portable enrollment input limit")
+				return nil, enrollmentInputFailure("ipa_input_size_limit", nil)
 			}
 			if item.member == sinf {
 				result[len(result)-1].SINFSHA256 = digest(data)

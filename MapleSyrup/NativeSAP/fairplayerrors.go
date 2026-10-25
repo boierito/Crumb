@@ -2,8 +2,22 @@ package main
 
 import (
 	"errors"
+	"github.com/majd/ipatool/v2/internal/fairplay"
 	"strings"
 )
+
+func enrollmentInventoryFailure(err error) error {
+	code := "ipa_inventory_failed"
+	var classified *fairplay.EnrollmentInputError
+	if errors.As(err, &classified) {
+		switch classified.Code {
+		case "ipa_structure_invalid", "ipa_sinf_missing", "ipa_sinf_ambiguous",
+			"ipa_input_member_missing", "ipa_input_size_limit", "ipa_input_read_failed":
+			code = classified.Code
+		}
+	}
+	return recoveryFailure("ipa-inventory", code, err)
+}
 
 // Only fixed stage/code literals are surfaced. The original error can contain
 // account paths or state and must never be serialized by the C bridge.

@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/majd/ipatool/v2/internal/fairplay"
 	"github.com/majd/ipatool/v2/wafflebridge/recovery/frame"
 	"github.com/majd/ipatool/v2/wafflebridge/recovery/rawsource"
 	"github.com/majd/ipatool/v2/wafflebridge/recovery/state"
@@ -147,7 +148,7 @@ func TestRetainedCaptureAllowsFlatLockNames(t *testing.T) {
 			}
 			_, err = recoverCaptureEnrollment(source, filepath.Join(t.TempDir(), "missing.ipa"), filepath.Join(t.TempDir(), "output"))
 			stage, code := labErrorDetails("recover-capture", err)
-			if stage != "recover-capture/ipa-inventory" || code != "ipa_inventory_failed" {
+			if stage != "recover-capture/ipa-inventory" || code != "ipa_structure_invalid" {
 				t.Fatalf("did not reach IPA inventory: %s / %s", stage, code)
 			}
 		})
@@ -164,6 +165,20 @@ func TestRecoveryErrorDetailsNeverExposeCause(t *testing.T) {
 	document, _ := json.Marshal(map[string]string{"stage": stage, "code": code})
 	if bytes.Contains(document, []byte("PRIVATE")) {
 		t.Fatal("private cause leaked")
+	}
+}
+
+func TestInventoryFailureOnlyExposesAllowedCodes(t *testing.T) {
+	for _, test := range []struct{ input, want string }{
+		{"ipa_sinf_missing", "ipa_sinf_missing"},
+		{"ipa_sinf_ambiguous", "ipa_sinf_ambiguous"},
+		{"PRIVATE-UNTRUSTED-CODE", "ipa_inventory_failed"},
+	} {
+		err := enrollmentInventoryFailure(fmt.Errorf("PRIVATE-PATH: %w", &fairplay.EnrollmentInputError{Code: test.input}))
+		stage, code := labErrorDetails("recover-capture", err)
+		if stage != "recover-capture/ipa-inventory" || code != test.want {
+			t.Fatalf("unexpected safe diagnostic: %s / %s", stage, code)
+		}
 	}
 }
 

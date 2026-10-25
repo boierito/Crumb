@@ -408,3 +408,36 @@ públicas previamente fijadas, con **los mismos SHA-256 ya verificados**. La de
 hash histórico; la de `f7242cc` es la descarga original verificada. Build y tests
 las leen ahora desde el checkout, conservando las comprobaciones de integridad
 y licencias incluidas. No contienen capturas privadas ni modelos recuperados.
+
+
+## 15. Inventario de dominios compartidos — build 23034
+
+El diagnóstico V2 real de 23033 ya supera la captura y rechaza en
+`recover-capture/ipa-inventory`, después de una inspección correcta de dos
+imágenes ARM64, un SINF y dos SUPF. No contiene la causa privada, de modo que
+no demuestra por sí solo cuál asociación falló.
+
+Se identificó una restricción artificial en la asociación añadida: la búsqueda
+se detenía en `.appex`, impidiendo compartir el SINF de la app contenedora.
+23034 permite que extensiones/frameworks hereden el SINF único de su app.
+Licencias locales exactas siguen teniendo prioridad; ambigüedades se rechazan
+antes de subir al padre; nunca se atraviesa un límite `.app` hacia otra app.
+Esto sustituye la regla anterior que prohibía herencia en `.appex`.
+La asociación sólo selecciona material candidato; no prueba claves ni elimina
+las comprobaciones posteriores del modelo, SINF y páginas.
+
+La recuperación elige el ejecutable junto al SC_Info propietario cuando varios
+comparten licencia, independientemente del orden ZIP. Un fixture sintético de
+dos Mach-O ARM64 + un SINF + dos SUPF, con extensión primero, pasa inspección
+pero reproduce `ipa_sinf_missing` con el límite anterior. Con el cambio, ambos
+seleccionan el mismo dominio y el ejecutable principal representa la recuperación.
+Se mantienen pruebas de licencias independientes, ambigüedad y apps anidadas.
+
+Los errores de inventario ahora distinguen códigos fijos sin rutas ni bytes:
+`ipa_structure_invalid`, `ipa_sinf_missing`, `ipa_sinf_ambiguous`,
+`ipa_input_member_missing`, `ipa_input_size_limit`, `ipa_input_read_failed`.
+El bridge admite sólo esa lista; las causas privadas no se exportan.
+
+Las suites decoder/lab pasan con race detector. Falta repetir en el dispositivo
+con la IPA real: no se afirma que ésta sea la causa exacta del V2, que el SIDB
+legado sea compatible con el runtime portátil ni que haya plaintext validado.
