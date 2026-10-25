@@ -83,7 +83,7 @@ nonisolated enum NativeFairPlay {
         defer { if accessing { model.stopAccessingSecurityScopedResource() } }
         try manager.copyItem(at: model, to: privateModel)
         try manager.setAttributes([.posixPermissions: 0o600,
-                                   .protectionKey: FileProtectionType.complete], atPath: privateModel.path)
+                                   .protectionKey: FileProtectionType.complete], ofItemAtPath: privateModel.path)
         defer { try? manager.removeItem(at: privateModel) }
         let output = directory.appendingPathComponent("App.decrypted.ipa")
         let report = directory.appendingPathComponent("report.json")
