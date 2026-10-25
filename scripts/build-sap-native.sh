@@ -56,12 +56,14 @@ cp "$ROOT/MapleSyrup/NativeSAP/fairplaymulti_test.go" "$SOURCE/internal/fairplay
 python3 "$ROOT/scripts/prepare-fairplay-portable.py" "$WORK/ipatool-$FAIRPLAY_REV/tools/fairplay-recovery" "$SOURCE/wafflebridge/recovery"
 bash "$ROOT/scripts/fetch-fairplay-raw.sh" "$SOURCE/wafflebridge/recovery/rawsource"
 cp "$ROOT/MapleSyrup/NativeSAP/captureanalysis.go" "$SOURCE/wafflebridge/"
-cp "$ROOT/MapleSyrup/NativeSAP/fairplayenrollment.go" "$ROOT/MapleSyrup/NativeSAP/fairplaycapturebridge.go" "$SOURCE/wafflebridge/"
+cp "$ROOT/MapleSyrup/NativeSAP/fairplayenrollment.go" "$ROOT/MapleSyrup/NativeSAP/fairplaycapturebridge.go" "$ROOT/MapleSyrup/NativeSAP/fairplayerrors.go" "$SOURCE/wafflebridge/"
 mkdir -p "$SOURCE/wafflebridge/labtest"
-cp "$ROOT/MapleSyrup/NativeSAP/fairplayenrollment.go" "$ROOT/MapleSyrup/NativeSAP/fairplayenrollment_test.go" "$ROOT/MapleSyrup/NativeSAP/fairplaycapturebridge.go" "$ROOT/MapleSyrup/NativeSAP/fairplaycapturebridge_test.go" "$SOURCE/wafflebridge/labtest/"
+cp "$ROOT/MapleSyrup/NativeSAP/fairplayenrollment.go" "$ROOT/MapleSyrup/NativeSAP/fairplayenrollment_test.go" "$ROOT/MapleSyrup/NativeSAP/fairplaycapturebridge.go" "$ROOT/MapleSyrup/NativeSAP/fairplaycapturebridge_test.go" "$ROOT/MapleSyrup/NativeSAP/fairplayerrors.go" "$SOURCE/wafflebridge/labtest/"
 cp "$ROOT/MapleSyrup/NativeSAP/fairplaylab.go" "$ROOT/MapleSyrup/NativeSAP/fairplaylabcore.go" "$SOURCE/wafflebridge/"
 cp "$ROOT/MapleSyrup/NativeSAP/captureanalysis.go" "$ROOT/MapleSyrup/NativeSAP/captureanalysis_test.go" "$ROOT/MapleSyrup/NativeSAP/fairplaylabcore.go" "$ROOT/MapleSyrup/NativeSAP/fairplaylab_test.go" "$SOURCE/wafflebridge/labtest/"
-(cd "$SOURCE" && go test -p=1 ./wafflebridge/recovery/... ./wafflebridge/labtest)
+# Full rawsource/lab race tests run in the Linux fairplay-portable CI job.
+# Compile the large raw CFG once for iOS here, rather than twice for host tests.
+(cd "$SOURCE" && go test -p=1 ./wafflebridge/recovery/state ./wafflebridge/recovery/frame ./wafflebridge/recovery/sidb)
 cp "$ROOT/MapleSyrup/NativeSAP/gueststate.go" "$SOURCE/internal/sap/machine/"
 python3 - "$SOURCE/internal/sap/machine/shims.go" <<'STATEPATCH'
 import pathlib,sys

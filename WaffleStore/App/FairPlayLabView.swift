@@ -106,7 +106,7 @@ nonisolated enum FairPlayNative {
 @MainActor
 final class FairPlayLab: ObservableObject {
     @Published var busy = false
-    @Published var logs = ["Components": "Pending", "Transaction": "Pending", "Inspection": "Pending", "Enrollment": "Pending", "Decryption": "Blocked: import a compatible model after selecting an IPA."]
+    @Published var logs = ["Components": "Pending", "Transaction": "Pending", "Inspection": "Pending", "Enrollment": "Pending", "Decryption": "Pending: run enrollment recovery or import a compatible model."]
     @Published var output: URL?
     @Published var diagnostic: URL?
     @Published var captureArchive: URL?
@@ -215,7 +215,7 @@ final class FairPlayLab: ObservableObject {
         perform {
             let result = try await Task.detached { try FairPlayNative.run("inspect", source: input) }.value
             self.log("Inspection", result)
-            self.log("Inspection", "Model recovery requires a modern native enrollment folder. This legacy keybag capture does not supply the required native state.")
+            self.log("Inspection", "Inspection reports encryption geometry only. Attempt recovery from current capture tests enrollment compatibility; inspection does not decrypt pages.")
         }
     }
     func recoverCurrentCapture() {
@@ -245,7 +245,10 @@ final class FairPlayLab: ObservableObject {
                 self.enrollmentStages["Enrollment frame verified"] = true
                 self.enrollmentStages["Portable model validated"] = true
                 self.log("Decryption", "Capture-derived model matched the target IPA. Plaintext is not independently authenticated; completion does not prove 100% correctness.")
-            } else { try? FileManager.default.removeItem(at: destination) }
+            } else {
+                try? FileManager.default.removeItem(at: destination)
+                self.log("Decryption", "Recovery rejected before producing an IPA. See Enrollment for the failing stage and code.")
+            }
         }
     }
     func recoverEnrollment(_ selected: URL) {
@@ -379,7 +382,7 @@ final class FairPlayLab: ObservableObject {
         input = nil; output = nil; diagnostic = nil; captureArchive = nil; transactions = 0
         auditedTransactions = -1
         enrollmentStages = [:]
-        logs = ["Components": "Pending", "Transaction": "Pending", "Inspection": "Pending", "Enrollment": "Pending", "Decryption": "Blocked: compatible model required."]
+        logs = ["Components": "Pending", "Transaction": "Pending", "Inspection": "Pending", "Enrollment": "Pending", "Decryption": "Pending: run enrollment recovery or import a compatible model."]
     }
 }
 

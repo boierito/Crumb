@@ -15,5 +15,5 @@ func InspectPortableIPA(path string) (map[string]any, error) {
 		pages += count
 		images = append(images, map[string]any{"cpu_type": image.layout.cpuType, "cpu_subtype": image.layout.cpuSubtype, "encrypted_pages": count, "slice_bytes": image.sliceSize})
 	}
-	return map[string]any{"encrypted_images": len(images), "encrypted_pages": pages, "sinf_count": len(inventory.sinfMembers), "supf_count": len(inventory.supfTables), "architectures": images, "enrollment_generation": "not implemented"}, nil
+	return map[string]any{"encrypted_images": len(images), "encrypted_pages": pages, "sinf_count": len(inventory.sinfMembers), "supf_count": len(inventory.supfTables), "architectures": images, "enrollment_generation": "requires validated enrollment input", "retained_capture_recovery": "experimental"}, nil
 }

@@ -31,6 +31,14 @@ func (input legacyEnrollmentInput) clear() {
 // Validate the capture contract, then recheck the exact bytes used below against
 // its manifest. The state remains an opaque container, never a sliced frame/key.
 func readLegacyEnrollmentInput(source string) (legacyEnrollmentInput, error) {
+	input, err := readLegacyEnrollmentInputUnchecked(source)
+	if err != nil {
+		return input, recoveryFailure("capture-input", "capture_input_invalid", err)
+	}
+	return input, nil
+}
+
+func readLegacyEnrollmentInputUnchecked(source string) (legacyEnrollmentInput, error) {
 	var result legacyEnrollmentInput
 	if _, err := analyzeCapture(source); err != nil {
 		return result, err
@@ -115,7 +123,7 @@ func readLegacyEnrollmentInput(source string) (legacyEnrollmentInput, error) {
 	return result, nil
 }
 
-func decodeLegacyEnrollment(context, consumer []byte) (legacyEnrollmentInput, error) {
+func decodeLegacyEnrollment(context, consumer []byte) (result legacyEnrollmentInput, err error) {
 	var identity struct {
 		Schema   string `json:"schema"`
 		Hardware []byte `json:"hardware_id"`
@@ -128,23 +136,51 @@ func decodeLegacyEnrollment(context, consumer []byte) (legacyEnrollmentInput, er
 		Status    int32             `json:"native_status"`
 		Files     map[string][]byte `json:"state_files"`
 	}
-	result := legacyEnrollmentInput{}
-	if json.Unmarshal(context, &identity) != nil || json.Unmarshal(consumer, &state) != nil || identity.Schema != "crumb-fairplay-context-v2" || identity.Producer != "retained-storeagent" || len(identity.Hardware) != 6 || state.Consumer != "storeagent-10.9-import-keybag" || !state.Completed || !state.Imported || state.Status != 0 || len(state.Files["SC Info.sidb"]) == 0 || len(state.Files) > 32 {
-		clear(identity.Hardware)
-		for _, data := range state.Files {
-			clear(data)
-		}
-		return result, fmt.Errorf("accepted retained consumer and original hardware identity required")
-	}
-	total := 0
-	for name, data := range state.Files {
-		total += len(data)
-		if path.Base(name) != name || strings.Contains(name, "\\") || !strings.HasPrefix(name, "SC Info.") || len(data) > 4<<20 || total > 4<<20 {
+	defer func() {
+		if err != nil {
 			clear(identity.Hardware)
 			for _, data := range state.Files {
 				clear(data)
 			}
-			return result, fmt.Errorf("invalid retained state files")
+		}
+	}()
+	if e := json.Unmarshal(context, &identity); e != nil {
+		return result, recoveryFailure("identity", "capture_context_json_invalid", e)
+	}
+	if identity.Schema != "crumb-fairplay-context-v2" {
+		return result, recoveryFailure("identity", "capture_context_schema_invalid", nil)
+	}
+	if identity.Producer != "retained-storeagent" {
+		return result, recoveryFailure("identity", "capture_producer_mismatch", nil)
+	}
+	if len(identity.Hardware) != 6 {
+		return result, recoveryFailure("identity", "capture_hardware_length_invalid", nil)
+	}
+	if e := json.Unmarshal(consumer, &state); e != nil {
+		return result, recoveryFailure("consumer-state", "consumer_state_json_invalid", e)
+	}
+	if state.Consumer != "storeagent-10.9-import-keybag" {
+		return result, recoveryFailure("consumer-state", "consumer_kind_mismatch", nil)
+	}
+	if !state.Completed || !state.Imported || state.Status != 0 {
+		return result, recoveryFailure("consumer-state", "consumer_import_not_accepted", nil)
+	}
+	if len(state.Files["SC Info.sidb"]) == 0 {
+		return result, recoveryFailure("consumer-state", "legacy_sidb_missing", nil)
+	}
+	if len(state.Files) > 32 {
+		return result, recoveryFailure("consumer-state", "state_file_count_limit", nil)
+	}
+	total := 0
+	for name, data := range state.Files {
+		// Match the flat isolated guest filesystem contract. Lock names do
+		// not have to share the SIDB's prefix. No host paths are exposed.
+		if name == "" || name == "." || name == ".." || path.Base(name) != name || strings.Contains(name, "\\") {
+			return result, recoveryFailure("state-files", "state_filename_invalid", nil)
+		}
+		total += len(data)
+		if len(data) > 4<<20 || total > 4<<20 {
+			return result, recoveryFailure("state-files", "state_byte_limit", nil)
 		}
 	}
 	result.hardware, result.files = identity.Hardware, state.Files
@@ -159,7 +195,7 @@ func recoverCaptureEnrollment(source, ipa, destination string) (any, error) {
 	defer input.clear()
 	domains, err := fairplay.PortableEnrollmentInputs(ipa)
 	if err != nil {
-		return nil, err
+		return nil, recoveryFailure("ipa-inventory", "ipa_inventory_failed", err)
 	}
 	defer func() {
 		for _, domain := range domains {
@@ -178,7 +214,7 @@ func recoverCaptureEnrollment(source, ipa, destination string) (any, error) {
 	}()
 	for _, domain := range domains {
 		if !input.sinfs[domain.SINFSHA256] {
-			return nil, fmt.Errorf("target IPA SINF is not bound to captured transaction")
+			return nil, recoveryFailure("transaction-binding", "capture_ipa_mismatch", nil)
 		}
 		mappings := map[string][]byte{}
 		for name, data := range domain.Files {
@@ -192,9 +228,13 @@ func recoverCaptureEnrollment(source, ipa, destination string) (any, error) {
 		}
 		value, err := rawsource.Recover(domain.ExecutablePath, input.hardware, mappings)
 		if err != nil {
-			return nil, fmt.Errorf("legacy state not compatible with portable enrollment profile")
+			return nil, recoveryFailure("portable-runtime", "legacy_portable_runtime_rejected", err)
 		}
 		recovered = append(recovered, value)
 	}
-	return finishRecoveredEnrollments(recovered, ipa, destination)
+	result, err := finishRecoveredEnrollments(recovered, ipa, destination)
+	if err != nil {
+		return nil, recoveryFailure("recovered-validation", "recovered_output_validation_failed", err)
+	}
+	return result, nil
 }

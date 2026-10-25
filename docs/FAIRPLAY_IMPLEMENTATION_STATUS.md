@@ -354,3 +354,45 @@ con `-race`; el parser Swift acepta la vista. **No se ha ejecutado una captura
 privada real con esta ruta; su compatibilidad y el descifrado real siguen sin
 validarse.** La build 23031 aprobó Debug/Release y todas las suites de GitHub; la
 23032 agrega este intento directo y requiere su propia compilación y prueba.
+
+
+## 14. Rechazo temprano observado en 23032; corrección 23033
+
+El diagnóstico sanitizado de dispositivo reportó self-tests correctos,
+`native_status=0`, SIDB de 859 bytes, dos archivos virtuales (uno no vacío),
+una transacción íntegra y fallos de `recover-capture` en 0–3 ms con el código
+inespecífico `validation_failed`. No aporta el nombre del lock ni material
+privado; por tanto no demuestra el punto exacto del rechazo ni incompatibilidad
+del SIDB con el runtime portátil.
+
+La revisión encontró un rechazo artificial previo al motor: el decoder nuevo
+exigía el prefijo `SC Info.` a **todos** los archivos. El contrato del filesystem
+virtual permite otros basenames para locks. Un ZIP sintético íntegro con hardware
+original de seis bytes, SIDB de 859 bytes y lock vacío llamado `lock` o `.lock`
+reproduce el rechazo con la condición anterior. La 23033 elimina ese requisito,
+preserva los bytes completos y mantiene los límites y el rechazo de rutas,
+symlinks del ZIP, `.`/`..`, backslashes y traversals.
+
+Ahora se retornan etapas/códigos explícitos y sanitizados, por ejemplo:
+`recover-capture/identity` + `capture_hardware_length_invalid`,
+`recover-capture/state-files` + `state_filename_invalid`,
+`recover-capture/ipa-inventory` + `ipa_inventory_failed`,
+`recover-capture/portable-runtime` + `legacy_portable_runtime_rejected`.
+La causa privada del error nunca se serializa. Los tests comprueban que un lock
+sin ese prefijo permite avanzar hasta inventariar la IPA, y que los errores no
+exponen un canario privado.
+
+También se retiraron los textos obsoletos de inspección que decían que la única
+ruta era importar un modelo o una captura moderna: inspección mide geometría;
+recuperación es una operación aparte. Decryption informa un rechazo y remite al
+código/etapa de Enrollment.
+
+Decoder y contratos de laboratorio pasan con `-race` tras demostrar primero el
+fallo de los casos nuevos con la condición antigua. No se ha probado todavía
+esta corrección contra el ZIP privado real ni se ha logrado validar el plaintext
+de una IPA real. La compatibilidad legado → portátil sigue abierta.
+
+La compilación nativa deja de recompilar dos veces el enorme CFG para ejecutar
+los mismos tests de host: las suites completas rawsource/lab siguen en el job
+Linux `fairplay-portable`, y el build nativo compila el motor para iOS y ejecuta
+las suites state/frame/SIDB y los checks SAP existentes.
