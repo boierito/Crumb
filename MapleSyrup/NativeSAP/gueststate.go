@@ -6,6 +6,8 @@ import (
 	"path"
 	"strings"
 	"unicode/utf16"
+
+	"github.com/majd/ipatool/v2/internal/sap/unicorn"
 )
 
 type guestStateFile struct {
@@ -21,6 +23,15 @@ type guestStateFS struct {
 	files       map[string][]byte
 	open        map[uint64]*guestStateFile
 	next        uint64
+	trace       []guestStateEvent
+	traceCalls  uint64
+	traceErrno  uint32
+}
+
+type guestStateEvent struct {
+	Operation string `json:"operation"`
+	Outcome   string `json:"outcome"`
+	Errno     uint32 `json:"errno,omitempty"`
 }
 
 func (s *shims) rfs() *guestStateFS {
@@ -33,6 +44,7 @@ func guestStatePath(p string) bool {
 	return path.Clean(p) == p && path.Dir(p) == storeAgentSCInfoPath && !strings.Contains(path.Base(p), "\\")
 }
 func (s *shims) fsError(code uint32) error {
+	s.rfs().traceErrno = code
 	var b [4]byte
 	binary.LittleEndian.PutUint32(b[:], code)
 	if e := s.engine.MemWrite(s.errno, b[:]); e != nil {
@@ -256,10 +268,13 @@ func (s *shims) enableGuestState() error {
 		{[]string{"_lstat", "_lstat$INODE64", "_stat", "_stat$INODE64"}, s.fsLstat},
 		{[]string{"_fstat", "_fstat$INODE64"}, s.fsFstat}, {[]string{"_mkdir"}, s.fsMkdir}, {[]string{"_Gestalt"}, s.guestGestalt},
 	} {
+		// An operation label is fixed at compile time; never record user paths
+		// or argument/register values from the emulated keybag consumer.
+		wrapped := s.traceGuestOperation(entry.names[0], entry.handler)
 		for _, name := range entry.names {
 			if address, ok := s.symbols[name]; ok {
-				s.entries[address] = shimEntry{name: name, handler: entry.handler}
-			} else if _, err := s.addFunction(name, entry.handler); err != nil {
+				s.entries[address] = shimEntry{name: name, handler: wrapped}
+			} else if _, err := s.addFunction(name, wrapped); err != nil {
 				return err
 			}
 		}
@@ -334,6 +349,57 @@ func (s *shims) guestGestalt() error {
 	}
 	return s.setResult(0)
 }
+
+const guestStateTraceLimit = 64
+
+// Retain only operation names, coarse return classes, and errno values.
+// A raw return value might contain a pointer or descriptor, so it is never logged.
+func (s *shims) traceGuestOperation(name string, handler shimHandler) shimHandler {
+	return func() error {
+		fs := s.rfs()
+		fs.traceErrno = 0
+		err := handler()
+		entry := guestStateEvent{Operation: name}
+		switch {
+		case err != nil:
+			entry.Outcome = "emulator_failure"
+		case fs.traceErrno != 0:
+			entry.Outcome = "errno"
+			entry.Errno = fs.traceErrno
+		default:
+			value, regErr := s.engine.RegRead(unicorn.RegRAX)
+			switch {
+			case regErr != nil:
+				entry.Outcome = "result_unavailable"
+			case value == 0:
+				entry.Outcome = "zero"
+			case int32(uint32(value)) < 0:
+				entry.Outcome = "negative_status"
+			default:
+				entry.Outcome = "nonzero"
+			}
+		}
+		fs.traceCalls++
+		if len(fs.trace) == guestStateTraceLimit {
+			copy(fs.trace, fs.trace[1:])
+			fs.trace[len(fs.trace)-1] = entry
+		} else {
+			fs.trace = append(fs.trace, entry)
+		}
+		return err
+	}
+}
+
+func (s *shims) guestStateTrace() map[string]any {
+	fs := s.rfs()
+	events := append([]guestStateEvent(nil), fs.trace...)
+	return map[string]any{
+		"total_calls": fs.traceCalls,
+		"truncated": fs.traceCalls > guestStateTraceLimit,
+		"recent": events,
+	}
+}
+
 func (s *shims) guestStateSnapshot() map[string][]byte {
 	out := map[string][]byte{}
 	for name, data := range s.rfs().files {
