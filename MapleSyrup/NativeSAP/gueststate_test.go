@@ -187,6 +187,27 @@ func TestGuestStateDarwinPathAndCatalogContract(t *testing.T) {
 	if call(s.fsGetCatalogInfo, base+768, 0x400000, base+1600, 0, 0, 0) == 0 {
 		t.Fatal("unsupported security object was silently accepted")
 	}
+	// An unsupported *write* mask must fail closed while exposing only its
+	// safe catalog flags/reason to the private virtual-I/O diagnostic.
+	setCatalog := s.traceGuestOperation("_FSSetCatalogInfo", s.fsSetCatalogInfo)
+	if call(setCatalog, base+768, 0x410, base+1600) != uint64(0xffffffce) {
+		t.Fatal("unsupported catalog write flags were silently accepted")
+	}
+	trace := s.guestStateTrace()
+	events := trace["recent"].([]guestStateEvent)
+	last := events[len(events)-1]
+	if last.Operation != "_FSSetCatalogInfo" || last.Outcome != "negative_status" ||
+		last.Detail != "unsupported_catalog_mask" || last.Mask != 0x410 {
+		t.Fatalf("unexpected sanitized catalog trace: %+v", last)
+	}
+	if call(setCatalog, base+768, 0x400, 0) != uint64(0xffffffce) {
+		t.Fatal("missing catalog buffer accepted")
+	}
+	events = s.guestStateTrace()["recent"].([]guestStateEvent)
+	last = events[len(events)-1]
+	if last.Detail != "missing_catalog_info" || last.Mask != 0x400 {
+		t.Fatalf("missing catalog buffer reason was not retained: %+v", last)
+	}
 	if call(s.fsFcntl, 999, 50, base+256) != ^uint64(0) {
 		t.Fatal("unknown descriptor accepted")
 	}
