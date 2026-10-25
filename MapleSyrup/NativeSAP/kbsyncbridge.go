@@ -66,7 +66,10 @@ func WaffleKBSyncBind(handle C.uint64_t, blob *C.uchar, size C.size_t, keybag *C
 	if blob == nil || size == 0 || size > 1<<20 || keybag == nil || keybagSize == 0 || keybagSize > 16<<20 {
 		return 1
 	}
-	if !bytes.Equal(g.blob, C.GoBytes(unsafe.Pointer(blob), C.int(size))) {
+	candidate := C.GoBytes(unsafe.Pointer(blob), C.int(size))
+	matched := bytes.Equal(g.blob, candidate)
+	clear(candidate)
+	if !matched {
 		return 10
 	}
 	clear(g.keybag)
@@ -101,6 +104,10 @@ func WaffleKBSyncConsume(handle C.uint64_t, output **C.uchar, length *C.size_t) 
 		return 1
 	}
 	status, files, err := g.agent.ImportKeybag(g.keybag)
+	// Keybags are single-use. Discard the retained copy immediately after the
+	// emulated call, not only when the whole download session is closed.
+	clear(g.keybag)
+	g.keybag = nil
 	result := map[string]any{"consumer": "storeagent-10.9-import-keybag", "native_status": status, "emulator_completed": err == nil, "import_succeeded": err == nil && status == 0, "portable_model_ready": false, "state_files": files}
 	defer func() {
 		for _, b := range files {
