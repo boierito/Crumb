@@ -689,7 +689,7 @@ func (s *shims) fsGetCatalogInfo() error {
 	if e != nil {
 		return e
 	}
-	if spec != 0 || mask & ^uint64(0xc41e) != 0 {
+	if spec != 0 || mask & ^uint64(0xcc1e) != 0 {
 		return s.setResult(0xffffffce)
 	}
 	bytes, e := s.engine.MemRead(ref, 80)
