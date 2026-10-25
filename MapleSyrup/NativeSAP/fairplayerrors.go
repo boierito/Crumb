@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"github.com/majd/ipatool/v2/internal/fairplay"
+	"github.com/majd/ipatool/v2/wafflebridge/recovery/rawsource"
 	"strings"
 )
 
@@ -37,6 +38,9 @@ func recoveryFailure(stage, code string, cause error) error {
 }
 
 func labErrorDetails(operation string, err error) (string, string) {
+	if details, ok := rawsource.RecoveryDetails(err); ok && (operation == "recover-capture" || operation == "recover-enrollment") {
+		return operation + "/portable-runtime/" + details.Phase, details.Failure
+	}
 	var classified *labStageError
 	if errors.As(err, &classified) {
 		return operation + "/" + classified.stage, classified.code

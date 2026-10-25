@@ -441,3 +441,38 @@ El bridge admite sólo esa lista; las causas privadas no se exportan.
 Las suites decoder/lab pasan con race detector. Falta repetir en el dispositivo
 con la IPA real: no se afirma que ésta sea la causa exacta del V2, que el SIDB
 legado sea compatible con el runtime portátil ni que haya plaintext validado.
+
+
+## 16. Rechazo del runtime en dispositivo — build 23035
+
+El diagnóstico V3 de 23034 confirma que inventario y vinculación de SINF con la
+transacción ya permiten llegar al motor. La captura contiene SIDB de 867 bytes,
+keybag de 904 bytes y una licencia; el runtime rechaza en 201 ms con
+`legacy_portable_runtime_rejected`. El diagnóstico no acredita compatibilidad
+legado/moderno ni identifica la causa interna. No se produjo una IPA.
+
+23035 instrumenta esa ruta; **no implementa una conversión demostrada de SIDB
+legado ni afirma resolver el descifrado**. La API conserva exactamente la
+secuencia natural y sus límites: account-parser → bootstrap → source →
+selection → sinf. Los fallos identifican la fase y una categoría fija
+(memoria ausente, bloque desconocido, operación externa sin soporte, límite de
+pasos u otro rechazo). Las fases de recurso, configuración y extracción de
+resultados también se distinguen. No se serializan errores internos, direcciones,
+rutas, selectores, hashes de estado ni bytes privados.
+
+La búsqueda VFS mantiene el mismo algoritmo de sufijo más específico. Sólo
+agrega contadores acotados de intentos/ausencias por cinco categorías cerradas:
+executable, sinf, supf, state, other. El error toma una copia de esos contadores
+antes de limpiar el runtime. El bridge los exporta en `runtime.file_lookups` y
+refina la etapa a `recover-capture/portable-runtime/<fase>`. No se usa el informe
+privado de registros/páginas de upstream. Se limpian además los vectores y los
+valores CF temporales.
+
+Una prueba sintética local de entrada ejecutable inválida reproduce en el código
+anterior un bloque no cubierto del parser. Esto demuestra que un fallo de CFG
+no equivale por sí solo a SIDB incompatible; no demuestra la causa del V3 real.
+Las pruebas de la API comprueban clasificación, ausencia de canarios privados,
+contadores acotados, resultados vacíos al rechazar y perfil embebido intacto.
+La siguiente ejecución real debe aportar fase/categoría y disponibilidad de
+archivos para decidir qué integración falta sin adivinar a partir del retorno
+nativo cero.

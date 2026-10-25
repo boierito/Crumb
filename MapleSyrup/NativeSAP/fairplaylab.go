@@ -6,6 +6,7 @@ package main
 import "C"
 import (
 	"encoding/json"
+	"github.com/majd/ipatool/v2/wafflebridge/recovery/rawsource"
 	"time"
 )
 
@@ -25,6 +26,9 @@ func WaffleFairPlayLab(input *C.char, output **C.uchar, length *C.size_t) C.int 
 	if e != nil {
 		stage, code := labErrorDetails(r.Operation, e)
 		result["stage"], result["code"] = stage, code
+		if diagnostic, ok := rawsource.RecoveryDetails(e); ok {
+			result["runtime"] = diagnostic
+		}
 	} else {
 		result["result"] = v
 	}

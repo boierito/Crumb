@@ -17,6 +17,15 @@ for name in names:
     text = (source / name).read_text()
     text = re.sub(r'^//go:build[^\n]*\n', '', text)
     text = text.replace('package main', 'package rawsource', 1)
+    if name == 'raw_source_step.go':
+        # Instrument the existing lookup only; preserve longest-suffix matching
+        # and all guest-visible return values. Never retain requested paths.
+        field = 'type rawSourceRuntime struct {'
+        lookup = 'return bestSuffix, bestData, bestSuffix != ""'
+        if text.count(field) != 1 or text.count(lookup) != 1:
+            raise SystemExit('raw runtime lookup contract changed')
+        text = text.replace(field, field + '\n lookupCounts map[string]LookupCount')
+        text = text.replace(lookup, 'r.recordLookup(path, bestSuffix != "")\n\t' + lookup)
     (target / name).write_text(text)
 profile = 'macos26a428-account-entry-public.model.gz'
 (target / 'profiles').mkdir(exist_ok=True)

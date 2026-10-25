@@ -182,6 +182,15 @@ func TestInventoryFailureOnlyExposesAllowedCodes(t *testing.T) {
 	}
 }
 
+func TestPortableRuntimeFailurePreservesPhaseThroughBridge(t *testing.T) {
+	_, rawErr := rawsource.Recover("", nil, nil)
+	err := recoveryFailure("portable-runtime", "legacy_portable_runtime_rejected", rawErr)
+	stage, code := labErrorDetails("recover-capture", err)
+	if stage != "recover-capture/portable-runtime/inputs" || code != "raw_invalid_inputs" {
+		t.Fatalf("lost portable phase: %s / %s", stage, code)
+	}
+}
+
 func TestFlatLockFixStillRejectsTraversal(t *testing.T) {
 	context := []byte(`{"schema":"crumb-fairplay-context-v2","producer":"retained-storeagent","hardware_id":"AQIDBAUG"}`)
 	for _, name := range []string{"../lock", "/lock", "lock\\escape", ".", ".."} {
