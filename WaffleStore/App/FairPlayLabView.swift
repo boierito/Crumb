@@ -39,7 +39,7 @@ nonisolated enum FairPlayNative {
 @MainActor
 final class FairPlayLab: ObservableObject {
     @Published var busy = false
-    @Published var logs = ["Components": "Pending", "Transaction": "Pending", "Inspection": "Pending", "Decryption": "Blocked: import a compatible model after selecting an IPA."]
+    @Published var logs = ["Components": "Pending", "Transaction": "Pending", "Inspection": "Pending", "Enrollment": "Pending", "Decryption": "Blocked: import a compatible model after selecting an IPA."]
     @Published var output: URL?
     @Published var diagnostic: URL?
     @Published var captureArchive: URL?
@@ -158,26 +158,58 @@ final class FairPlayLab: ObservableObject {
             } else { try? FileManager.default.removeItem(at: output) }
         }
     }
+    // Native verification works directly on the capture created in this session.
+    // The user no longer has to import their own private ZIP to analyze it.
+    private func analyzeCurrentCaptureFiles() async throws {
+        let captures = root.appendingPathComponent("captures")
+        guard FileManager.default.fileExists(atPath: captures.path) else {
+            log("Enrollment", "No new capture in this session. Download an app before analyzing.")
+            return
+        }
+        let archive = root.appendingPathComponent("Private-FairPlay-capture.zip")
+        let exported = try await Task.detached {
+            try FairPlayNative.run("export", source: captures, destination: archive)
+        }.value
+        guard let exportData = exported.data(using: .utf8),
+              let exportJSON = try JSONSerialization.jsonObject(with: exportData) as? [String: Any],
+              exportJSON["ok"] as? Bool == true else {
+            throw NSError(domain: "Crumb.FairPlayLab.CaptureExport", code: 1)
+        }
+        // Go's exporter applies mode 0600; protect the archive on iOS as well.
+        try FileManager.default.setAttributes(
+            [.protectionKey: FileProtectionType.complete], ofItemAtPath: archive.path)
+        let analysis = try await Task.detached {
+            try FairPlayNative.run("analyze-capture", source: archive)
+        }.value
+        guard let analysisData = analysis.data(using: .utf8),
+              let value = try JSONSerialization.jsonObject(with: analysisData) as? [String: Any],
+              value["ok"] as? Bool == true else {
+            throw NSError(domain: "Crumb.FairPlayLab.CaptureAnalysis", code: 2)
+        }
+        captureArchive = archive
+        log("Enrollment", "Verified current capture locally. The following report contains counts and readiness flags only, not private state bytes.")
+        log("Enrollment", analysis)
+    }
+    func analyzeCurrentCapture() {
+        perform { try await self.analyzeCurrentCaptureFiles() }
+    }
     func export() {
         perform {
+            // Verify the real capture first and include this sanitized stage
+            // report in diagnostic.json. The ZIP is still always private.
+            try await self.analyzeCurrentCaptureFiles()
             let summary: [String: Any] = ["schema": "crumb-fairplay-diagnostic-v1", "ios": UIDevice.current.systemVersion,
                 "app": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown", "logs": self.logs]
             let file = self.root.appendingPathComponent("diagnostic.json")
             try FairPlayNative.privateWrite(JSONSerialization.data(withJSONObject: summary, options: [.prettyPrinted, .sortedKeys]), to: file)
             self.diagnostic = file
-            let captures = self.root.appendingPathComponent("captures")
-            if FileManager.default.fileExists(atPath: captures.path) {
-                let archive = self.root.appendingPathComponent("Private-FairPlay-capture.zip")
-                _ = try await Task.detached { try FairPlayNative.run("export", source: captures, destination: archive) }.value
-                if FileManager.default.fileExists(atPath: archive.path) { self.captureArchive = archive }
-            }
         }
     }
     func erase() {
         guard !busy else { return }
         try? FileManager.default.removeItem(at: root)
         input = nil; output = nil; diagnostic = nil; captureArchive = nil; transactions = 0
-        logs = ["Components": "Pending", "Transaction": "Pending", "Inspection": "Pending", "Decryption": "Blocked: compatible model required."]
+        logs = ["Components": "Pending", "Transaction": "Pending", "Inspection": "Pending", "Enrollment": "Pending", "Decryption": "Blocked: compatible model required."]
     }
 }
 
@@ -207,16 +239,18 @@ struct FairPlayLabView: View {
                     }
                 }
                 Section("3 · Inspect and identify missing material") {
-                    Button("Import and analyze private capture ZIP") { importingCapture = true; importing = true }
                     Button("Inspect IPA") { lab.inspect() }.disabled(lab.input == nil)
-                    Text("Enrollment generation: not implemented. The upstream still needs private state inputs; captured keybags are not enrollment models.")
+                    Button("Verify current capture — no import required") { lab.analyzeCurrentCapture() }
+                        .disabled(lab.input == nil)
+                    Button("Import an older capture ZIP (optional)") { importingCapture = true; importing = true }
+                    Text("A zero StoreAgent status means keybag import was accepted. It does not produce the portable enrollment frame or raw-state source needed for decryption.")
                 }
                 Section("4 · Test with an existing model") {
                     Button("Import model and decrypt") { importingCapture = false; importing = true }.disabled(lab.input == nil)
                     if let output = lab.output { ShareLink("Export decrypted IPA", item: output) }
                     Text("Sign the exported IPA before installation. Record whether it installs and opens; compilation and structural checks alone do not prove correct plaintext.")
                 }
-                ForEach(["Components", "Transaction", "Inspection", "Decryption"], id: \.self) { section in
+                ForEach(["Components", "Transaction", "Inspection", "Enrollment", "Decryption"], id: \.self) { section in
                     Section(section + " logs") {
                         ScrollView { Text(lab.logs[section] ?? "Pending").font(.system(.caption, design: .monospaced)).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled) }.frame(maxHeight: 220)
                     }
