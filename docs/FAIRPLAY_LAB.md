@@ -275,3 +275,35 @@ Next required engineering work is a rigorously validated bridge from a
 matching enrollment to the pinned modern portable evaluator, including a
 reproducible frame and raw-state source and an independent IPA decryption
 authentication check. This build does not claim to recover that model.
+
+
+## Build 23030: V7 diagnostics are stable, one local audit per transaction
+
+The private V7 capture of build 23029 passed all **five** manifest SHA-256
+checks. The retained StoreAgent consumer again returned native status **0**
+with emulator completion and accepted import. It generated two virtual files:
+an empty lock file and an **883-byte** legacy SIDB. The bounded trace shows
+21 operations and a zero result for `FSSetCatalogInfo(0xC00)`.
+Input sizes were 196-byte KBSync, 904-byte keybag, and one SINF. The
+portable enrollment model remained unavailable, and two Mach-O images
+still contained 712 encrypted pages.
+
+Different real transactions produced differently sized legacy SIDB output;
+synthetic 862- and 883-byte fixtures ensure no fixed-size assumption enters
+the analyzer. As before, any accepted native status **does not** imply
+portable 192/224-byte raw-state source availability, 16-byte enrollment frame
+recovery, matching model validation or decrypted IPA authenticity.
+
+The laboratory now caches a successful local integrity check per capture
+transaction. Tapping `Verify current capture` repeatedly, then
+`Prepare exports`, does not reexport the same private ZIP or append
+the full JSON three times. A new transaction or `Erase this test` resets
+the cache. A small read-only `Enrollment readiness` view shows native
+import, legacy SIDB, raw-state, frame and model status independently; a
+fallback download without a matched keybag is shown as unavailable
+rather than failing the entire export.
+
+This is a diagnostic and correctness iteration, **not** a decryption
+implementation. The remaining research problem is the validated modern
+enrollment source and cross-profile compatibility, with an independent
+successful page-hash/plaintext check before promising portable recovery.
