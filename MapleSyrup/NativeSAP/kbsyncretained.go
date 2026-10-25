@@ -7,7 +7,11 @@ import (
 )
 
 func OpenRetainedKBSync(ctx context.Context, bundle assets.Bundle, hardware []byte, dsid uint64) (*StoreAgent, []byte, error) {
-	agent, global, err := openStoreAgentGlobal(ctx, bundle, hardware)
+	image, err := assets.LoadStoreAgent(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	agent, global, err := openStoreAgentGlobal(ctx, bundle, image, hardware)
 	if err != nil {
 		return nil, nil, err
 	}
