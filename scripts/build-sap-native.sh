@@ -63,7 +63,9 @@ cp "$ROOT/MapleSyrup/NativeSAP/fairplayinspect.go" "$SOURCE/internal/fairplay/"
 (cd "$SOURCE" && go get golang.org/x/arch@v0.32.0 && go test ./internal/fairplay)
 python3 "$ROOT/scripts/prepare-fairplay-portable.py" "$WORK/ipatool-$FAIRPLAY_REV/tools/fairplay-recovery" "$SOURCE/wafflebridge/recovery"
 cp "$ROOT/MapleSyrup/NativeSAP/fairplaylab.go" "$SOURCE/wafflebridge/"
-(cd "$SOURCE" && go test ./wafflebridge/recovery/...)
+mkdir -p "$SOURCE/wafflebridge/labtest"
+cp "$ROOT/MapleSyrup/NativeSAP/fairplaylab.go" "$ROOT/MapleSyrup/NativeSAP/fairplaylab_test.go" "$SOURCE/wafflebridge/labtest/"
+(cd "$SOURCE" && go test ./wafflebridge/recovery/... ./wafflebridge/labtest)
 SDK=$(xcrun --sdk iphoneos --show-sdk-path)
 CLANG=$(xcrun --sdk iphoneos --find clang)
 cd "$SOURCE"

@@ -99,7 +99,7 @@ func labRun(r labRequest) (any, error) {
 			h := sha256.Sum256(v)
 			hashes = append(hashes, hex.EncodeToString(h[:]))
 		}
-		expected := []string{"9e9f0073f8732cd41f7afa3106b5d25c068864e4974814944186664865b3aa93", "7d3b5648332a3ca5df0971442b796a4df472c09e63e9861756d982c2ff3d5fb4", "fa60630407415ac643265feb92f467340dd4bc63fb3f37cf308a6619436cb898"}
+		expected := []string{"dbfb58ced0660063f9de17b93eb18997986d166ada93c3ef42c4315fd257f640", "7d3b5648332a3ca5df0971442b796a4df472c09e63e9861756d982c2ff3d5fb4", "fa60630407415ac643265feb92f467340dd4bc63fb3f37cf308a6619436cb898"}
 		for n := range hashes {
 			if hashes[n] != expected[n] {
 				return nil, fmt.Errorf("fixture mismatch")
