@@ -8,6 +8,7 @@ import "C"
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"github.com/majd/ipatool/v2/internal/sap/assets"
 	"github.com/majd/ipatool/v2/internal/sap/machine"
 	"time"
@@ -15,7 +16,7 @@ import (
 )
 
 type retainedKBSync struct {
-	agent        *machine.StoreAgent
+	agent        *machine.RetainedKBSyncSession
 	blob, keybag []byte
 }
 
@@ -86,4 +87,35 @@ func WaffleKBSyncClose(handle C.uint64_t) {
 	clear(g.blob)
 	clear(g.keybag)
 	g.agent.Close()
+}
+
+//export WaffleKBSyncConsume
+func WaffleKBSyncConsume(handle C.uint64_t, output **C.uchar, length *C.size_t) C.int {
+	mutex.Lock()
+	defer mutex.Unlock()
+	g := retainedSessions[uint64(handle)]
+	if g == nil {
+		return 7
+	}
+	if output == nil || length == nil || len(g.keybag) == 0 {
+		return 1
+	}
+	status, files, err := g.agent.ImportKeybag(g.keybag)
+	result := map[string]any{"consumer": "storeagent-10.9-import-keybag", "native_status": status, "emulator_completed": err == nil, "import_succeeded": err == nil && status == 0, "portable_model_ready": false, "state_files": files}
+	defer func() {
+		for _, b := range files {
+			clear(b)
+		}
+	}()
+	if err != nil {
+		result["error_category"] = "emulator_failure"
+	}
+	data, e := json.Marshal(result)
+	if e != nil {
+		return 2
+	}
+	defer clear(data)
+	*output = (*C.uchar)(C.CBytes(data))
+	*length = C.size_t(len(data))
+	return 0
 }

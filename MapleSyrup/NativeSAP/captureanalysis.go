@@ -66,7 +66,7 @@ func analyzeCapture(source string) (map[string]any, error) {
 			Route  string `json:"route"`
 			Files  []struct{ Name, Bytes, SHA256 string }
 		}
-		if json.Unmarshal(data, &manifest) != nil || (manifest.Schema != "crumb-fairplay-capture-v1" && manifest.Schema != "crumb-fairplay-capture-v2") {
+		if json.Unmarshal(data, &manifest) != nil || (manifest.Schema != "crumb-fairplay-capture-v1" && manifest.Schema != "crumb-fairplay-capture-v2" && manifest.Schema != "crumb-fairplay-capture-v3") {
 			return nil, fmt.Errorf("capture_manifest")
 		}
 		prefix := path.Dir(name)
@@ -98,6 +98,26 @@ func analyzeCapture(source string) (map[string]any, error) {
 					return nil, fmt.Errorf("capture_empty")
 				}
 				summary["keybag_bytes"] = len(b)
+			case entry.Name == "consumer-state.json":
+				var report struct {
+					Status    int32             `json:"native_status"`
+					Completed bool              `json:"emulator_completed"`
+					Imported  bool              `json:"import_succeeded"`
+					Files     map[string][]byte `json:"state_files"`
+				}
+				if json.Unmarshal(b, &report) != nil {
+					return nil, fmt.Errorf("capture_consumer_report")
+				}
+				bytes := 0
+				for _, data := range report.Files {
+					bytes += len(data)
+					clear(data)
+				}
+				summary["consumer_native_status"] = report.Status
+				summary["consumer_emulator_completed"] = report.Completed
+				summary["consumer_import_succeeded"] = report.Imported
+				summary["consumer_state_bytes"] = bytes
+				summary["keybag_consumer"] = "attempted"
 			case entry.Name == "context.json":
 				var context map[string]string
 				if json.Unmarshal(b, &context) != nil || context["schema"] != "crumb-fairplay-context-v2" {

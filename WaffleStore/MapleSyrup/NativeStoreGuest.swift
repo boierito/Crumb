@@ -87,7 +87,7 @@ nonisolated final class NativeRetainedKBSyncGenerator: KBSyncGenerator, @uncheck
         self.identity = identity; self.dsid = dsid
         return Data(bytes: output, count: count)
     }
-    func bind(_ transaction: FairPlayTransaction) throws -> Data {
+    func bind(_ transaction: FairPlayTransaction) throws -> (context: Data, state: Data, summary: String) {
         lock.lock(); defer { lock.unlock() }
         guard let identity, let keybag = transaction.keybag else { throw StoreError.invalidResponse }
         let status = transaction.kbsync.withUnsafeBytes { blob in
@@ -96,8 +96,19 @@ nonisolated final class NativeRetainedKBSyncGenerator: KBSyncGenerator, @uncheck
             }
         }
         guard status == 0 else { throw StoreError.native(Int32(status)) }
-        // Private replay metadata, never included in public diagnostics.
-        return try JSONEncoder().encode(["schema":"crumb-fairplay-context-v2", "hardware_id":identity.hardwareID.base64EncodedString(), "dsid":String(dsid), "producer":"retained-storeagent", "keybag_consumer":"not implemented"])
+        var output: UnsafeMutablePointer<UInt8>?; var count = 0
+        let consumeStatus = WaffleKBSyncConsume(handle, &output, &count)
+        defer { WaffleSAPFree(output, count) }
+        guard consumeStatus == 0, let output, count > 0, count <= 8 << 20 else { throw StoreError.native(Int32(consumeStatus)) }
+        let state = Data(bytes: output, count: count)
+        guard let report = try JSONSerialization.jsonObject(with: state) as? [String: Any],
+              let nativeStatus = report["native_status"] as? Int,
+              let completed = report["emulator_completed"] as? Bool,
+              let imported = report["import_succeeded"] as? Bool else { throw StoreError.invalidResponse }
+        let files = report["state_files"] as? [String: String] ?? [:]
+        let bytes = files.values.reduce(0) { $0 + (Data(base64Encoded: $1)?.count ?? 0) }
+        let context = try JSONEncoder().encode(["schema":"crumb-fairplay-context-v2", "hardware_id":identity.hardwareID.base64EncodedString(), "dsid":String(dsid), "producer":"retained-storeagent", "keybag_consumer":"storeagent-10.9-import-keybag"])
+        return (context, state, "Keybag consumer completed=\(completed); native status=\(nativeStatus); import succeeded=\(imported); virtual state files=\(files.count), bytes=\(bytes). A portable enrollment model has not been produced.")
     }
     func close() {
         lock.lock(); defer { lock.unlock() }

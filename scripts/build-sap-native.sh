@@ -67,8 +67,16 @@ cp "$ROOT/MapleSyrup/NativeSAP/fairplaylab.go" "$ROOT/MapleSyrup/NativeSAP/fairp
 mkdir -p "$SOURCE/wafflebridge/labtest"
 cp "$ROOT/MapleSyrup/NativeSAP/captureanalysis.go" "$ROOT/MapleSyrup/NativeSAP/captureanalysis_test.go" "$ROOT/MapleSyrup/NativeSAP/fairplaylabcore.go" "$ROOT/MapleSyrup/NativeSAP/fairplaylab_test.go" "$SOURCE/wafflebridge/labtest/"
 (cd "$SOURCE" && go test ./wafflebridge/recovery/... ./wafflebridge/labtest)
+cp "$ROOT/MapleSyrup/NativeSAP/gueststate.go" "$SOURCE/internal/sap/machine/"
+python3 - "$SOURCE/internal/sap/machine/shims.go" <<'STATEPATCH'
+import pathlib,sys
+p=pathlib.Path(sys.argv[1]);s=p.read_text();assert s.count('type shims struct {')==1
+p.write_text(s.replace('type shims struct {','type shims struct {\n guestStateFS *guestStateFS',1))
+STATEPATCH
 cp "$ROOT/MapleSyrup/NativeSAP/kbsyncretained.go" "$SOURCE/internal/sap/machine/"
 cp "$ROOT/MapleSyrup/NativeSAP/kbsyncbridge.go" "$SOURCE/wafflebridge/"
+cp "$ROOT/MapleSyrup/NativeSAP/gueststate_test.go" "$SOURCE/internal/sap/machine/"
+(cd "$SOURCE" && CGO_ENABLED=0 go test -run '^TestGuestState' ./internal/sap/machine)
 SDK=$(xcrun --sdk iphoneos --show-sdk-path)
 CLANG=$(xcrun --sdk iphoneos --find clang)
 cd "$SOURCE"

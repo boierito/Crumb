@@ -60,3 +60,33 @@ kernels at 0a851d5 remain research components: their dispatcher and raw-state
 composition are unfinished, and they do not implement a keybag consumer.
 Crumb deliberately keeps its validated portable pin until that connection can
 be implemented and tested. No supplied private capture is committed or bundled.
+
+## Build 23024: execute the native keybag consumer on iOS
+
+Static analysis of the hash-verified StoreAgent binary found the same wrapper at
+image offset `0xd5ce0` in three independent keybag handlers (authorization,
+provisioning and purchase). Its native callers pass the helper's `globalContext`
+as uint32, the NSData bytes pointer and its uint32 length. This is separate from
+the macOS package `dpInfo` session initializer. No target binary is run natively.
+
+The retained laboratory generator now calls that wrapper on the exact emulated
+context after matching the transaction kbsync. The interpreter models the legacy
+OS-version queries and a private, in-memory filesystem for flat files under the
+emulated `SC Info` directory. Files are capped at 32; aggregate data at 4 MiB;
+individual writes at 1 MiB. These handlers are enabled only for the laboratory
+producer. They cannot read or write the host filesystem. Files and keybag bytes
+are cleared on close. Single-emulator file locks validate descriptors and require
+no host lock because each retained runtime is isolated and serialized.
+
+The call runs away from MainActor. Capture v3 includes private
+`consumer-state.json` with the native status, completion flag and any virtual
+state-file bytes. Public logs show only status/counts. `import_succeeded` means
+only that this wrapper returned zero; it is never reported as an enrollment
+model or proof that any IPA was decrypted. No recovered key is embedded.
+
+An offline replay of the supplied capture with a newly generated context reached
+the consumer and returned -42023, with an empty virtual state file. That result
+does not establish whether the live same-context transaction will be accepted.
+The fresh transaction path now executes this actual operation, rather than only
+retaining the response. Download and export remain available after a consumer
+rejection. Portable enrollment recovery remains unimplemented.

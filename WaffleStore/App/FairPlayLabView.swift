@@ -67,7 +67,7 @@ final class FairPlayLab: ObservableObject {
             self.log("Components", result)
         }
     }
-    func capture(_ transaction: FairPlayTransaction, retained: NativeRetainedKBSyncGenerator) throws {
+    func capture(_ transaction: FairPlayTransaction, retained: NativeRetainedKBSyncGenerator) async throws {
         let directory = root.appendingPathComponent("captures").appendingPathComponent(UUID().uuidString)
         try FairPlayNative.privateDirectory(directory)
         var files: [[String: String]] = []
@@ -80,12 +80,15 @@ final class FairPlayLab: ObservableObject {
             files.append(["name": name, "bytes": String(data.count), "sha256": SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()])
         }
         if transaction.keybag != nil {
-            let context = try retained.bind(transaction)
-            try FairPlayNative.privateWrite(context, to: directory.appendingPathComponent("context.json"))
-            files.append(["name":"context.json", "bytes":String(context.count), "sha256":SHA256.hash(data: context).map { String(format:"%02x",$0) }.joined()])
-            log("Transaction", "Matched generation context retained through reply; private identity metadata saved. Keybag consumption is not implemented.")
+            log("Transaction", "Running the observed native keybag consumer in the retained interpreter. This can take up to a minute.")
+            let consumed = try await Task.detached { try retained.bind(transaction) }.value
+            for (name, data) in [("context.json", consumed.context), ("consumer-state.json", consumed.state)] {
+                try FairPlayNative.privateWrite(data, to: directory.appendingPathComponent(name))
+                files.append(["name":name, "bytes":String(data.count), "sha256":SHA256.hash(data: data).map { String(format:"%02x",$0) }.joined()])
+            }
+            log("Transaction", consumed.summary)
         }
-        let manifest: [String: Any] = ["schema": "crumb-fairplay-capture-v2", "route": "validated-ent-download",
+        let manifest: [String: Any] = ["schema": "crumb-fairplay-capture-v3", "route": "validated-ent-download",
                                       "keybag_present": transaction.keybag != nil, "files": files]
         try FairPlayNative.privateWrite(JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted]), to: directory.appendingPathComponent("manifest.json"))
         transactions += 1
@@ -97,10 +100,8 @@ final class FairPlayLab: ObservableObject {
             self.transactions = 0
             let retained = NativeRetainedKBSyncGenerator()
             let tool = IPATool(account: account, capture: { value in
-                await MainActor.run {
-                    do { try self.capture(value, retained: retained) }
-                    catch { self.log("Transaction", "Private capture could not be saved; download may continue.") }
-                }
+                do { try await self.capture(value, retained: retained) }
+                catch { await self.log("Transaction", "Private capture or consumer failed; download may continue. No recovery success is implied.") }
             }, retainedGenerator: retained)
             defer { tool.close() }
             self.log("Transaction", "Looking up app and requesting latest accessible version.")
