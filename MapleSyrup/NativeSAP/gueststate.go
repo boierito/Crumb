@@ -19,6 +19,7 @@ type guestStateFile struct {
 }
 type guestStateFS struct {
 	permissions map[string]guestPermissions
+	finderInfo  map[string][16]byte
 	refs        map[[80]byte]string
 	files       map[string][]byte
 	open        map[uint64]*guestStateFile
@@ -723,6 +724,10 @@ func (s *shims) fsGetCatalogInfo() error {
 			binary.LittleEndian.PutUint32(b[60:], perm.gid)
 			binary.LittleEndian.PutUint16(b[66:], perm.mode)
 		}
+		if mask&0x800 != 0 && s.rfs().finderInfo != nil {
+			finder := s.rfs().finderInfo[p]
+			copy(b[72:88], finder[:]) // Files.h FSCatalogInfo.finderInfo[16].
+		}
 		if mask&0x4000 != 0 && !directory {
 			size := uint64(len(s.rfs().files[p]))
 			binary.LittleEndian.PutUint64(b[108:], size)
@@ -811,7 +816,9 @@ func (s *shims) fsSetCatalogInfo() error {
 	if mask <= 0xffff {
 		s.rfs().traceMask = mask
 	}
-	if mask != 0x400 {
+	// Carbon Files.h: 0x400 = permissions, 0x800 = 16-byte Finder info.
+	// Only these observed catalog write fields are emulated, in any combination.
+	if mask == 0 || mask & ^uint64(0xc00) != 0 {
 		s.rfs().traceHint = "unsupported_catalog_mask"
 		return s.setResult(0xffffffce)
 	}
@@ -836,13 +843,25 @@ func (s *shims) fsSetCatalogInfo() error {
 		return e
 	}
 	defer clear(b)
-	value := s.nodePermissions(p)
-	value.uid = binary.LittleEndian.Uint32(b[56:])
-	value.gid = binary.LittleEndian.Uint32(b[60:])
-	value.mode = value.mode&0170000 | binary.LittleEndian.Uint16(b[66:])&07777
-	if s.rfs().permissions == nil {
-		s.rfs().permissions = map[string]guestPermissions{}
+	// Honor whichInfo: updating Finder metadata alone must not overwrite
+	// permissions, and vice versa. Both are retained in the private VFS.
+	if mask&0x400 != 0 {
+		value := s.nodePermissions(p)
+		value.uid = binary.LittleEndian.Uint32(b[56:])
+		value.gid = binary.LittleEndian.Uint32(b[60:])
+		value.mode = value.mode&0170000 | binary.LittleEndian.Uint16(b[66:])&07777
+		if s.rfs().permissions == nil {
+			s.rfs().permissions = map[string]guestPermissions{}
+		}
+		s.rfs().permissions[p] = value
 	}
-	s.rfs().permissions[p] = value
+	if mask&0x800 != 0 {
+		var finder [16]byte
+		copy(finder[:], b[72:88])
+		if s.rfs().finderInfo == nil {
+			s.rfs().finderInfo = map[string][16]byte{}
+		}
+		s.rfs().finderInfo[p] = finder
+	}
 	return s.setResult(0)
 }
