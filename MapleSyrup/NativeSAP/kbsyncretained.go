@@ -27,19 +27,19 @@ func (r *RetainedKBSyncSession) Close() error {
 }
 
 // ImportKeybag uses the exact wrapper called by the three native keybag handlers.
-func (r *RetainedKBSyncSession) ImportKeybag(keybag []byte) (int32, map[string][]byte, error) {
+func (r *RetainedKBSyncSession) ImportKeybag(keybag []byte) (int32, map[string][]byte, map[string]any, error) {
 	if r == nil || r.agent == nil || r.agent.guest == nil || len(keybag) == 0 || len(keybag) > 1<<20 {
-		return 0, nil, fmt.Errorf("invalid consumer input")
+		return 0, nil, nil, fmt.Errorf("invalid consumer input")
 	}
 	g := r.agent.guest
 	g.beginCall()
 	defer g.clearScratch()
 	pointer, err := g.scratch(keybag, uint64(len(keybag)))
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	status, err := g.invoke(storeAgentBase+0xd5ce0, uint64(r.global), pointer, uint64(len(keybag)))
-	return int32(status), g.services.guestStateSnapshot(), err
+	return int32(status), g.services.guestStateSnapshot(), g.services.guestStateTrace(), err
 }
 func OpenRetainedKBSync(ctx context.Context, bundle assets.Bundle, hardware []byte, dsid uint64) (*RetainedKBSyncSession, []byte, error) {
 	image, err := assets.LoadStoreAgent(ctx)
