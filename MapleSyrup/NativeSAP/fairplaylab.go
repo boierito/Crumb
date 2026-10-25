@@ -27,6 +27,21 @@ func WaffleFairPlayLab(input *C.char, output **C.uchar, length *C.size_t) C.int 
 		result["stage"] = r.Operation
 		result["code"] = "validation_failed"
 		message := strings.ToLower(e.Error())
+		if r.Operation == "recover-enrollment" {
+			for _, item := range []struct{ fragment, code string }{
+				{"schema required", "modern_native_capture_required"},
+				{"state and one installed sinf required", "missing_native_enrollment_state"},
+				{"state and enrollment frame disagree", "enrollment_frame_mismatch"},
+				{"target ipa validation failed", "model_ipa_mismatch"},
+				{"modern enrollment derivation failed", "enrollment_derivation_failed"},
+				{"capture integrity", "capture_integrity_failed"},
+			} {
+				if strings.Contains(message, item.fragment) {
+					result["code"] = item.code
+					break
+				}
+			}
+		}
 		for _, category := range []string{"model", "sinf", "supf", "codedirectory", "arm64", "zip", "permission", "space", "profile"} {
 			if strings.Contains(message, category) {
 				result["stage"] = r.Operation + "/" + category

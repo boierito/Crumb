@@ -6,9 +6,9 @@ import CryptoKit
 
 nonisolated enum FairPlayNative {
     static func run(_ operation: String, source: URL? = nil, destination: URL? = nil,
-                    report: URL? = nil, model: URL? = nil) throws -> String {
+                    report: URL? = nil, model: URL? = nil, ipa: URL? = nil) throws -> String {
         let request = ["Operation": operation, "Source": source?.path ?? "",
-                       "Destination": destination?.path ?? "", "Report": report?.path ?? "", "Model": model?.path ?? ""]
+                       "Destination": destination?.path ?? "", "Report": report?.path ?? "", "Model": model?.path ?? "", "IPA": ipa?.path ?? ""]
         let data = try JSONEncoder().encode(request)
         let text = String(decoding: data, as: UTF8.self)
         var output: UnsafeMutablePointer<UInt8>?
@@ -30,6 +30,73 @@ nonisolated enum FairPlayNative {
         var values = URLResourceValues(); values.isExcludedFromBackup = true
         try resource.setResourceValues(values)
     }
+    static func importEnrollment(_ selected: URL, to destination: URL) throws {
+        let documentURL = selected.appendingPathComponent("manifest.json")
+        let keys: Set<URLResourceKey> = [.isSymbolicLinkKey, .isRegularFileKey, .fileSizeKey]
+        let documentInfo = try documentURL.resourceValues(forKeys: keys)
+        guard documentInfo.isSymbolicLink != true, documentInfo.isRegularFile == true,
+              let documentSize = documentInfo.fileSize, documentSize <= 1 << 20 else { throw CocoaError(.fileReadTooLarge) }
+        let document = try Data(contentsOf: documentURL)
+        guard document.count <= 1 << 20,
+              let manifest = try JSONSerialization.jsonObject(with: document) as? [String: Any],
+              manifest["schema"] as? String == "ipatool-fairplay-native-enrollment-capture-v1",
+              let entries = manifest["files"] as? [[String: Any]], entries.count <= 256,
+              let hardware = manifest["hardware_iomac"] as? [String: Any],
+              let hardwarePath = hardware["path"] as? String else { throw CocoaError(.fileReadCorruptFile) }
+        try privateDirectory(destination)
+        try privateWrite(document, to: destination.appendingPathComponent("manifest.json"))
+        var total = 0
+        for entry in entries {
+            guard let relative = entry["path"] as? String else { throw CocoaError(.fileReadCorruptFile) }
+            guard relative == "app/executable" || relative == hardwarePath || relative.hasPrefix("app/SC_Info/") || relative.hasPrefix("state/") else { continue }
+            let parts = relative.components(separatedBy: "/")
+            guard !relative.contains("\\"), parts.count <= 32,
+                  parts.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else { throw CocoaError(.fileReadInvalidFileName) }
+            var source = selected
+            for part in parts {
+                source.appendPathComponent(part)
+                guard try source.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else { throw CocoaError(.fileReadInvalidFileName) }
+            }
+            let info = try source.resourceValues(forKeys: keys)
+            guard info.isRegularFile == true, let size = info.fileSize, size <= 64 << 20,
+                  total + size <= 128 << 20 else { throw CocoaError(.fileReadTooLarge) }
+            let data = try Data(contentsOf: source)
+            guard data.count <= 64 << 20, total + data.count <= 128 << 20 else { throw CocoaError(.fileReadTooLarge) }
+            total += data.count
+            let target = destination.appendingPathComponent(relative)
+            try privateDirectory(target.deletingLastPathComponent())
+            try privateWrite(data, to: target)
+        }
+    }
+    // Copy a bounded model registry into the protected session sandbox. The
+    // native resolver still validates each pack and its selector association.
+    static func importModel(_ selected: URL, to destination: URL) throws {
+        let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]
+        let info = try selected.resourceValues(forKeys: keys)
+        guard info.isSymbolicLink != true else { throw CocoaError(.fileReadInvalidFileName) }
+        func copyModel(_ source: URL, to target: URL) throws {
+            let values = try source.resourceValues(forKeys: keys)
+            guard values.isRegularFile == true, values.isSymbolicLink != true,
+                  let size = values.fileSize, size > 0, size <= 1 << 20 else {
+                throw CocoaError(.fileReadTooLarge)
+            }
+            let data = try Data(contentsOf: source)
+            guard !data.isEmpty, data.count <= 1 << 20 else { throw CocoaError(.fileReadTooLarge) }
+            try privateWrite(data, to: target)
+        }
+        guard info.isDirectory == true else {
+            try copyModel(selected, to: destination)
+            return
+        }
+        let entries = try FileManager.default.contentsOfDirectory(at: selected, includingPropertiesForKeys: Array(keys))
+        guard entries.count <= 512 else { throw CocoaError(.fileReadTooLarge) }
+        let models = entries.filter { $0.pathExtension == "bin" }
+        guard !models.isEmpty, models.count <= 256 else { throw CocoaError(.fileReadTooLarge) }
+        try privateDirectory(destination)
+        for (index, source) in models.enumerated() {
+            try copyModel(source, to: destination.appendingPathComponent("model-\(index).bin"))
+        }
+    }
     static func privateWrite(_ data: Data, to url: URL) throws {
         try data.write(to: url, options: [.atomic, .completeFileProtection])
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
@@ -44,7 +111,10 @@ final class FairPlayLab: ObservableObject {
     @Published var diagnostic: URL?
     @Published var captureArchive: URL?
     @Published var enrollmentStages: [String: Bool] = [:]
-    @Published var input: URL?
+    @Published var nativeRecoveryVerified = false
+    @Published var input: URL? {
+        didSet { if oldValue != input { output = nil; nativeRecoveryVerified = false } }
+    }
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("FairPlayLab-" + UUID().uuidString)
     private var task: Task<Void, Never>?
     private var transactions = 0
@@ -140,19 +210,48 @@ final class FairPlayLab: ObservableObject {
         perform {
             let result = try await Task.detached { try FairPlayNative.run("inspect", source: input) }.value
             self.log("Inspection", result)
-            self.log("Inspection", "Local enrollment generation is not implemented. Keybag capture alone does not supply the missing private state input.")
+            self.log("Inspection", "Model recovery requires a modern native enrollment folder. This legacy keybag capture does not supply the required native state.")
+        }
+    }
+    func recoverEnrollment(_ selected: URL) {
+        nativeRecoveryVerified = false
+        guard let input else { return }
+        perform {
+            self.output = nil
+            let source = self.root.appendingPathComponent(UUID().uuidString + ".enrollment")
+            let destination = self.root.appendingPathComponent(UUID().uuidString + ".recovery")
+            let access = selected.startAccessingSecurityScopedResource()
+            defer {
+                if access { selected.stopAccessingSecurityScopedResource() }
+                try? FileManager.default.removeItem(at: source)
+                // Only the processed IPA may remain for export.
+                try? FileManager.default.removeItem(at: destination.appendingPathComponent("fairplay-enrollment.bin"))
+                try? FileManager.default.removeItem(at: destination.appendingPathComponent("private-report.json"))
+            }
+            self.log("Enrollment", "Importing modern native enrollment. Legacy StoreAgent captures cannot supply these inputs.")
+            let result = try await Task.detached {
+                try FairPlayNative.importEnrollment(selected, to: source)
+                return try FairPlayNative.run("recover-enrollment", source: source, destination: destination, ipa: input)
+            }.value
+            self.log("Enrollment", result)
+            if let data = result.data(using: .utf8),
+               let value = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+               value["ok"] as? Bool == true {
+                self.nativeRecoveryVerified = true
+                self.output = destination.appendingPathComponent("processed.ipa")
+                self.log("Decryption", "Model derived and matched to IPA licenses. All inventoried images processed; plaintext is not independently authenticated.")
+            } else { try? FileManager.default.removeItem(at: destination) }
         }
     }
     func decrypt(_ selected: URL) {
         guard let input else { return }
         perform {
             self.output = nil
-            let model = self.root.appendingPathComponent("model.bin")
+            self.nativeRecoveryVerified = false
+            let model = self.root.appendingPathComponent(UUID().uuidString + ".models")
             let access = selected.startAccessingSecurityScopedResource()
             defer { if access { selected.stopAccessingSecurityScopedResource() }; try? FileManager.default.removeItem(at: model) }
-            let size = try selected.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-            guard size > 0, size <= 1 << 20 else { throw CocoaError(.fileReadTooLarge) }
-            try FairPlayNative.privateWrite(Data(contentsOf: selected), to: model)
+            try FairPlayNative.importModel(selected, to: model)
             let output = self.root.appendingPathComponent(UUID().uuidString + ".decrypted.ipa")
             let report = self.root.appendingPathComponent("private-report.json")
             defer { try? FileManager.default.removeItem(at: report) }
@@ -239,6 +338,7 @@ final class FairPlayLab: ObservableObject {
         }
     }
     func erase() {
+        nativeRecoveryVerified = false
         guard !busy else { return }
         try? FileManager.default.removeItem(at: root)
         input = nil; output = nil; diagnostic = nil; captureArchive = nil; transactions = 0
@@ -256,6 +356,7 @@ struct FairPlayLabView: View {
     @State private var appInput = ""
     @State private var importing = false
     @State private var importingCapture = false
+    @State private var importingEnrollment = false
     var body: some View {
         NavigationStack {
             Form {
@@ -277,7 +378,7 @@ struct FairPlayLabView: View {
                     Button("Inspect IPA") { lab.inspect() }.disabled(lab.input == nil)
                     Button("Verify current capture — no import required") { lab.analyzeCurrentCapture() }
                         .disabled(lab.input == nil)
-                    Button("Import an older capture ZIP (optional)") { importingCapture = true; importing = true }
+                    Button("Import an older capture ZIP (optional)") { importingEnrollment = false; importingCapture = true; importing = true }
                     Text("A zero StoreAgent status means keybag import was accepted. It does not produce the portable enrollment frame or raw-state source needed for decryption.")
                 }
                 if !lab.enrollmentStages.isEmpty {
@@ -298,9 +399,13 @@ struct FairPlayLabView: View {
                             .font(.footnote)
                     }
                 }
-                Section("4 · Test with an existing model") {
-                    Button("Import model and decrypt") { importingCapture = false; importing = true }.disabled(lab.input == nil)
-                    if let output = lab.output { ShareLink("Export decrypted IPA", item: output) }
+                Section("4 · Recover or import an enrollment") {
+                    Button("Recover model from native enrollment folder") { importingEnrollment = true; importingCapture = false; importing = true }.disabled(lab.input == nil)
+                    if lab.nativeRecoveryVerified { Label("Native source and frame cross-checked; model matches target SINF", systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
+                    Text("Requires a modern native enrollment capture from your own App Store account, including its hardware identity and state files. The current StoreAgent capture is a separate format.")
+                    Button("Import model or model folder and decrypt") { importingEnrollment = false; importingCapture = false; importing = true }.disabled(lab.input == nil)
+                    Text("Import one model file or a folder of selector-bound .bin models. Each executable uses its associated license. Output plaintext is not authenticated.")
+                    if let output = lab.output { ShareLink("Export processed IPA (unverified)", item: output) }
                     Text("Sign the exported IPA before installation. Record whether it installs and opens; compilation and structural checks alone do not prove correct plaintext.")
                 }
                 ForEach(["Components", "Transaction", "Inspection", "Enrollment", "Decryption"], id: \.self) { section in
@@ -322,9 +427,9 @@ struct FairPlayLabView: View {
             .navigationTitle("FairPlay Laboratory")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() }.disabled(lab.busy) } }
             .interactiveDismissDisabled(lab.busy)
-            .fileImporter(isPresented: $importing, allowedContentTypes: importingCapture ? [.zip] : [.data]) { result in
+            .fileImporter(isPresented: $importing, allowedContentTypes: importingEnrollment ? [.folder] : (importingCapture ? [.zip] : [.data, .folder])) { result in
                 if case .success(let url) = result {
-                    if importingCapture { lab.analyzeCapture(url) } else { lab.decrypt(url) }
+                    if importingEnrollment { lab.recoverEnrollment(url) } else if importingCapture { lab.analyzeCapture(url) } else { lab.decrypt(url) }
                 }
             }
             .onDisappear { lab.erase() }

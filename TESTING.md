@@ -291,3 +291,22 @@ policy are unchanged; compare cold preparation separately from verification.
 Local Swift fixture validation: 60 targeted tests passed (37 authentication,
 12 form-state, 11 SAP). Full macOS/iOS CI results are attached to the build;
 fixture responses and signatures are synthetic and do not demonstrate live login.
+
+### Portable FairPlay regression suite (Linux/macOS)
+
+Run `bash scripts/test-fairplay-host.sh` with Go 1.26 or later, Python 3,
+`curl` and `tar`. The script downloads and verifies the pinned public source,
+uses the same package preparation as the iOS build, and runs the FairPlay,
+state/frame/SIDB and capture contract tests with the race detector. It needs no
+Apple account, private capture or Xcode. It tests synthetic fixtures only and
+does not establish enrollment compatibility or successful real IPA decryption.
+
+Modern native enrollment recovery additionally downloads the independently
+pinned `f7242cce58077a4af8db738ed295ee23ad8f067d` raw-source runtime (verified
+archive SHA-256). Its generated CFG package is large; the host runner defaults
+compiler GC to `GOMEMLIMIT=4GiB` and `GOGC=30`. Public tests cover sanitized
+resource invariants, input rejection, runtime cleanup, integrity verification,
+legacy/modern schema separation, path isolation and license routing. Successful
+real enrollment derivation, the state/frame cross-check with such an enrollment,
+iOS folder import and resulting plaintext still require authorized native state
+and a device; synthetic tests are not evidence for those outcomes.

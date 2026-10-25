@@ -72,3 +72,12 @@ operations and sanitized embedded models are adapted to separate Go packages;
 corresponding sources remain in the native source archive. The partial recovery
 algorithm's Apache-2.0 attribution is in `LICENSE-DARKPHOENIX.txt` alongside those
 sources. No private enrollment model is embedded in Crumb.
+
+The modern native-enrollment runtime is adapted separately from DrWhax/ipatool
+`f7242cce58077a4af8db738ed295ee23ad8f067d` (MIT), preserving the Apache-2.0
+DarkPhoenix attribution. Its generated arithmetic/CFG code and sanitized
+account-entry model are packaged in `wafflebridge/recovery/rawsource`. The
+executable path, hardware identity, license and state files are private runtime
+inputs. Their sources, profile README and licenses are included in the native
+corresponding-source archive. The SAP guest and portable decoder pins remain
+independent; no recovered account model is embedded.

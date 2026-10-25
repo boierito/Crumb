@@ -16,12 +16,14 @@ import (
 )
 
 type labRequest struct {
-	Operation, Source, Destination, Report, Model string
-	Input, Frame                                  []byte
+	Operation, Source, Destination, Report, Model, IPA string
+	Input, Frame                                       []byte
 }
 
 func labRun(r labRequest) (any, error) {
 	switch r.Operation {
+	case "recover-enrollment":
+		return recoverModernEnrollment(r.Source, r.IPA, r.Destination)
 	case "analyze-capture":
 		return analyzeCapture(r.Source)
 	case "export":

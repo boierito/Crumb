@@ -212,3 +212,116 @@ La aprobación de CI prueba compilación y regresiones **sintéticas**; las prue
 ---
 
 **Referencias internas:** [Guía FairPlay](FAIRPLAY_LAB.md); [acciones de compilación](https://github.com/boierito/Crumb/actions/runs/40227115134); [pruebas de protocolo](https://github.com/boierito/Crumb/actions/runs/40227115142); [seguimiento técnico](https://github.com/boierito/Crumb/issues/1).
+
+## 11. Continuación: regresiones portátiles y alcance multiapp
+
+Se añadió `bash scripts/test-fairplay-host.sh` y el job `fairplay-portable`
+(Linux) para comprobar el paquete FairPlay fijado, sus evaluadores públicos y
+los contratos de captura sin depender de Xcode. La preparación del paquete se
+comparte con la compilación iOS mediante `prepare-fairplay-package.py`; no se
+mantiene una segunda implementación del descifrador. La fuente descargada se
+verifica por SHA-256. Las pruebas se ejecutan con detector de carreras.
+
+Estos cambios no completan el puente de inscripción ni modifican las banderas de
+readiness. No constituyen una nueva build probada en dispositivo.
+
+### Límites concretos que impiden prometer «cualquier app»
+
+- El upstream fijado exigía exactamente un SINF en `DecryptIPA`. La continuación
+  local elimina esa restricción: `fairplaymulti.go` asocia cada ejecutable con su
+  SINF y resuelve su modelo independientemente, antes de crear la salida. No se
+  elige el primer SINF ni se reutiliza una clave global.
+- Las pruebas públicas incluyen clasificación Mach-O universal ARMv7/ARM64,
+  geometría inválida, alcance de mutaciones y selección de modelos por selector.
+  Son regresiones sintéticas; no prueban cobertura de aplicaciones reales.
+- El análisis de plausibilidad de instrucciones no autentica todas las páginas.
+  El resultado `completed` del puente sigue separado de
+  `plaintext_authenticated=false`.
+- La inscripción portátil sigue sin fuente validada. Para evaluar la prioridad 1
+  hacen falta las muestras diferenciales autorizadas indicadas en la sección 9;
+  no se incorporaron muestras reales ni se dedujo un frame cortando el SIDB.
+
+### Implementación multi-SINF
+
+- Asociación exacta `SC_Info/<ejecutable>.sinf` o `.v5.sinf`; si falta, búsqueda
+  de un único SINF en el directorio `SC_Info` del bundle contenedor. Un framework
+  puede usar la licencia de su app; una extensión no hereda la licencia de la app
+  atravesando su frontera `.appex`. Las asociaciones ambiguas se rechazan.
+- Cada ejecutable recibe su máscara y derivador propios; sus slices universales
+  comparten la licencia asociada. Todos los modelos se resuelven antes de crear
+  el ZIP temporal de salida; un modelo faltante aborta la operación completa.
+- El reporte privado registra `sinf_member` por imagen y evidencia por ejecutable
+  cuando hay varios dominios. No se publica un hash de clave global ficticio.
+- El laboratorio permite importar un archivo o una carpeta de modelos `.bin`,
+  copiados a un directorio protegido temporal. Se rechazan enlaces y modelos
+  vacíos o mayores de 1 MiB; máximo 256 modelos. El backend valida sus selectores.
+- Las regresiones usan dos SINF V3 y modelos independientes, verifican las claves
+  esperadas para app/extensión, múltiples slices, asociación de framework,
+  ambigüedad y rechazo de un registro incompleto. Pasan junto con las suites
+  portátiles bajo `-race` en Linux.
+
+Pendiente: compilación iOS y prueba de la importación de carpetas en dispositivo;
+validación con transacciones reales; fuente de inscripción portátil y
+verificación criptográfica del plaintext. El éxito sintético no acredita esos
+pasos ni permite afirmar compatibilidad con cualquier app.
+
+## 12. Ruta moderna de recuperación integrada (continuación local)
+
+Se incorporó por separado el motor de DrWhax/ipatool
+`f7242cce58077a4af8db738ed295ee23ad8f067d`, posterior a la revisión del decoder.
+Su runtime generado construye el source de inscripción, selecciona el frame y
+continúa hasta producir un pack de inscripción ligado al selector. Se ejecuta
+como paquete Go aislado dentro del proceso; no lanza comandos ni ejecuta código
+invitado. La descarga está fijada por revisión y SHA-256; también se verifica el
+modelo público empaquetado antes de cada recuperación.
+
+### Entrada e integración
+
+- Operación nativa `recover-enrollment`: `Source` es un directorio de captura
+  **nativa moderna**, `IPA` la IPA objetivo y `Destination` un directorio nuevo.
+- La interfaz ofrece `Recover model from native enrollment folder`. Copia al
+  sandbox privado únicamente el manifiesto y los archivos de ejecutable,
+  hardware, licencias y estado necesarios; no necesita copiar la IPA ni el
+  daemon incluidos en una captura. Verifica los hashes y tamaños del manifiesto
+  antes de exponer las entradas al filesystem virtual del motor.
+- Primero utiliza el conjunto mínimo de estado probado por upstream; puede
+  reintentar con los archivos adicionales de la captura. No introduce un segundo
+  SINF instalado en el mismo intento. Los archivos de estado se mantienen
+  separados de los del StoreAgent legado.
+- Contrasta el source derivado con los evaluadores state/frame existentes: un
+  candidato transformado debe reproducir el frame seleccionado por el motor.
+  Luego valida el pack contra el SINF de cada ejecutable de la IPA objetivo y
+  procesa todas las imágenes inventariadas.
+- No devuelve claves, frames, bytes de estado ni rutas privadas en el resultado
+  del bridge. El runtime se serializa y descarta sus referencias y buffers
+  privados después de cada ejecución. Si falla la validación de la IPA, elimina
+  el directorio de recuperación generado. En la interfaz se eliminan también el
+  modelo y reporte temporales al terminar.
+
+### Alcance que sigue sin poder afirmarse
+
+La captura `consumer-state.json`/SIDB del StoreAgent 10.9 **no es** la nueva
+entrada. Hace falta una captura moderna de una inscripción nativa propia (por
+ejemplo, la creada por `ipatool fairplay-enroll collect` en un Mac con la cuenta
+inicializada en App Store), con su ejecutable, hardware y estado correspondientes.
+No se ha demostrado aquí una conversión de la inscripción legado a esa entrada.
+Los indicadores del ZIP legado siguen describiendo esa captura; el resultado
+moderno se muestra por separado para no atribuirle evidencia de otra fuente.
+
+`source_frame_cross_checked` y `model_sinf_validated` no significan autenticación
+de todas las páginas de plaintext. El resultado conserva
+`plaintext_authenticated=false`: el decoder fijado comprueba los hashes de la
+fuente cifrada y plausibilidad de instrucciones, pero eso no sustituye una
+referencia independiente del plaintext. Tampoco hay garantía de soporte de todas
+las generaciones de FairPlay, ni prueba en dispositivo o una IPA real de esta
+continuación local. No se ha cerrado el criterio «cualquier IPA 100 % descifrada».
+
+La continuación funcional se identifica como build **23031**; la última build
+probada en dispositivo sigue siendo **23030**. No se atribuyen a la 23031 los
+resultados V6–V8 ni se declara logrado el descifrado real por actualizar la versión.
+
+Verificación local de esta continuación: `scripts/test-fairplay-host.sh` pasó
+las suites del decoder, state/frame/SIDB, rawsource y contratos del laboratorio
+con `-race`. El parser de Swift no detectó errores de sintaxis en la vista
+modificada; esto no sustituye compilación/typechecking con Xcode. Los tests
+locales no incluyen una inscripción privada real ni una IPA real descifrada.

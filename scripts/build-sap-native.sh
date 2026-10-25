@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Bound compiler memory for the generated native enrollment CFG package.
+export GOMEMLIMIT=${GOMEMLIMIT:-4GiB}
+export GOGC=${GOGC:-30}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 OUTPUT="$ROOT/build/Native"
 mkdir -p "$OUTPUT"
@@ -45,28 +48,20 @@ CHECK
 tar -xzf "$WORK/fairplay.tar.gz" -C "$WORK"
 cp -R "$WORK/ipatool-$FAIRPLAY_REV/internal/fairplay" "$SOURCE/internal/fairplay"
 # iOS has the same Unix permission checks; treat its filesystem as case insensitive.
-python3 - "$SOURCE/internal/fairplay/files.go" <<'PATCH'
-import pathlib, sys
-p = pathlib.Path(sys.argv[1]); s = p.read_text()
-s = s.replace('runtime.GOOS != "darwin" && runtime.GOOS != "linux"', 'runtime.GOOS != "darwin" && runtime.GOOS != "linux" && runtime.GOOS != "ios"')
-s = s.replace('runtime.GOOS == "darwin" || runtime.GOOS == "windows"', 'runtime.GOOS == "darwin" || runtime.GOOS == "windows" || runtime.GOOS == "ios"')
-p.write_text(s)
-p = p.parent / 'decrypt.go'; s = p.read_text()
-s = s.replace('record[:16], image.sliceOffset+uint64(image.layout.cryptOffset),', 'record[:16], image.sliceOffset+uint64(image.layout.cryptOffset)+uint64(index*pageBytes),')
-s = s.replace('first := output[start : start+pageBytes]', 'auditStart := start\n    if isARM64InstructionSet(image.layout.cpuType) {\n        for auditStart < end {\n            _, words, _ := auditARM64FirstPage(output[auditStart:auditStart+pageBytes], uint64(auditStart), image.layout.instructionRanges)\n            if words > 0 { break }; auditStart += pageBytes\n        }\n        if auditStart >= end { return nil, fmt.Errorf("no encrypted instruction page") }\n    }\n    first := output[auditStart : auditStart+pageBytes]')
-s = s.replace('auditARM64FirstPage(first, uint64(start),', 'auditARM64FirstPage(first, uint64(auditStart),')
-p.write_text(s)
-p = p.parent / 'decrypt_test.go'; s = p.read_text().replace('image.sliceOffset+uint64(layout.cryptOffset),', 'image.sliceOffset+uint64(layout.cryptOffset)+uint64(page*pageBytes),')
-p.write_text(s)
-PATCH
+python3 "$ROOT/scripts/prepare-fairplay-package.py" "$SOURCE/internal/fairplay/files.go"
 cp "$ROOT/MapleSyrup/NativeSAP/fairplayinspect.go" "$SOURCE/internal/fairplay/"
+cp "$ROOT/MapleSyrup/NativeSAP/fairplaymulti.go" "$SOURCE/internal/fairplay/"
+cp "$ROOT/MapleSyrup/NativeSAP/fairplaymulti_test.go" "$SOURCE/internal/fairplay/"
 (cd "$SOURCE" && go get golang.org/x/arch@v0.32.0 && go test ./internal/fairplay)
 python3 "$ROOT/scripts/prepare-fairplay-portable.py" "$WORK/ipatool-$FAIRPLAY_REV/tools/fairplay-recovery" "$SOURCE/wafflebridge/recovery"
+bash "$ROOT/scripts/fetch-fairplay-raw.sh" "$SOURCE/wafflebridge/recovery/rawsource"
 cp "$ROOT/MapleSyrup/NativeSAP/captureanalysis.go" "$SOURCE/wafflebridge/"
-cp "$ROOT/MapleSyrup/NativeSAP/fairplaylab.go" "$ROOT/MapleSyrup/NativeSAP/fairplaylabcore.go" "$SOURCE/wafflebridge/"
+cp "$ROOT/MapleSyrup/NativeSAP/fairplayenrollment.go" "$SOURCE/wafflebridge/"
 mkdir -p "$SOURCE/wafflebridge/labtest"
+cp "$ROOT/MapleSyrup/NativeSAP/fairplayenrollment.go" "$ROOT/MapleSyrup/NativeSAP/fairplayenrollment_test.go" "$SOURCE/wafflebridge/labtest/"
+cp "$ROOT/MapleSyrup/NativeSAP/fairplaylab.go" "$ROOT/MapleSyrup/NativeSAP/fairplaylabcore.go" "$SOURCE/wafflebridge/"
 cp "$ROOT/MapleSyrup/NativeSAP/captureanalysis.go" "$ROOT/MapleSyrup/NativeSAP/captureanalysis_test.go" "$ROOT/MapleSyrup/NativeSAP/fairplaylabcore.go" "$ROOT/MapleSyrup/NativeSAP/fairplaylab_test.go" "$SOURCE/wafflebridge/labtest/"
-(cd "$SOURCE" && go test ./wafflebridge/recovery/... ./wafflebridge/labtest)
+(cd "$SOURCE" && go test -p=1 ./wafflebridge/recovery/... ./wafflebridge/labtest)
 cp "$ROOT/MapleSyrup/NativeSAP/gueststate.go" "$SOURCE/internal/sap/machine/"
 python3 - "$SOURCE/internal/sap/machine/shims.go" <<'STATEPATCH'
 import pathlib,sys
