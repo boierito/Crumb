@@ -261,6 +261,16 @@ func TestAnalyzeV3AcceptedConsumerWithMixedVirtualFiles(t *testing.T) {
 		got["consumer_state_bytes"] != 862 {
 		t.Fatalf("incorrect sanitized accepted-import counts: %+v", got)
 	}
+	bridge, ok := got["enrollment_bridge"].(map[string]any)
+	if !ok || bridge["legacy_import_accepted"] != true ||
+		bridge["legacy_sidb_observed"] != true ||
+		bridge["legacy_sidb_bytes"] != 862 ||
+		bridge["portable_raw_state_verified"] != false ||
+		bridge["portable_enrollment_frame_verified"] != false ||
+		bridge["validated_portable_model"] != false ||
+		bridge["status"] != "missing_portable_enrollment_source" {
+		t.Fatalf("successful legacy import must not be considered portable enrollment: %+v", bridge)
+	}
 	stages := got["missing_stages"].([]string)
 	if len(stages) != 2 || stages[0] != "raw_state_orchestration" ||
 		stages[1] != "validated_enrollment_model" {
