@@ -286,3 +286,39 @@ func TestAnalyzeV3AcceptedConsumerWithMixedVirtualFiles(t *testing.T) {
 		}
 	}
 }
+
+
+// Real-world accepted native states have variable sizes; these are *public
+// synthetic fixtures* and must not imply a fixed SIDB size or recovered key.
+func TestAnalyzeAcceptedNativeSIDBVariableLengths(t *testing.T) {
+	for _, size := range []int{862, 883} {
+		t.Run(strconv.Itoa(size), func(t *testing.T) {
+			fixture := make([]byte, size)
+			for i := range fixture { fixture[i] = byte((i * 13 + 7) & 0xff) }
+			p := captureV3Fixture(t, map[string]any{
+				"native_status": 0,
+				"import_succeeded": true,
+				"state_files": map[string][]byte{
+					".sid.lockFile": nil,
+					"SC Info.sidb": fixture,
+				},
+			})
+			result, err := analyzeCapture(p)
+			if err != nil { t.Fatal(err) }
+			if result["ready_to_decrypt"] != false {
+				t.Fatal("variable legacy state incorrectly promoted to portable model")
+			}
+			transactions := result["transactions"].([]map[string]any)
+			if len(transactions) != 1 { t.Fatalf("unexpected transactions count %d", len(transactions)) }
+			got := transactions[0]
+			bridge, ok := got["enrollment_bridge"].(map[string]any)
+			if !ok || bridge["legacy_sidb_bytes"] != size ||
+				bridge["legacy_sidb_observed"] != true ||
+				bridge["portable_raw_state_verified"] != false ||
+				bridge["portable_enrollment_frame_verified"] != false ||
+				bridge["validated_portable_model"] != false {
+				t.Fatalf("invalid portability classification for synthetic size %d", size)
+			}
+		})
+	}
+}
