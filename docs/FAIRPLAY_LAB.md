@@ -1,5 +1,9 @@
 # FairPlay laboratory — device test guide
 
+For the full engineering chronology (builds 23023–23030, private V1–V8
+capture metadata, current limitations, security boundaries and acceptance
+criteria), see [FairPlay implementation status](FAIRPLAY_IMPLEMENTATION_STATUS.md).
+
 This build tests portable components and collects inputs. It does **not** yet
 create the missing enrollment state from an Apple login or a keybag.
 
