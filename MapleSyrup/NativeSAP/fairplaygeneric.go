@@ -14,11 +14,14 @@ import (
 
 const genericRecordBytes = 16
 const genericMaxProfileBytes = 128 << 20
+const genericMaxInstructions = 50_000_000
 
 type genericInstructionProfile struct {
-	base    uint64
-	count   uint32
-	records []byte
+	base       uint64
+	count      uint32
+	executable uint32
+	supported  uint32
+	records    []byte
 }
 
 var genericImage *genericInstructionProfile
@@ -42,7 +45,7 @@ func loadGenericInstructionProfile(compressed []byte, expectedBinary [32]byte, e
 	if !bytes.Equal(checksum, sum[:]) {
 		return nil, fmt.Errorf("generic profile checksum mismatch")
 	}
-	if string(payload[:8]) != "CRIR1\x00\x00\x00" || binary.LittleEndian.Uint32(payload[8:]) != 1 || binary.LittleEndian.Uint32(payload[12:]) != genericRecordBytes {
+	if string(payload[:8]) != "CRIR1\x00\x00\x00" || binary.LittleEndian.Uint32(payload[8:]) != 2 || binary.LittleEndian.Uint32(payload[12:]) != genericRecordBytes {
 		return nil, fmt.Errorf("generic profile schema mismatch")
 	}
 	if !bytes.Equal(payload[16:48], expectedBinary[:]) || hex.EncodeToString(payload[48:80]) != expectedABI {
@@ -88,14 +91,39 @@ func loadGenericInstructionProfile(compressed []byte, expectedBinary [32]byte, e
 			if r[1] > 8 || (r[2] != 8 && r[2] != 16) || r[3] > 31 || r[4] > 31 || r[5] > 31 {
 				return nil, fmt.Errorf("generic vector operands invalid")
 			}
+		case 6:
+			if !bytes.Equal(r[1:], make([]byte, genericRecordBytes-1)) {
+				return nil, fmt.Errorf("invalid non-executable slot")
+			}
 		default:
 			return nil, fmt.Errorf("generic record kind invalid")
 		}
+		if r[0] != 6 {
+			image.executable++
+		}
+		if r[0] != 0 && r[0] != 6 {
+			image.supported++
+		}
+	}
+	if image.executable == 0 {
+		return nil, fmt.Errorf("generic profile contains no executable slots")
 	}
 	return image, nil
 }
+
+// Account-free profile readiness, distinct from enrollment/decryption readiness.
+func ExecutionProfileSummary() map[string]any {
+	result := map[string]any{"backend": "generic-profile", "profile_version": 2, "ready": genericImage != nil, "jit_required": false}
+	if genericImage != nil {
+		result["instruction_slots"] = genericImage.executable
+		result["span_slots"] = genericImage.count
+		result["supported_slots"] = genericImage.supported
+		result["unsupported_slots"] = genericImage.executable - genericImage.supported
+	}
+	return result
+}
 func (p *genericInstructionProfile) contains(pc uint64) bool {
-	return p != nil && pc >= p.base && (pc-p.base)%4 == 0 && (pc-p.base)/4 < uint64(p.count)
+	return p != nil && pc >= p.base && (pc-p.base)%4 == 0 && (pc-p.base)/4 < uint64(p.count) && p.record(pc)[0] != 6
 }
 func (p *genericInstructionProfile) record(pc uint64) []byte {
 	index := (pc - p.base) / 4
@@ -124,6 +152,9 @@ func runGenericInstructionBlock(s *state, runtime *rawSourceRuntime, start uint6
 	for count := 0; count < 4096; count++ {
 		if runtime.stopPC != 0 && pc == runtime.stopPC {
 			return pc, true, nil
+		}
+		if runtime.genericInstructions >= genericMaxInstructions {
+			return pc, false, &genericExecutionError{"generic_instruction_limit"}
 		}
 		if !genericImage.contains(pc) {
 			runtime.recordUnknownPC(pc)

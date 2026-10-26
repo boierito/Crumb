@@ -7,6 +7,8 @@ import json
 import os
 from pathlib import Path
 import random
+import platform
+import sys
 import struct
 import subprocess
 import tarfile
@@ -24,7 +26,7 @@ HARNESS=r'''package main
 import("encoding/json";"encoding/hex";"os")
 type rawSourceRuntime struct {stopPC uint64;genericBlocks int;genericInstructions uint64}
 func (r *rawSourceRuntime) recordUnknownPC(pc uint64){}
-type fixture struct {PC,SP uint64;Registers [31]uint64;Flags [4]bool;Vectors [32][16]byte;Pages map[uint64][]byte}
+type fixture struct {PC,SP uint64;Chunks int;Registers [31]uint64;Flags [4]bool;Vectors [32][16]byte;Pages map[uint64][]byte}
 type result struct {PC,SP uint64;Registers [31]uint64;Flags [4]bool;Vectors [32][16]byte;Pages map[uint64][]byte}
 func main(){
  data,err:=os.ReadFile(os.Args[1]);if err!=nil{panic(err)}
@@ -35,7 +37,7 @@ func main(){
  for _,f:=range inputs {
   m:=&model{registers:f.Registers,pages:f.Pages,sp:f.SP,n:f.Flags[0],z:f.Flags[1],c:f.Flags[2],v:f.Flags[3]}
   s:=newState(m);s.reset();s.vectors=f.Vectors
-  pc,stop,err:=runGenericInstructionBlock(s,&rawSourceRuntime{},f.PC);if err!=nil||stop{panic("generic execution failed")}
+  pc:=f.PC;runtime:=&rawSourceRuntime{};for chunk:=0;chunk<max(1,f.Chunks);chunk++ {var stop bool;pc,stop,err=runGenericInstructionBlock(s,runtime,pc);if err!=nil||stop{panic("generic execution failed")}}
   pages:=map[uint64][]byte{};for address:=range f.Pages {value,err:=s.outputBytes(address,4096);if err!=nil{panic(err)};pages[address]=value}
   results=append(results,result{pc,s.sp,s.x,[4]bool{s.n,s.z,s.c,s.v},s.vectors,pages})
  }
@@ -43,12 +45,16 @@ func main(){
 }
 '''
 
-def macho(text):
+def macho(text,stub):
     base=BASE-4096
-    header=struct.pack('<8I',0xfeedfacf,0x100000c,2,2,1,152,0,0)
-    segment=struct.pack('<II16sQQQQIIII',0x19,152,b'__TEXT',base,((4096+len(text)+4095)//4096)*4096,0,4096+len(text),7,5,1,0)
+    stub_offset=((4096+len(text)+4095)//4096)*4096+4096
+    total=stub_offset+len(stub)
+    header=struct.pack('<8I',0xfeedfacf,0x100000c,2,2,1,232,0,0)
+    segment=struct.pack('<II16sQQQQIIII',0x19,232,b'__TEXT',base,((total+4095)//4096)*4096,0,total,7,5,2,0)
     section=struct.pack('<16s16sQQIIIIIIII',b'__text',b'__TEXT',BASE,len(text),4096,2,0,0,0x80000400,0,0,0)
-    return (header+segment+section).ljust(4096,b'\0')+text
+    helper=struct.pack('<16s16sQQIIIIIIII',b'__auth_stubs',b'__TEXT',base+stub_offset,len(stub),stub_offset,2,0,0,0x80000408,0,0,0)
+    data=(header+segment+section+helper).ljust(4096,b'\0')+text
+    return data.ljust(stub_offset,b'\xff')+stub,base+stub_offset
 
 
 def main():
@@ -97,16 +103,25 @@ def main():
         for _ in range(8):
             vectors=[list(rng.randbytes(16)) for _ in range(32)]
             add(bytes(ks.asm(instruction)[0])+branch,vectors=vectors)
+    # Branch from __text to a different executable section through a register.
+    # A deliberate non-executable gap separates the two sections.
+    add(bytes(ks.asm('br x5')[0]))
+    cross=cases[-1]
+    stub_code=bytes(ks.asm('mov w0,#7; br x28')[0])
+    binary,stub_address=macho(bytes(pool),stub_code)
+    cross['Registers'][5]=stub_address;cross['Chunks']=2;cross['NativeCount']=3
+    cases.append({'PC':stub_address,'SP':0x700100,'Registers':[0]*28+[0x200000,0,0],'Flags':[False]*4,'Pages':{},'Vectors':[[0]*16 for _ in range(32)],'code':stub_code})
     with tempfile.TemporaryDirectory(prefix='crumb-generic-differential-') as folder:
         work=Path(folder);compiler=work/'compiler';runner=work/'runtime'
         subprocess.run(['python3',str(ROOT/'scripts/prepare-fairplay-generic.py'),'compiler',str(compiler)],check=True)
         subprocess.run(['go','mod','tidy'],cwd=compiler,check=True)
         subprocess.run(['go','build','-o','compiler','.'],cwd=compiler,check=True,timeout=120)
-        binary=macho(bytes(pool));binary_path=work/'synthetic.macho';binary_path.write_bytes(binary)
+        binary_path=work/'synthetic.macho';binary_path.write_bytes(binary)
         source_hash=hashlib.sha256(binary).hexdigest();profile=work/'synthetic.ir.gz';report=work/'census.json'
         subprocess.run([str(compiler/'compiler'),'--binary',str(binary_path),'--binary-sha256',source_hash,'--output',str(profile),'--report',str(report)],check=True)
         census=json.loads(report.read_text())
         assert census['unsupported_slots']==0,census
+        assert census['span_slots']>census['instruction_slots'] and len(census['executable_sections'])==2,census
         subprocess.run(['python3',str(ROOT/'scripts/prepare-fairplay-generic.py'),'runtime',str(runner)],check=True)
         archive=ROOT/'third_party/archives'/f'ipatool-fairplay-{REV}.tar.gz'
         assert hashlib.sha256(archive.read_bytes()).hexdigest()==ARCHIVE_SHA
@@ -124,20 +139,27 @@ def main():
             page=case['PC']&~4095
             size=((case['PC']-page+len(case['code'])+4095)//4096)*4096
             emulator.mem_map(page,size);emulator.mem_write(case['PC'],case['code']);emulator.mem_map(0x200000,4096)
+            if page!=(stub_address&~4095):emulator.mem_map(stub_address&~4095,4096);emulator.mem_write(stub_address,stub_code)
             for address,data in case['Pages'].items():emulator.mem_map(address,4096);emulator.mem_write(address,data)
             for register,value in zip(registers,case['Registers']):emulator.reg_write(register,value)
             for i,value in enumerate(case['Vectors']):emulator.reg_write(getattr(arm,'UC_ARM64_REG_Q'+str(i)),int.from_bytes(bytes(value),'little'))
             emulator.reg_write(arm.UC_ARM64_REG_SP,case['SP']);emulator.reg_write(arm.UC_ARM64_REG_NZCV,sum(int(flag)<<(31-j) for j,flag in enumerate(case['Flags'])))
-            emulator.emu_start(case['PC'],case['PC']+len(case['code']),count=len(case['code'])//4)
+            emulator.emu_start(case['PC'],case['PC']+len(case['code']),count=case.get('NativeCount',len(case['code'])//4))
             nzcv=emulator.reg_read(arm.UC_ARM64_REG_NZCV)
             expected.append({'PC':emulator.reg_read(arm.UC_ARM64_REG_PC),'SP':emulator.reg_read(arm.UC_ARM64_REG_SP),'Registers':[emulator.reg_read(reg) for reg in registers],'Flags':[bool(nzcv&(1<<(31-j))) for j in range(4)],'Vectors':[list(emulator.reg_read(getattr(arm,'UC_ARM64_REG_Q'+str(i))).to_bytes(16,'little')) for i in range(32)],'Pages':{str(address):base64.b64encode(bytes(emulator.mem_read(address,4096))).decode() for address in case['Pages']}})
-            inputs.append({key:({str(address):base64.b64encode(data).decode() for address,data in value.items()} if key=='Pages' else value) for key,value in case.items() if key!='code'})
-        result=subprocess.run([str(work/'runner'),str(profile),source_hash],input=json.dumps(inputs),text=True,capture_output=True,check=True,timeout=120)
+            inputs.append({key:({str(address):base64.b64encode(data).decode() for address,data in value.items()} if key=='Pages' else value) for key,value in case.items() if key not in ('code','NativeCount')})
+        command=[str(work/'runner'),str(profile),source_hash]
+        if sys.platform=='linux' and platform.machine()=='x86_64':
+            launcher=work/'deny-exec-runner'
+            subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-I',str(ROOT/'scripts'),str(ROOT/'scripts/fixtures/tci/generic-deny-exec-launcher.c'),'-o',str(launcher)],check=True)
+            command=[str(launcher)]+command
+        result=subprocess.run(command,input=json.dumps(inputs),text=True,capture_output=True,check=True,timeout=120)
         (runner/'generic_test.go').write_text((ROOT/'MapleSyrup/NativeSAP/fairplaygeneric_test.go').read_text().replace('package rawsource','package main',1))
         subprocess.run(['go','test','-race','-count=1',*map(str,runner.glob('*.go'))],check=True,timeout=120)
         actual=json.loads(result.stdout);assert len(actual)==len(expected)
         for i,(observed,reference) in enumerate(zip(actual,expected)):
             assert observed==reference,(i,[key for key in observed if observed[key]!=reference[key]])
     print(f'{len(cases)} generic-profile programs match independent ARM64 execution; no per-PC functions used.')
+    if sys.platform=='linux' and platform.machine()=='x86_64':print('Generic execution also passed with new mmap/mprotect PROT_EXEC mappings denied by seccomp.')
 
 if __name__=='__main__':main()

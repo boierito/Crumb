@@ -13,7 +13,7 @@ func genericTestImage(t *testing.T, base uint64, records [][genericRecordBytes]b
 	t.Helper()
 	data := make([]byte, 96)
 	copy(data, "CRIR1\x00\x00\x00")
-	binary.LittleEndian.PutUint32(data[8:], 1)
+	binary.LittleEndian.PutUint32(data[8:], 2)
 	binary.LittleEndian.PutUint32(data[12:], genericRecordBytes)
 	source := [32]byte{1, 2, 3}
 	copy(data[16:], source[:])
@@ -173,5 +173,36 @@ func TestGenericSequentialBudget(t *testing.T) {
 	next, stop, err := runGenericInstructionBlock(genericSyntheticState(), r, base)
 	if err != nil || stop || next != base+4096*4 || r.genericInstructions != 4096 {
 		t.Fatal("sequential execution ignored chunk budget")
+	}
+}
+
+func TestGenericCumulativeBudgetAcrossChunks(t *testing.T) {
+	previous := genericImage
+	defer func() { genericImage = previous }()
+	const base = uint64(0x12345000)
+	genericImage = genericTestImage(t, base, [][genericRecordBytes]byte{genericNormal(compactNoop, 0, 0, 0, 0), genericNormal(compactNoop, 0, 0, 0, 0)})
+	runtime := &rawSourceRuntime{genericInstructions: genericMaxInstructions - 1}
+	if _, _, err := runGenericInstructionBlock(genericSyntheticState(), runtime, base); err == nil {
+		t.Fatal("cumulative execution budget ignored")
+	}
+	if runtime.genericInstructions != genericMaxInstructions {
+		t.Fatal("executed beyond cumulative instruction budget")
+	}
+}
+
+func TestGenericNonExecutableGapsAreNotCode(t *testing.T) {
+	previous := genericImage
+	defer func() { genericImage = previous }()
+	const base = uint64(0x12345000)
+	gap := [genericRecordBytes]byte{6}
+	genericImage = genericTestImage(t, base, [][genericRecordBytes]byte{genericNormal(compactNoop, 0, 0, 0, 0), gap, genericBranch(compactBlockReturn, 0, 0)})
+	if genericImage.contains(base+4) || !genericImage.contains(base) || !genericImage.contains(base+8) {
+		t.Fatal("section gap treated as executable code")
+	}
+	if genericImage.executable != 2 || genericImage.supported != 2 {
+		t.Fatal("section gaps counted as unsupported instructions")
+	}
+	if _, _, err := runGenericInstructionBlock(genericSyntheticState(), &rawSourceRuntime{}, base+4); err == nil {
+		t.Fatal("non-executable gap executed")
 	}
 }

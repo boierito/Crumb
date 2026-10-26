@@ -157,7 +157,7 @@ func main() {
 	if hex.EncodeToString(digest[:]) != *expectedHash {
 		panic("binary hash mismatch")
 	}
-	text, base, err := openMachoARM64eText(*binaryPath)
+	text, valid, base, sections, err := executableImage(*binaryPath)
 	if err != nil {
 		panic(err)
 	}
@@ -166,7 +166,7 @@ func main() {
 	}
 	var profile bytes.Buffer
 	profile.WriteString("CRIR1\x00\x00\x00")
-	binary.Write(&profile, binary.LittleEndian, uint32(1))
+	binary.Write(&profile, binary.LittleEndian, uint32(2))
 	binary.Write(&profile, binary.LittleEndian, uint32(recordBytes))
 	profile.Write(digest[:])
 	abi, err := hex.DecodeString(kernelABI)
@@ -177,11 +177,18 @@ func main() {
 	binary.Write(&profile, binary.LittleEndian, base)
 	binary.Write(&profile, binary.LittleEndian, uint32(len(text)/4))
 	binary.Write(&profile, binary.LittleEndian, uint32(0))
-	supported, branches := 0, 0
+	supported, branches, executable := 0, 0, 0
 	missing := map[string]int{}
 	examples := map[string][]string{}
 	used := map[string]int{}
 	for offset := 0; offset < len(text); offset += 4 {
+		if !valid[offset/4] {
+			var gap [recordBytes]byte
+			gap[0] = 6
+			profile.Write(gap[:])
+			continue
+		}
+		executable++
 		pc := base + uint64(offset)
 		assembly := machoInstructionText(text[offset:offset+4], pc)
 		terminal, terminalErr := compactTerminator(annotatedInstruction{pc: pc, disassembly: assembly})
@@ -239,7 +246,7 @@ func main() {
 		panic(err)
 	}
 	// Full census, including every unsupported slot: no skipped addresses or implied coverage.
-	report := map[string]any{"schema": "crumb-generic-instruction-profile-v1", "binary_sha256": *expectedHash, "kernel_abi": kernelABI, "text_base": base, "instruction_slots": len(text) / 4, "supported_slots": supported, "branch_slots": branches, "unsupported_slots": len(text)/4 - supported, "unsupported_mnemonics": missing, "unsupported_examples": examples, "used_semantic_opcodes": used, "profile_payload_sha256": hex.EncodeToString(checksum[:]), "jit_required": false, "account_state_used": false, "decryption_validated": false}
+	report := map[string]any{"schema": "crumb-generic-instruction-profile-v2", "binary_sha256": *expectedHash, "kernel_abi": kernelABI, "text_base": base, "instruction_slots": executable, "span_slots": len(text) / 4, "executable_sections": sections, "supported_slots": supported, "branch_slots": branches, "unsupported_slots": executable - supported, "unsupported_mnemonics": missing, "unsupported_examples": examples, "used_semantic_opcodes": used, "profile_payload_sha256": hex.EncodeToString(checksum[:]), "jit_required": false, "account_state_used": false, "decryption_validated": false}
 	encoded, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		panic(err)
@@ -247,5 +254,5 @@ func main() {
 	if err = os.WriteFile(*reportPath, append(encoded, '\n'), 0644); err != nil {
 		panic(err)
 	}
-	fmt.Printf("Enumerated %d instruction slots; supported %d; unsupported %d. No address allowlist.\n", len(text)/4, supported, len(text)/4-supported)
+	fmt.Printf("Enumerated %d instruction slots; supported %d; unsupported %d. No address allowlist.\n", executable, supported, executable-supported)
 }
