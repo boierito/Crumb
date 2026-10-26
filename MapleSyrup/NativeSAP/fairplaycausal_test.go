@@ -71,7 +71,7 @@ func TestCausalStudyMutatesPrivateCopiesAndNeverReportsMaterial(t *testing.T) {
     if len(report.Trials) != 6 || report.SIDBContract != "other_header" ||
         !report.SourceFrameVerified || report.SINFModelVerified ||
         report.PrivateStateExported || report.ModelExported || report.PlaintextAuthenticated ||
-        !report.OriginalIPARetained {
+        !report.OriginalIPARetained || !report.ReplayVerified {
         t.Fatalf("unexpected research summary: %+v", report)
     }
     // A frame is a selected transformation slot, NOT a hash of every SIDB
@@ -146,7 +146,8 @@ func TestCausalReplayFailureCannotBeMisreadAsSIDBDependency(t *testing.T) {
     }
     report, err := studySIDBCausality(input, domain, engine)
     if err != nil { t.Fatal(err) }
-    if len(report.Trials) != 6 || report.Trials[0].Intervention != "baseline_replay" ||
+    if len(report.Trials) != 1 || report.ReplayVerified ||
+        report.Trials[0].Intervention != "baseline_replay" ||
         report.Trials[0].Status != "runtime_rejected" {
         t.Fatalf("hidden nonrepeatable baseline: %+v", report.Trials)
     }
