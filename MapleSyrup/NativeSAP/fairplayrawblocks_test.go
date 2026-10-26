@@ -62,3 +62,17 @@ func TestUntranslatedBlockIsNeverAccepted(t *testing.T) {
 		t.Fatal("untranslated target changed state or became success")
 	}
 }
+
+func TestUnknownCodeTargetIsSanitized(t *testing.T) {
+    r := &rawSourceRuntime{}
+    r.recordUnknownPC(0x100b30000)
+    if r.untranslatedTarget != "text+0xb30000" || r.targetClass != "in_pinned_code_window" {
+        t.Fatal("failed to report pinned executable target")
+    }
+    for _, pointer := range []uint64{0, 0xdeadbeef, 0x200000000, 0x100000001} {
+        r.recordUnknownPC(pointer)
+        if r.untranslatedTarget != "" || r.targetClass != "outside_pinned_code_window" {
+            t.Fatal("exposed an out-of-profile pointer")
+        }
+    }
+}

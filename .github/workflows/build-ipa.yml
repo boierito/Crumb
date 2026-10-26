@@ -16,9 +16,42 @@ on:
         default: ''
 permissions:
   contents: read
+concurrency:
+  # A pull request and a branch push for the same ref share the same build
+  # group. New commits cancel stale, resource-heavy native compilations.
+  group: crumb-build-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 jobs:
+  native:
+    name: Build/reuse iOS native libraries
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.0'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.1'
+          cache: false
+      - name: Restore native build cache
+        uses: actions/cache@v4
+        with:
+          path: build/Native
+          key: crumb-native-macos15-xcode26-go125-${{ hashFiles('scripts/*.sh', 'scripts/*.py', 'MapleSyrup/NativeSAP/**/*.go', 'third_party/archives/*.tar.gz') }}
+      - name: Build and verify native library fingerprint
+        run: bash scripts/ensure-native.sh
+      - name: Share compiled native libraries across configurations
+        uses: actions/upload-artifact@v4
+        with:
+          name: Crumb-native-${{ github.run_id }}
+          path: build/Native/
+          if-no-files-found: error
+          retention-days: 1
+
   ipa:
     name: Build ${{ matrix.configuration }} IPA
+    needs: native
     runs-on: macos-15
     strategy:
       fail-fast: false
@@ -35,6 +68,11 @@ jobs:
         with:
           go-version: '1.25.1'
           cache: false
+      - name: Restore native libraries from shared build
+        uses: actions/download-artifact@v4
+        with:
+          name: Crumb-native-${{ github.run_id }}
+          path: build/Native
       - name: Build and package unsigned IPA
         env:
           CONFIGURATION: ${{ matrix.configuration }}

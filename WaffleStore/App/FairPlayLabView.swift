@@ -175,7 +175,7 @@ final class FairPlayLab: ObservableObject {
         enrollmentStages = [:]
         log("Transaction", "Validated exchange \(transactions): kbsync \(transaction.kbsync.count) bytes; keybag \(transaction.keybag?.count ?? 0) bytes; SINF count \(transaction.sinfs.count). Capture saved privately.")
     }
-    func download(_ text: String, account: StoreAccount, autoRecover: Bool = false) {
+    func download(_ text: String, account: StoreAccount, autoRecover: Bool = false, deepProbe: Bool = false) {
         perform {
             guard self.input == nil else { return }
             self.transactions = 0
@@ -210,6 +210,14 @@ final class FairPlayLab: ObservableObject {
                     }
                 } else {
                     self.log("Enrollment", "Automatic recovery skipped: exactly one retained transaction is required. Original IPA retained.")
+                }
+            }
+            if deepProbe {
+                if self.transactions == 1 {
+                    do { try await self.performDeepLocalProbe() }
+                    catch { self.log("Enrollment", "Multi-probe unavailable (capture/validation); original IPA retained.") }
+                } else {
+                    self.log("Enrollment", "Multi-probe skipped: exactly one retained transaction is required.")
                 }
             }
         }
@@ -280,6 +288,26 @@ final class FairPlayLab: ObservableObject {
     func recoverCurrentCapture() {
         guard input != nil else { return }
         perform { try await self.attemptCurrentCaptureRecovery() }
+    }
+    // Compare multiple virtual file layouts from one verified, unchanged
+    // private StoreAgent capture. The native result is fixed-label metadata.
+    private func performDeepLocalProbe() async throws {
+        guard let input else { throw CocoaError(.fileReadNoSuchFile) }
+        try await analyzeCurrentCaptureFiles()
+        guard transactions == 1, let archive = captureArchive else {
+            log("Enrollment", "Multi-probe requires exactly one retained local transaction.")
+            return
+        }
+        log("Enrollment", "Running four bounded on-device recovery probes with unchanged SIDB; no private values or models exported.")
+        let response = try await Task.detached {
+            try FairPlayNative.run("probe-capture", source: archive, ipa: input)
+        }.value
+        log("Enrollment", response)
+        log("Enrollment", "All probe results are diagnostic only; they do not prove decryption.")
+    }
+    func deepProbeCurrentCapture() {
+        guard input != nil else { return }
+        perform { try await self.performDeepLocalProbe() }
     }
     func recoverEnrollment(_ selected: URL) {
         nativeRecoveryVerified = false
@@ -445,6 +473,13 @@ struct FairPlayLabView: View {
                     }.disabled(appData.ipaTool == nil || appInput.isEmpty || lab.input != nil)
                     Text("One-tap experimental path: download, retain the matching keybag context, audit the capture, and attempt recovery entirely on this iPhone. A failed recovery leaves the original IPA available.")
                         .font(.footnote)
+                    Button("Download + four-way diagnostic (iPhone only)") {
+                        if let account = appData.ipaTool?.account {
+                            lab.download(appInput, account: account, deepProbe: true)
+                        }
+                    }.disabled(appData.ipaTool == nil || appInput.isEmpty || lab.input != nil)
+                    Text("One download; four bounded comparisons of how the same SIDB reaches the recovery engine. Does not export private data or a model.")
+                        .font(.footnote)
                     if let record, let url = record.fileURL {
                         Button("Use selected downloaded IPA") { lab.input = url }
                     }
@@ -476,6 +511,9 @@ struct FairPlayLabView: View {
                 }
                 Section("4 · Recover or import an enrollment") {
                     Button("Attempt recovery from current capture") { lab.recoverCurrentCapture() }.disabled(lab.input == nil)
+                    Button("Run four-way diagnostic (reuse current capture)") { lab.deepProbeCurrentCapture() }.disabled(lab.input == nil)
+                    Text("Compares dual state paths, fpsd-only, shared-only, and SIDB-only without changing the encrypted state bytes. Results appear in Enrollment logs.")
+                        .font(.footnote)
                     Text("Experimental compatibility attempt using the complete retained SIDB and its original identity. Rejection leaves enrollment unverified.")
                     Button("Recover model from native enrollment folder") { importingEnrollment = true; importingCapture = false; importing = true }.disabled(lab.input == nil)
                     if lab.nativeRecoveryVerified { Label("Derived source and frame cross-checked; model matches target SINF", systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
