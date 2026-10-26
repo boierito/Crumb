@@ -110,3 +110,5 @@ jobs:
       - run: python3 -m pip install keystone-engine==0.9.2
       - name: Compare integrated bootstrap block with ARM64 reference
         run: python3 scripts/test-fairplay-next-block-differential.py
+      - name: Compare bootstrap continuation with ARM64 reference
+        run: python3 scripts/test-fairplay-bootstrap-exit-differential.py
