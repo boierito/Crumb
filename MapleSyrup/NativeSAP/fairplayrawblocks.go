@@ -1,6 +1,24 @@
 // Copied into the isolated rawsource package by prepare-fairplay-raw.py.
 package rawsource
 
+import "fmt"
+
+// A PC is only exportable as a label when it is an aligned offset inside the
+// publicly pinned executable's code window. Never log arbitrary raw guest
+// register values, stack addresses, pointers or private state.
+func (r *rawSourceRuntime) recordUnknownPC(pc uint64) {
+    if r == nil { return }
+    const base uint64 = 0x100000000
+    const window uint64 = 16 << 20
+    if pc >= base && pc-base < window && pc%4 == 0 {
+        r.untranslatedTarget = fmt.Sprintf("text+0x%x", pc-base)
+        r.targetClass = "in_pinned_code_window"
+    } else {
+        r.untranslatedTarget = ""
+        r.targetClass = "outside_pinned_code_window"
+    }
+}
+
 type sourceBlockFunc func(*state, *rawSourceRuntime) (uint64, bool, error)
 type sourceBlock struct {
 	run   sourceBlockFunc
@@ -20,6 +38,7 @@ func callSourceBlock(s *state, runtime *rawSourceRuntime, pc uint64, block sourc
 func resumeSourceBlock(s *state, runtime *rawSourceRuntime, pc, phaseEnd uint64) (uint64, bool, bool, error) {
 	block, covered := knownSourceBlocks[pc]
 	if !covered || runtime == nil {
+		if runtime != nil { runtime.recordUnknownPC(pc) }
 		return pc, false, false, nil
 	}
 	previousStop := runtime.stopPC
