@@ -51,14 +51,11 @@ func decryptIPACredential(source, destination, credentialPath string) (any, erro
     if result.Binaries != expected || result.Pages < 1 {
         return nil, recoveryFailure("validation", "encrypted_image_coverage_incomplete", nil)
     }
-    candidate, err := fairplay.InspectPortableIPA(destination)
-    if err != nil {
-        return nil, recoveryFailure("validation", "output_inspection_failed", nil)
+    verified, err := credentialengine.VerifyPatchedOutput(destination, result.PatchedPaths)
+    if err != nil || verified != expected {
+        return nil, recoveryFailure("validation", "processed_image_verification_failed", nil)
     }
-    remaining, _ := candidate["encrypted_images"].(int)
-    if remaining != 0 {
-        return nil, recoveryFailure("validation", "output_contains_encrypted_images", nil)
-    }
+    remaining := 0
     if stat, err := os.Stat(destination); err != nil || stat.Size() <= 0 {
         return nil, recoveryFailure("validation", "output_empty", nil)
     }
