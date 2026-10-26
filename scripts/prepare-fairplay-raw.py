@@ -97,6 +97,7 @@ text = api.read_text().replace('RAW_RESOURCE_SHA256', expected)
 (target / 'block_dispatch.go').write_text((api.parent / 'fairplayrawblocks.go').read_text())
 (target / 'bootstrap_supplement.go').write_text((api.parent / 'fairplayrawsupplement.go').read_text())
 (target / 'block_dispatch_test.go').write_text((api.parent / 'fairplayrawblocks_test.go').read_text())
+(target / 'bootstrap_supplement_test.go').write_text((api.parent / 'fairplayrawsupplement_test.go').read_text())
 
 for name, origin in [('LICENSE-IPATOOL', source.parent.parent / 'LICENSE'),
                      ('LICENSE-DARKPHOENIX.txt', source / 'LICENSE-DARKPHOENIX.txt'),
