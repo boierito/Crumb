@@ -37,7 +37,7 @@ def read_profile(data):
         if len(result) != n:
             raise ValueError("truncated public model")
         return result
-    if take(8) != b"FPGOOR1\\x00" or struct.unpack("<I", take(4))[0] != 2:
+    if take(8) != b"FPGOOR1\x00" or struct.unpack("<I", take(4))[0] != 2:
         raise ValueError("unexpected pinned model magic/version")
     binary_hash = take(32).hex()
     take(8 + 31 * 8 + 8 + 4)
@@ -60,13 +60,13 @@ def main():
         cfg_source = checked_member(tar, cfg_suffix).decode("utf-8")
     binary_hash, pages = read_profile(model_data)
     static_blocks = set(int(x, 16) for x in
-        re.findall(r"func rawSourceBootstrapBlock([0-9a-f]+)\\(", cfg_source))
+        re.findall(r"func rawSourceBootstrapBlock([0-9a-f]+)\(", cfg_source))
     translated_instructions = set(int(x, 16) for x in
         re.findall(r"// 0x([0-9a-f]+):", cfg_source))
     if SOURCE_BLOCK not in static_blocks or TARGET in static_blocks:
         raise RuntimeError("expected original missing-target regression no longer applies")
     start = cfg_source.index(f"func rawSourceBootstrapBlock{SOURCE_BLOCK:x}(")
-    end = cfg_source.find("\\nfunc ", start + 5)
+    end = cfg_source.find("\nfunc ", start + 5)
     function = cfg_source[start:end if end >= 0 else None]
     if "braa x10, x17" not in function or "ldr x10, [x30, w10, sxtw #3]" not in function:
         raise RuntimeError("source block is no longer the pinned indirect branch")
@@ -92,7 +92,7 @@ def main():
     }
     print(json.dumps(report, sort_keys=True, indent=2))
     if len(sys.argv) == 2:
-        Path(sys.argv[1]).write_text(json.dumps(report, sort_keys=True, indent=2) + "\\n")
+        Path(sys.argv[1]).write_text(json.dumps(report, sort_keys=True, indent=2) + "\n")
 
 if __name__ == "__main__":
     main()
