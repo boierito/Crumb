@@ -81,3 +81,16 @@ executable path, hardware identity, license and state files are private runtime
 inputs. Their sources, profile README and licenses are included in the native
 corresponding-source archive. The SAP guest and portable decoder pins remain
 independent; no recovered account model is embedded.
+
+### DrWhax/UnfairPlay generic semantic interpreter
+
+The generic instruction-profile compiler and compact interpreter are adapted
+from `DrWhax/unfairplay` commit `c54e751775cbc2a54510c0fcafb0aef6b1619bc9`
+under its MIT license. Original source hashes, LICENSE and NOTICE are retained
+in `third_party/unfairplay-generic`. Build-time adapters preserve those files
+and include the generated interpreter/profile and notices in the corresponding
+source archive. The bundled profile contains semantic operations and public
+code locations for the exact hash-pinned build; it contains no account state
+and no Mach-O executable. Profile coverage is explicitly censused, including
+unsupported instructions. This does not establish enrollment compatibility or
+successful decryption.

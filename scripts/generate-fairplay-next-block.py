@@ -8,6 +8,7 @@ The generated function must be reviewed and differentially tested before use.
 import argparse
 import hashlib
 import importlib
+import json
 from pathlib import Path
 import sys
 import subprocess
@@ -80,6 +81,8 @@ def main():
     parser.add_argument("--target", type=lambda value: int(value, 0), default=TARGET,
                         help="Instruction address in the exact executable section")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--reference-output", type=Path,
+                        help="Optional public instruction fixture for independent execution tests")
     args = parser.parse_args()
     archive = ROOT / "third_party/archives" / f"ipatool-fairplay-{REV}.tar.gz"
     if hashlib.sha256(archive.read_bytes()).hexdigest() != ARCHIVE_HASH:
@@ -99,9 +102,18 @@ def main():
         from raw_macho_db import RawMachODatabase
         decoder = Cs(CS_ARCH_ARM64, CS_MODE_ARM)
         decoder.detail = True
-        candidate = generate(RawMachODatabase(binary), decoder, translator, args.target)
+        database = RawMachODatabase(binary)
+        candidate = generate(database, decoder, translator, args.target)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(candidate)
+        if args.reference_output:
+            instructions = block_instructions(database, decoder, translator, args.target)
+            reference = {"binary_sha256": BINARY_HASH, "start": args.target,
+                         "instructions": [{"address": i.address, "hex": bytes(i.bytes).hex(),
+                                           "assembly": i.mnemonic + " " + i.op_str}
+                                          for i in instructions]}
+            args.reference_output.parent.mkdir(parents=True, exist_ok=True)
+            args.reference_output.write_text(json.dumps(reference, indent=2) + "\n")
     print("Generated review candidate; dispatcher and release coverage unchanged.")
 
 

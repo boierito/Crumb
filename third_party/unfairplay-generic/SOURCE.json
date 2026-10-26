@@ -1,0 +1,11 @@
+{
+  "repository": "https://github.com/DrWhax/unfairplay",
+  "revision": "c54e751775cbc2a54510c0fcafb0aef6b1619bc9",
+  "files": {
+    "internal/recovery/compact_kernel.go": "118e4bf15039f32e535c35aabdb38ceaecb7616f20d90799c1f4deaed5d1340d",
+    "internal/recovery/compact_cfg.go": "0d05a284c5038d1c3d01c01d684bf076f399b107604d566c8532bb36ccd0726b",
+    "tools/compact-kernel/main.go": "ae707de065b94bca31bcc2e723e2b3e7055fd8df2503ac0b9be01da07b290201",
+    "LICENSE": "3466fcf0483597283e184031a9f1f0d142d7f41004452cf7714182742a503a95",
+    "NOTICE": "f9d57121f8d3a821ef003ff932befb0fff9cf6c7548fcc3e8ccd860efd7ed4d0"
+  }
+}

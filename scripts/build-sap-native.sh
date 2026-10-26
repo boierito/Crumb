@@ -101,6 +101,10 @@ pathlib.Path(sys.argv[2]).write_text('\n\n'.join(pieces))
 PY
 cat "$WORK/ipatool-$FAIRPLAY_REV/tools/fairplay-recovery/LICENSE-DARKPHOENIX.txt" >> "$OUTPUT/GoThirdPartyNotices.txt"
 cp "$WORK/ipatool-$FAIRPLAY_REV/tools/fairplay-recovery/LICENSE-DARKPHOENIX.txt" "$SOURCE/wafflebridge/recovery/"
+cat "$ROOT/third_party/unfairplay-generic/LICENSE" "$ROOT/third_party/unfairplay-generic/NOTICE" >> "$OUTPUT/GoThirdPartyNotices.txt"
+cp "$ROOT/third_party/unfairplay-generic/LICENSE" "$SOURCE/wafflebridge/recovery/rawsource/LICENSE-UNFAIRPLAY"
+cp "$ROOT/third_party/unfairplay-generic/NOTICE" "$SOURCE/wafflebridge/recovery/rawsource/NOTICE-UNFAIRPLAY"
+cp "$ROOT/third_party/unfairplay-generic/PROFILE.json" "$SOURCE/wafflebridge/recovery/rawsource/GENERIC-PROFILE-PROVENANCE.json"
 cp "$OUTPUT/libWaffleSAP.h" "$OUTPUT/SAP-generated-ABI.h"
 cp "$SOURCE/LICENSE" "$OUTPUT/IPATOOL-LICENSE"
 tar -czf "$OUTPUT/ipatool-sap-corresponding-source.tar.gz" -C "$WORK" "$(basename "$SOURCE")"

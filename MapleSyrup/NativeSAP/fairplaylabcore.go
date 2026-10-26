@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/majd/ipatool/v2/internal/fairplay"
 	"github.com/majd/ipatool/v2/wafflebridge/recovery/frame"
+	"github.com/majd/ipatool/v2/wafflebridge/recovery/rawsource"
 	"github.com/majd/ipatool/v2/wafflebridge/recovery/sidb"
 	"github.com/majd/ipatool/v2/wafflebridge/recovery/state"
 	"io"
@@ -79,7 +80,7 @@ func labRun(r labRequest) (any, error) {
 		}
 		return map[string]any{"private_capture": true}, nil
 	case "selftest":
-		if !state.VerifyResource() || !frame.VerifyResource() || !sidb.VerifyResource() {
+		if !state.VerifyResource() || !frame.VerifyResource() || !sidb.VerifyResource() || !rawsource.VerifyResource() {
 			return nil, fmt.Errorf("resource integrity")
 		}
 		a, e := state.Evaluate(make([]byte, 224), nil)
@@ -107,7 +108,7 @@ func labRun(r labRequest) (any, error) {
 				return nil, fmt.Errorf("fixture mismatch")
 			}
 		}
-		return map[string]any{"state": "passed", "frame": "passed", "sidb": "passed", "synthetic": true, "revision": "ef98227"}, nil
+		return map[string]any{"state": "passed", "frame": "passed", "sidb": "passed", "synthetic": true, "revision": "ef98227", "generic_profile": rawsource.ExecutionProfileSummary()}, nil
 	case "inspect":
 		return fairplay.InspectPortableIPA(r.Source)
 	case "state":

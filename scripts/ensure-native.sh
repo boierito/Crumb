@@ -5,7 +5,7 @@ if [[ ${PLATFORM_NAME:-iphoneos} != iphoneos ]]; then
   echo 'The native SAP probe currently targets physical arm64 iOS devices. Use swift test for host protocol tests.' >&2
   exit 2
 fi
-FINGERPRINT=$( { shasum -a 256 scripts/prepare-unicorn-tci.py scripts/build-unicorn-tci.sh scripts/build-sap-native.sh scripts/prepare-fairplay-portable.py $(find MapleSyrup/NativeSAP -name "*.go" -type f | sort); xcrun --sdk iphoneos --show-sdk-version; } | shasum -a 256 | cut -d ' ' -f 1)
+FINGERPRINT=$( { shasum -a 256 scripts/prepare-unicorn-tci.py scripts/build-unicorn-tci.sh scripts/build-sap-native.sh scripts/prepare-fairplay-portable.py scripts/prepare-fairplay-raw.py scripts/prepare-fairplay-generic.py scripts/fairplay_generic_resource.py $(find third_party/unfairplay-generic -type f | sort) $(find MapleSyrup/NativeSAP -name "*.go" -type f | sort); xcrun --sdk iphoneos --show-sdk-version; } | shasum -a 256 | cut -d ' ' -f 1)
 if [[ -f build/Native/fingerprint && -f build/Native/libunicorn.a && -f build/Native/libWaffleSAP.a ]] && [[ $(cat build/Native/fingerprint) == "$FINGERPRINT" ]]; then
   exit 0
 fi
