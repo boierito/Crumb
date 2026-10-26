@@ -80,3 +80,24 @@ A causal observation that an invalid SIDB mutation changes material is **not its
 - **Go/no-go:** a full signed original enrollment + target IPA + private model must produce valid SINF *and* complete page and Mach-O validation. Without that evidence, status stays research-only, no decrypted file advertised or exported.
 
 **Security/release rule:** No new testing IPA should be published solely because a counter, label, routing variant or synthetically tested transform changed. Ship the causal study only after native iOS compile and host tests; do not describe it as an operational decrypter.
+
+
+## V13 owner-device finding, 2026-10-26 19:46 Argentina
+
+Real `research-causality`, baseline with StoreAgent-native accepted keybag (888 bytes), KBSync (196 bytes), SIDB (878 bytes), single 440-byte SINF private region:
+
+- **The SIDB reports big-endian header `0x0007000b`** (our strict `macos_v7000b_unclassified_size` label). The header agrees with UnfairPlay's known Mac SIDB family, but length 878 matches none of its independently checked Mac source geometries (630/642/993/1003). This is positive *structural-family* evidence, **not** evidence of a transferable model.
+- Original execution `source_frame_verified=true`, `sinf_model_verified=false`.
+- First-byte, offset-4, middle, last SIDB one-bit trials, as well as a one-bit change in the six-byte virtual hardware identity, all reported `status=runtime_rejected`.
+- The original V13 instrument reported `source_changed=false`, `frame_changed=false` and `model_changed=false` for errors because it had **no result to compare**. These booleans are invalid to interpret as proof that source, frame or model ignored the changed bit. **No causal conclusion is available from these five failures alone.**
+
+### Implemented correction on PR #12 (after device V13)
+
+- Adds an **exact, unmodified baseline replay** first; `replay_verified=true` only if original Source, Frame, model and strict SINF validation results reproduce exactly.
+- If the unmodified replay fails or changes, the operation stops before any mutations: the experiment is **inconclusive because the engine is not reproducible in that session**.
+- Only if replay verified, the original five single-bit interventions run. Each failure includes only `failure_phase` and `failure_code` from strict **fixed-string, allowlisted** rawsource diagnostics. Unknown failures collapse to `other`; no exception messages, paths, addresses or private values are emitted.
+- Synthetic tests cover unmodified replay success, baseline replay failure, fixed-code sanitization and rejection privacy. This does not supply any new key or claim real IPA decryption.
+
+Research decision on next device report: **if replay fails**, investigate interpreter/model runtime reentry before blaming private SIDB checksums. **If replay passes but SIDB bit changes fail during account parsing**, investigate SIDB integrity, version and parser geometry rather than altering model/SINF validation. **If hardware-only mutation fails**, that is consistent with binding but does not establish which hardware field is cryptographically bound. An unchanged control followed by successful altered runs is the precondition for downstream Source/Frame/Pack causality claims.
+
+These revisions require a new iOS build before the additional `replay_verified` and `failure_phase`/`failure_code` fields can appear in logs; V13 used the earlier app and its result cannot be retroactively reinterpreted.
