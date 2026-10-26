@@ -253,3 +253,66 @@ func TestDecryptionDiagnosticUsesRealInventoryAndImageGates(t *testing.T) {
 		t.Fatal("invalid output published")
 	}
 }
+
+
+// Exercise the production resolver against real synthetic V3 ciphertext and
+// an actual ZIP model directory. Classification must not grant acceptance.
+func TestBindingFailureIdentifiesExactSafeGate(t *testing.T) {
+	sinf, model := syntheticCurrentSINFV3Fixture(t, SINFSelector{User: 3, Key: 9}, [16]byte{1, 2, 3, 4})
+	ipa := sharedLicenseIPAFixture(t, map[string][]byte{"Payload/A.app/SC_Info/A.sinf": sinf})
+	archive, err := zip.OpenReader(ipa)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer archive.Close()
+	files := map[string]*zip.File{}
+	for _, item := range archive.File {
+		files[item.Name] = item
+	}
+	inventory := ipaInventory{images: []encryptedImage{{member: "Payload/A.app/A"}, {member: "Payload/A.app/PlugIns/B.appex/B"}}}
+	corruptEnvelope := append([]byte(nil), model...)
+	corruptEnvelope[0] ^= 0x1
+	wrongSelector := append([]byte(nil), model...)
+	wrongSelector[48] ^= 0x1
+	wrongKey := append([]byte(nil), model...)
+	wrongKey[68] ^= 0x1
+	for _, test := range []struct {
+		name, wantStage string
+		pack            []byte
+	}{
+		{"valid", "", model},
+		{"envelope", "model-sinf-envelope", corruptEnvelope},
+		{"selector", "model-sinf-selector", wrongSelector},
+		{"decrypt", "model-sinf-decode", wrongKey},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			directory := t.TempDir()
+			if err := os.Chmod(directory, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(directory, "candidate.bin"), test.pack, 0600); err != nil {
+				t.Fatal(err)
+			}
+			materials, err := resolveImageMaterials(inventory, files, directory)
+			if test.wantStage == "" {
+				if err != nil || len(materials) != 2 {
+					t.Fatalf("valid model rejected: %v", err)
+				}
+				return
+			}
+			stage, ok := DecryptionFailureStage(err)
+			if !ok || stage != test.wantStage || materials != nil {
+				t.Fatalf("stage = %q, ok=%v, want=%q (err %v)", stage, ok, test.wantStage, err)
+			}
+		})
+	}
+	// An invalid SINF must be classified before any selector comparison.
+	private := errors.New("PRIVATE-SINF-CONTENT")
+	err = classifyModelSINFBindingFailure([]byte("invalid"), [][]byte{model}, true, private)
+	if stage, ok := DecryptionFailureStage(err); !ok || stage != "model-sinf-structure" {
+		t.Fatalf("malformed SINF classified as %q (%v)", stage, err)
+	}
+	if strings.Contains(err.Error(), "PRIVATE") || !errors.Is(err, private) {
+		t.Fatal("private cause leaked or lost")
+	}
+}
