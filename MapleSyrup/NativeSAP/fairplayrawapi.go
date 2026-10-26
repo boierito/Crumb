@@ -3,6 +3,7 @@
 package rawsource
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -35,6 +36,9 @@ type RecoveryDiagnostic struct {
 	GenericInstructions    uint64                 `json:"generic_instructions,omitempty"`
 	GenericLastInstruction string                 `json:"generic_last_instruction,omitempty"`
 	GenericBlocks          int                    `json:"generic_blocks,omitempty"`
+	CheckpointCompared      bool                   `json:"checkpoint_compared_after_sinf"`
+	SourceChangedAfterSINF  bool                   `json:"source_changed_after_sinf"`
+	FrameChangedAfterSINF   bool                   `json:"frame_changed_after_sinf"`
 }
 type recoveryError struct{ diagnostic RecoveryDiagnostic }
 
@@ -66,6 +70,9 @@ func runtimeDiagnostic(phase, code string, runtime *rawSourceRuntime) RecoveryDi
 		diagnostic.GenericInstructions = runtime.genericInstructions
 		diagnostic.GenericLastInstruction = sourceBlockLabel(runtime.genericLastPC)
 		diagnostic.GenericBlocks = runtime.genericBlocks
+		diagnostic.CheckpointCompared = runtime.checkpointCompared
+		diagnostic.SourceChangedAfterSINF = runtime.sourceChangedAfterSINF
+		diagnostic.FrameChangedAfterSINF = runtime.frameChangedAfterSINF
 		if code == "raw_unknown_control_flow" || strings.HasPrefix(code, "generic_") {
 			diagnostic.UntranslatedTarget = runtime.untranslatedTarget
 			diagnostic.TargetClass = runtime.targetClass
@@ -130,30 +137,82 @@ func (r *rawSourceRuntime) recordLookup(requested string, found bool) {
 	r.lookupCounts[category] = count
 }
 
+// The selection CFG materializes the frame during its second frame call.
+// Capture source/frame at this phase boundary, before SINF changes guest state.
+// This does not substitute any frame or relax downstream cryptographic checks.
+type enrollmentOutputCheckpoint struct {
+	source, frame []byte
+}
+
+func (c *enrollmentOutputCheckpoint) clear() {
+	clear(c.source)
+	clear(c.frame)
+	c.source, c.frame = nil, nil
+}
+
+func checkpointEnrollmentOutputs() (enrollmentOutputCheckpoint, error) {
+	var checkpoint enrollmentOutputCheckpoint
+	var err error
+	checkpoint.source, err = currentRawSourceBytes(224)
+	if err != nil {
+		return enrollmentOutputCheckpoint{}, err
+	}
+	checkpoint.frame, err = currentRawSourceFrameBytes()
+	if err != nil {
+		checkpoint.clear()
+		return enrollmentOutputCheckpoint{}, err
+	}
+	return checkpoint, nil
+}
+
+// Comparisons are local only. Unavailable comparison stays explicitly false;
+// no secret bytes, secret digests, guest addresses or paths leave the runtime.
+func observePostSINFOutputs(runtime *rawSourceRuntime, checkpoint enrollmentOutputCheckpoint) {
+	if runtime == nil {
+		return
+	}
+	postSource, sourceErr := currentRawSourceBytes(224)
+	postFrame, frameErr := currentRawSourceFrameBytes()
+	defer clear(postSource)
+	defer clear(postFrame)
+	if sourceErr != nil || frameErr != nil {
+		return
+	}
+	runtime.checkpointCompared = true
+	runtime.sourceChangedAfterSINF = !bytes.Equal(checkpoint.source, postSource)
+	runtime.frameChangedAfterSINF = !bytes.Equal(checkpoint.frame, postFrame)
+}
+
 // Preserve the upstream natural path and bounds while identifying its phases.
-func runEnrollmentSource(value *model, runtime *rawSourceRuntime) error {
+func runEnrollmentSource(value *model, runtime *rawSourceRuntime) (enrollmentOutputCheckpoint, error) {
 	if value.binaryHash != rawSourceBinaryHash {
-		return recoveryFailed("resource", "raw_binary_mismatch", runtime)
+		return enrollmentOutputCheckpoint{}, recoveryFailed("resource", "raw_binary_mismatch", runtime)
 	}
 	worker := newState(value)
 	worker.reset()
 	lastRawSourceState = worker
 	if _, _, err := runRawSourceAccountEntryCFG(worker, runtime, 1000000); err != nil {
-		return runtimeFailure("account-parser", err, runtime)
+		return enrollmentOutputCheckpoint{}, runtimeFailure("account-parser", err, runtime)
 	}
 	if _, _, err := runRawSourceBootstrapCFG(worker, runtime, 1000000); err != nil {
-		return runtimeFailure("bootstrap", err, runtime)
+		return enrollmentOutputCheckpoint{}, runtimeFailure("bootstrap", err, runtime)
 	}
 	if _, err := runRawSourceKernelLoop(worker, "outer"); err != nil {
-		return runtimeFailure("source", err, runtime)
+		return enrollmentOutputCheckpoint{}, runtimeFailure("source", err, runtime)
 	}
 	if _, _, err := runRawSourceSelectionCFG(worker, runtime, 2000000); err != nil {
-		return runtimeFailure("selection", err, runtime)
+		return enrollmentOutputCheckpoint{}, runtimeFailure("selection", err, runtime)
+	}
+	checkpoint, err := checkpointEnrollmentOutputs()
+	if err != nil {
+		return enrollmentOutputCheckpoint{}, recoveryFailed("selection-output", "raw_selection_output_unavailable", runtime)
 	}
 	if _, _, err := runRawSourceSINFEntryCFG(worker, runtime, 2000000); err != nil {
-		return runtimeFailure("sinf", err, runtime)
+		checkpoint.clear()
+		return enrollmentOutputCheckpoint{}, runtimeFailure("sinf", err, runtime)
 	}
-	return nil
+	observePostSINFOutputs(runtime, checkpoint)
+	return checkpoint, nil
 }
 
 func VerifyResource() bool {
@@ -212,24 +271,16 @@ func Recover(executable string, hardware []byte, files map[string][]byte) (Resul
 		}
 		activeRawSourceRuntime.files[name] = append([]byte(nil), data...)
 	}
-	if err := runEnrollmentSource(value, activeRawSourceRuntime); err != nil {
+	checkpoint, err := runEnrollmentSource(value, activeRawSourceRuntime)
+	if err != nil {
 		return result, err
 	}
 	result.Pack, err = currentRawSourceEnrollmentPack()
 	if err != nil {
+		checkpoint.clear()
 		return Result{}, recoveryFailed("pack", "raw_pack_unavailable", activeRawSourceRuntime)
 	}
-	result.Source, err = currentRawSourceBytes(224)
-	if err != nil {
-		clear(result.Pack)
-		return Result{}, recoveryFailed("source-output", "raw_source_unavailable", activeRawSourceRuntime)
-	}
-	result.Frame, err = currentRawSourceFrameBytes()
-	if err != nil {
-		clear(result.Pack)
-		clear(result.Source)
-		return Result{}, recoveryFailed("frame-output", "raw_frame_unavailable", activeRawSourceRuntime)
-	}
+	result.Source, result.Frame = checkpoint.source, checkpoint.frame
 	result.Runtime = runtimeDiagnostic("completed", "", activeRawSourceRuntime)
 	return result, nil
 }

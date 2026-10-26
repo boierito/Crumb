@@ -67,7 +67,10 @@ for name in names:
         lookup = 'return bestSuffix, bestData, bestSuffix != ""'
         if text.count(field) != 1 or text.count(lookup) != 1:
             raise SystemExit('raw runtime lookup contract changed')
-        text = text.replace(field, field + '\n lookupCounts map[string]LookupCount\n lastKnownBlock uint64\n additionalBlocks int\n untranslatedTarget string\n targetClass string\n genericBlocks int\n genericInstructions uint64\n genericLastPC uint64')
+        text = text.replace(field, field + '\n lookupCounts map[string]LookupCount\n lastKnownBlock uint64\n additionalBlocks int\n untranslatedTarget string\n targetClass string\n genericBlocks int\n genericInstructions uint64\n genericLastPC uint64
+ checkpointCompared bool
+ sourceChangedAfterSINF bool
+ frameChangedAfterSINF bool')
         text = text.replace(lookup, 'r.recordLookup(path, bestSuffix != "")\n\t' + lookup)
     if name in cfg_ends:
         # Preserve the original cases. Only their unknown-target branch may
@@ -100,6 +103,7 @@ text = api.read_text().replace('RAW_RESOURCE_SHA256', expected)
 (target / 'api.go').write_text(text)
 
 (target / "api_test.go").write_text((api.parent / "fairplayrawapi_test.go").read_text())
+(target / "enrollment_checkpoint_test.go").write_text((api.parent / "fairplayrawcheckpoint_test.go").read_text())
 (target / 'block_dispatch.go').write_text((api.parent / 'fairplayrawblocks.go').read_text())
 (target / 'bootstrap_supplement.go').write_text((api.parent / 'fairplayrawsupplement.go').read_text())
 (target / 'block_dispatch_test.go').write_text((api.parent / 'fairplayrawblocks_test.go').read_text())
