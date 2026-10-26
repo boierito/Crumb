@@ -29,10 +29,15 @@ jobs:
       - name: Find exact hash-pinned public FairPlay code profile without jailbreak
         run: |
           python3 scripts/inspect-fairplay-macos-host.py artifacts/fairplay-macos27-code-profile.json
+      - name: Check next unmapped target at 0xa4be38 without private data
+        run: |
+          python3 scripts/inspect-fairplay-next-target.py artifacts/fairplay-next-target.json
       - uses: actions/upload-artifact@v4
         with:
           name: FairPlay-macos27-code-profile-${{ github.run_id }}
-          path: artifacts/fairplay-macos27-code-profile.json
+          path: |
+            artifacts/fairplay-macos27-code-profile.json
+            artifacts/fairplay-next-target.json
           if-no-files-found: error
   protocol:
     runs-on: macos-15
@@ -71,6 +76,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25.1'
+      - name: Test redacted next-target coverage inspector
+        run: python3 scripts/test-inspect-fairplay-next-target.py
       - name: Verify streaming IPA preparation
         run: go -C MapleSyrup/NativeSAP/packageipa test -race ./...
 
