@@ -1,0 +1,79 @@
+name: Publish verified FairPlay checkpoint IPA
+on:
+  push:
+    branches: [fix/fairplay-phase-consistent-recovery]
+    paths:
+      - '.github/workflows/publish-fairplay-checkpoint.yml'
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish-tested-artifact:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require successful pinned CI and artifact provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: 7e33933dc7266676f52d8500fce2fc36b0da5089
+        shell: bash
+        run: |
+          set -euo pipefail
+          for RUN in 40380154019 40380154243; do
+            test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" --jq .conclusion)" = success
+            test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" --jq .head_sha)" = "$SOURCE_SHA"
+          done
+      - name: Download completed unsigned Release IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: Crumb-IPA-Release-40380154243
+          run-id: 40380154243
+          github-token: ${{ github.token }}
+          path: ipa-input
+      - name: Download corresponding sources and notices
+        uses: actions/download-artifact@v4
+        with:
+          name: Crumb-Release-40380154243
+          run-id: 40380154243
+          github-token: ${{ github.token }}
+          path: source-input
+      - name: Validate actual IPA and stage a uniquely named asset
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, plistlib, zipfile, shutil
+          ipa = Path('ipa-input/Crumb-Release.ipa')
+          expected = '10c852c9c3384fcddd89d8c1e505bc4200003d17c250871c3d86c3c26fa7e1e8'
+          assert hashlib.sha256(ipa.read_bytes()).hexdigest() == expected, 'Pinned IPA SHA256 does not match'
+          with zipfile.ZipFile(ipa) as z:
+              assert z.testzip() is None, 'IPA ZIP corruption'
+              info = plistlib.loads(z.read('Payload/Crumb.app/Info.plist'))
+              assert info['CFBundleVersion'] == '23045', 'Unexpected build number'
+              assert info['CFBundleIdentifier'] == 'com.certlium.crumb'
+              assert not any(p.endswith('embedded.mobileprovision') for p in z.namelist())
+          shutil.copyfile(ipa, 'release/Crumb-23045-phase-checkpoint-Release.ipa')
+          for filename in ['IPATOOL-LICENSE', 'UNICORN-COPYING',
+                           'ipatool-sap-corresponding-source.tar.gz',
+                           'unicorn-tci-corresponding-source.tar.gz']:
+              src = Path('source-input') / filename
+              assert src.is_file(), 'Missing corresponding source/notice: ' + filename
+              shutil.copyfile(src, Path('release') / filename)
+          print('Verified SHA256:', expected)
+          PY
+      - name: Publish a separate GitHub prerelease for the tested checkpoint
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=test-23045-phase-checkpoint
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'Tag already published; refusing to overwrite' >&2
+            exit 1
+          fi
+          gh release create "$TAG" release/* --repo "$GITHUB_REPOSITORY" \
+            --target 7e33933dc7266676f52d8500fce2fc36b0da5089 \
+            --title 'Crumb 23045 · phase-consistent checkpoint (PR #12)' \
+            --prerelease \
+            --notes 'Unsigned iOS test IPA built from PR #12 commit 7e33933d. Existing app CFBundleVersion remains 23045; do not confuse with baseline test-23045. All pinned protocol, generic, no-JIT, portable/race and Debug/Release CI suites completed successfully. Functional change: snapshot Source and Frame immediately after selection, before SINF, preserving all independent state/frame/model/IPA validation. This is a controlled hypothesis test, not proof of real FairPlay enrollment, decryption or legacy SIDB compatibility. IPA SHA256: 10c852c9c3384fcddd89d8c1e505bc4200003d17c250871c3d86c3c26fa7e1e8. User must resign IPA by their own standard iPhone method. No account-private data is included.'
