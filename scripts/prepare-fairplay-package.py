@@ -30,3 +30,56 @@ p.write_text(s)
 p = p.parent / 'report.go'; s = p.read_text()
 s = s.replace('type imageReport struct {', 'type imageReport struct {\n SINFMember string `json:"sinf_member"`')
 p.write_text(s)
+
+# Preserve exact private causes while reporting every downstream validation
+# stage using typed fixed labels. No error-string matching or validation bypass.
+p = p.parent / 'decrypt.go'; s = p.read_text()
+def replace_once(old, new):
+    global s
+    spans = []
+    for function in ('decryptImage', 'DecryptIPA'):
+        start = s.index('func '+function+'(')
+        end = s.find('\nfunc ', start+1)
+        spans.append((start, len(s) if end < 0 else end))
+    positions = []
+    cursor = 0
+    while True:
+        position = s.find(old, cursor)
+        if position < 0: break
+        if any(start <= position < end for start, end in spans): positions.append(position)
+        cursor = position + len(old)
+    if len(positions) != 1:
+        raise SystemExit('decryption diagnostic contract changed: '+old.splitlines()[0])
+    position = positions[0]
+    s = s[:position] + new + s[position+len(old):]
+replace_once('func DecryptIPA(options DecryptOptions) (DecryptResult, error) {\n\tvar result DecryptResult', '''func DecryptIPA(options DecryptOptions) (result DecryptResult, failure error) {
+    phase := "platform"
+    defer func() { if failure != nil { failure = decryptionFailure(phase, failure) } }()''')
+replace_once('func decryptImage(output []byte, image encryptedImage, records [][32]byte, mask [16]byte, deriver *pageKeyDeriver) (*imageReport, error) {', '''func decryptImage(output []byte, image encryptedImage, records [][32]byte, mask [16]byte, deriver *pageKeyDeriver) (imageResult *imageReport, failure error) {
+    phase := "image-geometry"
+    defer func() { if failure != nil { failure = decryptionFailure(phase, failure) } }()''')
+for old, phase in [
+    ('\toptions, err := validatePaths(options)', 'paths'),
+    ('\tfor _, path := range []string{options.OutputPath, options.ReportPath}', 'output-directory'),
+    ('\tinventory, source, err := openIPAInventory(options.InputPath)', 'ipa-inventory'),
+    ('\tmaterials, err := resolveImageMaterials(inventory, files, options.ModelPath)', 'model-sinf-binding'),
+    ('\ttemporary, err := os.CreateTemp(filepath.Dir(options.OutputPath)', 'temporary-output'),
+    ('\t\tif !encrypted {', 'archive-copy'),
+    ('\t\tblob, cached := inventory.cachedFiles[file.Name]', 'image-read'),
+    ('\t\tif err := validateInventoriedImages(blob, images)', 'image-inventory'),
+    ('\t\ttable, ok := inventory.supfTables', 'supf'),
+    ('\t\ttarget, err := writer.CreateHeader', 'archive-write'),
+    ('\t\tfor _, image := range images {', 'image-decryption'),
+    ('\t\tif _, err := target.Write(blob)', 'archive-write'),
+    ('\tif err := writer.Close()', 'archive-write'),
+    ('\tif err := temporary.Sync()', 'output-sync'),
+    ('\treportTemp, err := stagePrivateJSON', 'report-write'),
+    ('\tif _, err := validatePaths(options)', 'paths'),
+    ('\tif err := publishFiles', 'output-publish'),
+    ('\taudits, err := auditCodeDirectories', 'codedirectory'),
+    ('\tkeys, err := decryptPagesInPlace', 'page-decryption'),
+    ('\tauditStart := start', 'arm64-audit'),
+    ('\tbinary.LittleEndian.PutUint32(output[id:id+4], 0)', 'mutation-bounds'),
+]:
+    replace_once(old, '\n    phase = "'+phase+'"\n'+old)
+p.write_text(s)

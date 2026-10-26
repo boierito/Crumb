@@ -238,3 +238,34 @@ func PortableEnrollmentInputs(source string) ([]PortableEnrollmentInput, error) 
 	good = true
 	return result, nil
 }
+
+// decryptionStageError retains a private cause but exposes only a fixed stage.
+// The wrapper preserves the innermost stage when image validation fails.
+type decryptionStageError struct {
+	stage string
+	cause error
+}
+
+func (e *decryptionStageError) Error() string { return "decryption_" + e.stage + "_failed" }
+func (e *decryptionStageError) Unwrap() error { return e.cause }
+func decryptionFailure(stage string, cause error) error {
+	var classified *decryptionStageError
+	if errors.As(cause, &classified) {
+		return cause
+	}
+	return &decryptionStageError{stage, cause}
+}
+func DecryptionFailureStage(err error) (string, bool) {
+	var classified *decryptionStageError
+	if !errors.As(err, &classified) {
+		return "", false
+	}
+	switch classified.stage {
+	case "platform", "paths", "output-directory", "ipa-inventory", "model-sinf-binding",
+		"temporary-output", "archive-copy", "image-read", "image-inventory", "supf",
+		"image-decryption", "archive-write", "output-sync", "report-write", "output-publish",
+		"image-geometry", "codedirectory", "page-decryption", "arm64-audit", "mutation-bounds":
+		return classified.stage, true
+	}
+	return "", false
+}

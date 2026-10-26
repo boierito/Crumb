@@ -25,6 +25,8 @@ func enrollmentInventoryFailure(err error) error {
 type labStageError struct {
 	stage, code string
 	cause       error
+	validation  *recoveredValidationDiagnostic
+	runtime     *rawsource.RecoveryDiagnostic
 }
 
 func (e *labStageError) Error() string { return e.code }
@@ -37,6 +39,26 @@ func recoveryFailure(stage, code string, cause error) error {
 	return &labStageError{stage: stage, code: code, cause: cause}
 }
 
+// The public error envelope is shared by the C bridge and host tests. Only
+// typed, fixed labels and counters are included; never serialize cause.Error().
+func labFailureFields(operation string, err error) map[string]any {
+	stage, code := labErrorDetails(operation, err)
+	fields := map[string]any{"stage": stage, "code": code}
+	if diagnostic, ok := rawsource.RecoveryDetails(err); ok {
+		fields["runtime"] = diagnostic
+	}
+	var classified *labStageError
+	if errors.As(err, &classified) {
+		if classified.validation != nil {
+			fields["validation"] = classified.validation
+		}
+		if classified.runtime != nil {
+			fields["runtime"] = classified.runtime
+		}
+	}
+	return fields
+}
+
 func labErrorDetails(operation string, err error) (string, string) {
 	if details, ok := rawsource.RecoveryDetails(err); ok && (operation == "recover-capture" || operation == "recover-enrollment") {
 		return operation + "/portable-runtime/" + details.Phase, details.Failure
@@ -44,6 +66,9 @@ func labErrorDetails(operation string, err error) (string, string) {
 	var classified *labStageError
 	if errors.As(err, &classified) {
 		return operation + "/" + classified.stage, classified.code
+	}
+	if detail, ok := fairplay.DecryptionFailureStage(err); ok {
+		return operation + "/" + detail, "decryption_" + strings.ReplaceAll(detail, "-", "_") + "_failed"
 	}
 	stage, code := operation, "validation_failed"
 	message := strings.ToLower(err.Error())

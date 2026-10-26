@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -180,32 +181,65 @@ func recoverModernEnrollment(source, ipa, destination string) (any, error) {
 	return finishRecoveredEnrollments([]rawsource.Result{recovered}, ipa, destination)
 }
 
+// Validation reports contain lengths, counts and fixed status labels only.
+// They describe progress, never recovered state, keys, hashes or file paths.
+type recoveredValidationDiagnostic struct {
+	DomainCount            int  `json:"domain_count"`
+	DomainsCrossChecked    int  `json:"domains_cross_checked"`
+	SourceBytes            int  `json:"source_bytes"`
+	FrameBytes             int  `json:"frame_bytes"`
+	PackBytes              int  `json:"pack_bytes"`
+	StateEvaluationPassed  bool `json:"state_evaluation_passed"`
+	FrameCandidatesChecked int  `json:"frame_candidates_checked"`
+	SourceFrameMatched     bool `json:"source_frame_matched"`
+	ModelFilesWritten      int  `json:"model_files_written"`
+	TargetIPAValidated     bool `json:"target_ipa_validated"`
+}
+
 func verifyRecoveredEnrollment(recovered rawsource.Result) error {
-	// Independently exercise the existing straight-line state and frame
-	// evaluators against the raw runtime's selected frame before using a pack.
+	return verifyRecoveredEnrollmentWithReport(recovered, &recoveredValidationDiagnostic{})
+}
+
+func verifyRecoveredEnrollmentWithReport(recovered rawsource.Result, report *recoveredValidationDiagnostic) error {
+	report.SourceBytes, report.FrameBytes, report.PackBytes = len(recovered.Source), len(recovered.Frame), len(recovered.Pack)
+	report.StateEvaluationPassed, report.SourceFrameMatched, report.FrameCandidatesChecked = false, false, 0
 	transformed, err := state.Evaluate(recovered.Source, nil)
 	if err != nil {
-		return fmt.Errorf("derived portable state cross-check failed")
+		return recoveryFailure("recovered-validation/state-evaluation", "recovered_state_evaluation_failed", err)
 	}
 	defer clear(transformed)
-	matched := false
+	report.StateEvaluationPassed = true
 	for offset := 0; offset+16 <= len(transformed); offset += 16 {
 		candidate, err := frame.Evaluate(transformed[offset:offset+16], nil)
 		if err != nil {
-			return fmt.Errorf("derived enrollment frame cross-check failed")
+			return recoveryFailure("recovered-validation/frame-evaluation", "recovered_frame_evaluation_failed", err)
 		}
-		matched = matched || bytes.Equal(candidate, recovered.Frame)
+		report.FrameCandidatesChecked++
+		report.SourceFrameMatched = bytes.Equal(candidate, recovered.Frame) || report.SourceFrameMatched
 		clear(candidate)
 	}
-	if !matched {
-		return fmt.Errorf("derived state and enrollment frame disagree")
+	if !report.SourceFrameMatched {
+		return recoveryFailure("recovered-validation/source-frame-match", "recovered_source_frame_mismatch", nil)
 	}
 	return nil
 }
 
-func finishRecoveredEnrollments(recovered []rawsource.Result, ipa, destination string) (any, error) {
+func finishRecoveredEnrollments(recovered []rawsource.Result, ipa, destination string) (output any, failure error) {
+	diagnostic := recoveredValidationDiagnostic{DomainCount: len(recovered)}
+	var runtime *rawsource.RecoveryDiagnostic
+	defer func() {
+		if failure == nil {
+			return
+		}
+		var classified *labStageError
+		if !errors.As(failure, &classified) {
+			failure = recoveryFailure("recovered-validation", "recovered_output_validation_failed", failure)
+			errors.As(failure, &classified)
+		}
+		classified.validation, classified.runtime = &diagnostic, runtime
+	}()
 	if len(recovered) == 0 {
-		return nil, fmt.Errorf("no enrollment recovered")
+		return nil, recoveryFailure("recovered-validation/outputs", "recovered_outputs_missing", nil)
 	}
 	defer func() {
 		for _, value := range recovered {
@@ -215,12 +249,15 @@ func finishRecoveredEnrollments(recovered []rawsource.Result, ipa, destination s
 		}
 	}()
 	for _, value := range recovered {
-		if err := verifyRecoveredEnrollment(value); err != nil {
+		snapshot := value.Runtime
+		runtime = &snapshot
+		if err := verifyRecoveredEnrollmentWithReport(value, &diagnostic); err != nil {
 			return nil, err
 		}
+		diagnostic.DomainsCrossChecked++
 	}
 	if err := os.Mkdir(destination, 0700); err != nil {
-		return nil, fmt.Errorf("new private recovery directory required")
+		return nil, recoveryFailure("recovered-validation/output-directory", "recovery_output_directory_failed", err)
 	}
 	complete := false
 	defer func() {
@@ -230,7 +267,7 @@ func finishRecoveredEnrollments(recovered []rawsource.Result, ipa, destination s
 	}()
 	model := filepath.Join(destination, "models")
 	if err := os.Mkdir(model, 0700); err != nil {
-		return nil, err
+		return nil, recoveryFailure("recovered-validation/model-directory", "recovery_model_directory_failed", err)
 	}
 	seen := map[[32]byte]bool{}
 	for index, value := range recovered {
@@ -240,18 +277,25 @@ func finishRecoveredEnrollments(recovered []rawsource.Result, ipa, destination s
 		}
 		seen[sum] = true
 		if err := os.WriteFile(filepath.Join(model, fmt.Sprintf("model-%d.bin", index)), value.Pack, 0600); err != nil {
-			return nil, err
+			return nil, recoveryFailure("recovered-validation/model-write", "recovery_model_write_failed", err)
 		}
+		diagnostic.ModelFilesWritten++
 	}
 	result, err := fairplay.DecryptIPA(fairplay.DecryptOptions{
 		InputPath: ipa, OutputPath: filepath.Join(destination, "processed.ipa"),
 		ReportPath: filepath.Join(destination, "private-report.json"), ModelPath: model,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("recovered model target IPA validation failed")
+		stage, code := "target-ipa", "recovered_model_target_ipa_failed"
+		if detail, ok := fairplay.DecryptionFailureStage(err); ok {
+			stage, code = detail, "recovered_"+strings.ReplaceAll(detail, "-", "_")+"_failed"
+		}
+		return nil, recoveryFailure("recovered-validation/"+stage, code, err)
 	}
 	complete = true
+	diagnostic.TargetIPAValidated = true
 	return map[string]any{
+		"validation": diagnostic, "runtime": runtime,
 		"portable_source_derived": true, "enrollment_frame_derived": true,
 		"model_sinf_validated": true, "source_frame_cross_checked": true, "images": result.EncryptedImages,
 		"pages": result.DecryptedPages, "completed": true,
