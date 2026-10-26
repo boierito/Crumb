@@ -65,7 +65,7 @@ func rawSourceBootstrapBlock1008fff2c(s *state, runtime *rawSourceRuntime) (next
     if runtime != nil && runtime.stopPC == 0x1008fff8c { return 0x1008fff8c, true, nil }
     s.x[5] = 0x6e
     if runtime != nil && runtime.stopPC == 0x1008fff90 { return 0x1008fff90, true, nil }
-    value, loadErr := s.load(s.sp+0x1b8, 8); if loadErr != nil { return 0, false, loadErr }; s.x[13] = value
+    value, loadErr = s.load(s.sp+0x1b8, 8); if loadErr != nil { return 0, false, loadErr }; s.x[13] = value
     if runtime != nil && runtime.stopPC == 0x1008fff94 { return 0x1008fff94, true, nil }
     s.x[17] = 0x62bb
     if runtime != nil && runtime.stopPC == 0x1008fff98 { return 0x1008fff98, true, nil }
