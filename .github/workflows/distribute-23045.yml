@@ -1,0 +1,64 @@
+name: Publish tested IPA 23045
+on:
+  push:
+    branches: [distribution/23045]
+    paths: [.github/workflows/distribute-23045.yml]
+permissions:
+  actions: read
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: a32bb48351133be493eedbe3236a70380ffcc9d2
+      - name: Require successful tested source revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for run in 40374061239 40374061596; do
+            test "$(gh api repos/$GITHUB_REPOSITORY/actions/runs/$run --jq .conclusion)" = success
+            test "$(gh api repos/$GITHUB_REPOSITORY/actions/runs/$run --jq .head_sha)" = a32bb48351133be493eedbe3236a70380ffcc9d2
+          done
+      - uses: actions/download-artifact@v4
+        with:
+          name: Crumb-Release-40374061596
+          run-id: 40374061596
+          github-token: ${{ github.token }}
+          path: distribution
+      - name: Verify build and embedded generic profile
+        shell: python
+        run: |
+          import hashlib, json, pathlib, plistlib, sys, zipfile
+          sys.path.insert(0, 'scripts')
+          from fairplay_generic_resource import read_profile
+          profile, pin = read_profile(pathlib.Path('.'))
+          candidates = list(pathlib.Path('distribution').rglob('*.ipa'))
+          assert len(candidates) == 1
+          ipa = candidates[0]
+          with zipfile.ZipFile(ipa) as z:
+              names = [n for n in z.namelist() if n.startswith('Payload/') and n.count('/') == 2 and n.endswith('/Info.plist')]
+              assert len(names) == 1
+              info = plistlib.loads(z.read(names[0]))
+              assert info['CFBundleVersion'] == '23045'
+              binary = z.read(names[0].rsplit('/',1)[0]+'/'+info['CFBundleExecutable'])
+              assert profile in binary
+              assert b'recovery_diagnostics_version' in binary
+              assert b'recovered_source_frame_mismatch' in binary
+          target = pathlib.Path('distribution/Crumb-23045-Release.ipa')
+          ipa.rename(target)
+          digest = hashlib.sha256(target.read_bytes()).hexdigest()
+          print(json.dumps({'build':23045, 'sha256':digest, 'generic_profile_embedded':True, 'validation_diagnostics_present':True}))
+          pathlib.Path('/tmp/notes.md').write_text('Build experimental 23045. Requiere firma para instalarse.\n\nDiagnóstico de todas las etapas de recovered-validation y contadores del intérprete después de completarlo. No demuestra recuperación de enrollment ni desencriptación real.\n\nPrueba: Run self-tests debe mostrar recovery_diagnostics_version: 2. Luego ejecutar Download + attempt local recovery on iPhone una vez y conservar Components, Enrollment y Decryption.\n\nCódigo y pruebas: https://github.com/boierito/Crumb/pull/11\n\nSHA-256 IPA: '+digest+'\n\nSe adjuntan los archivos de fuentes correspondientes y licencias.\n')
+      - name: Publish direct IPA and corresponding sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create test-23045 distribution/Crumb-23045-Release.ipa \
+            distribution/*-corresponding-source.tar.gz distribution/UNICORN-COPYING distribution/IPATOOL-LICENSE \
+            THIRD_PARTY_NOTICES.md --repo "$GITHUB_REPOSITORY" \
+            --target a32bb48351133be493eedbe3236a70380ffcc9d2 --prerelease \
+            --title 'Crumb 23045 · diagnóstico de validación' --notes-file /tmp/notes.md
