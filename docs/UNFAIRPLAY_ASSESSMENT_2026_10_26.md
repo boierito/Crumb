@@ -1,59 +1,32 @@
-# Crumb y UnfairPlay: evaluación del 26 de octubre de 2026
+# FairPlay en iPhone: implementación 23042 y evaluación de UnfairPlay
 
-## Resultado
+El usuario confirmó mantener todo en iPhone, sin jailbreak, sin JIT y sin Mac. No se depende de una captura Mac ni de un modelo generado en Mac por el usuario.
 
-El descifrado íntegramente en iPhone sigue sin demostrarse. La última evidencia de dispositivo termina en bootstrap/raw_unknown_control_flow, text+0xa4be38. Los PR 7 y 8 están abiertos y en draft. El PR 8 corrige publicación de salidas inválidas y repeticiones; no implementa el destino faltante.
+## Cambio implementado
 
-Se comparó Crumb 4ef48073a45980699bc29cc2fe7953e6632409e4 con DrWhax/unfairplay c54e751775cbc2a54510c0fcafb0aef6b1619bc9.
+Las pruebas anteriores de 23039/23040 terminaban en bootstrap/raw_unknown_control_flow, text+0xa4be38. Se obtuvo la región real del daemon del runner de desarrollo usando exclusivamente la sección ejecutable del binario thin con SHA256 `1e58d37e9602dd0ca5e24b14762063b6c310248b4d3a94272771d815e4ea1784`.
 
-## Qué aporta UnfairPlay
+El generador reutiliza el traductor de la fuente vendorizada `f7242cce58077a4af8db738ed295ee23ad8f067d`, comprobada por hash, y genera Go antes de compilar la aplicación. No ejecuta el daemon ni modifica memoria ejecutable en el iPhone. No usa capturas, cuentas ni secretos. Artefacto de procedencia: https://github.com/boierito/Crumb/actions/runs/40332161032, job fairplay-macos27-profile.
 
-- Recuperación desde una captura de un Mac enrolado, con SIDB, SINF/SUPF, ejecutable instalado e identidad de hardware coherentes.
-- Evaluador semántico portable y soporte de contratos 25G83, 26A428/26A434 y 26B118 declarados por upstream.
-- Para capturas exactas 26A428/26A434, páginas de referencia verificadas por hash. El binario se interpreta como datos; no se ejecuta nativamente.
-- Modelos FPSENR que Crumb ya sabe interpretar. El archivo internal/fairplay/current_sinf.go es idéntico byte por byte al de la fuente fijada ef98227 que Crumb incorpora (SHA256 b2fde487a79ad7838a68ae4ca52203855997865145adfd3b4808a15b47fa0998). Esto demuestra igualdad del parser, no interoperabilidad real de una captura privada.
+Se incorporó `rawSourceBootstrapBlock100a4be38` al inventario compartido y al paquete compilado. El bloque procesa tablas de bytes, actualiza flags/contador, escribe un byte y obtiene su siguiente destino de una tabla con índice signed. Se preservan las comprobaciones stopPC por instrucción y el comportamiento de errores de memoria. El destino dinámico no se sustituye por una dirección inventada.
 
-## Qué no resuelve
+Build identificada como 23042. El gate de cobertura ahora encuentra el handler, su registro y pruebas específicas. Esto habilita una prueba de dispositivo; no demuestra descifrado ni cobertura de todos los destinos siguientes.
 
-No contiene un handler explícito para 0x100a4be38 ni demuestra la conversión del SIDB legado de StoreAgent a un enrollment moderno. Su normalización describe SIDB Mac v7000b y reconoce tamaños 630/642 y 993/1003 para fuentes de 192/224 bytes; esto no permite reinterpretar los 863/910 bytes observados en Crumb.
+## Verificación
 
-Upstream también declara que procesamiento completo no autentica todo el plaintext; la plausibilidad ARM64 de primeras páginas no equivale a autenticación criptográfica de todas las páginas.
+- Cinco pruebas del generador: sección ejecutable, límites, instrucciones inválidas, hash incorrecto y comparación independiente de Go generado con ARM64 para 22 estados sintéticos.
+- Comparación del bloque real traducido con ejecución Unicorn de sus instrucciones ARM64 ensambladas independientemente: 40 estados, todos los registros, NZCV, destino del salto y región completa de salida de 64 KiB. Incluye desbordamientos de 32 bits, límites del contador e índices de dispatch negativos.
+- Vectores de referencia públicos en `scripts/fixtures/fairplay-bootstrap-next.json`: diez estados sintéticos con registros, flags y hash de salida. Tests Go adicionales verifican stopPC, rechazo de memoria ausente y signed dispatch.
+- El test diferencial compila la función integrada junto con los helpers/state/memoria originales de la fuente vendorizada, evitando una implementación de memoria distinta en el test.
+- Como en el runtime existente, la referencia sustituye BRAA por BR. Esto verifica el destino portable; no valida autenticación PAC nativa.
+- Ocho pruebas Python existentes de inspección y gate pasaron. La suite Go previa a la incorporación completa pasó; la suite integrada y CI se ejecutan por separado.
 
-## Alternativa descartada por el usuario: captura en Mac
+## Qué aporta UnfairPlay y qué falta
 
-En un Mac compatible, iniciar sesión en App Store, instalar y abrir una app propia, y descargar su IPA con la misma cuenta. Compilar la revisión examinada:
+Se examinó DrWhax/unfairplay `c54e751775cbc2a54510c0fcafb0aef6b1619bc9`. Sus pruebas `internal/fairplay` e `internal/recovery` pasan con Go 1.26.0 y umask 022. El parser `current_sinf.go` es idéntico al de la fuente ef98227 incorporada por Crumb. Eso verifica igualdad de formato, no recuperación real del estado de StoreAgent.
 
-```sh
-git clone https://github.com/DrWhax/unfairplay.git
-cd unfairplay
-git checkout c54e751775cbc2a54510c0fcafb0aef6b1619bc9
-go build -o unfairplay ./cmd/unfairplay
-sudo ./unfairplay collect --app /Applications/App.app --ipa /ruta/App.ipa --output /ruta/privada/App.capture
-./unfairplay recover --capture /ruta/privada/App.capture --output /ruta/privada/App.recovery
-./unfairplay verify --input /ruta/App.ipa --model /ruta/privada/App.recovery/fairplay-enrollment.bin
-```
+Upstream recupera desde estado coherente de un Mac enrolado. No demuestra que el SIDB legado que obtiene Crumb equivalga a su estado moderno. Esa ruta se descartó como solución de producto por el requisito iPhone-only.
 
-Solo si recuperación y verificación pasan, probar la importación explícita de fairplay-enrollment.bin mediante la operación de modelo importado de Crumb. Mantener el modelo privado. No se ejecutaron estos comandos sobre una cuenta ni una captura real; esta alternativa aún necesita prueba de extremo a extremo en Crumb. No es una solución iPhone-only.
+Todavía se necesita una ejecución privada en iPhone de la build nueva para comprobar los sucesores reales del bloque y, después, la compatibilidad de inscripción, el frame y el modelo. No se ha obtenido en este entorno un modelo ni una IPA descifrada. El propio upstream declara que procesamiento completo y plausibilidad ARM64 de primeras páginas no autentican todo el plaintext.
 
-## Trabajo necesario si se mantiene iPhone-only
-
-1. Obtener acceso de desarrollo al binario exacto ya identificado por hash y traducir la región desde 0x100a4be38 junto con sus sucesores alcanzables, preservando memoria, registros y flags. El ejecutor actual solo inspecciona estructura; no produce esa traducción.
-2. Comparar la traducción con una referencia independiente usando fixtures sintéticos antes de incorporarla al dispatcher sin JIT.
-3. Validar por separado el contrato del SIDB legado y la derivación del frame; superar bootstrap por sí solo no demuestra un modelo válido.
-4. Probar una transacción privada en dispositivo y comprobar el contenido de salida. No publicar otra IPA como arreglo del descifrado mientras solo pase compilación.
-
-## Verificación realizada
-
-- UnfairPlay: go test ./internal/fairplay ./internal/recovery pasó con Go 1.26.0 y umask 022. La primera ejecución bajo umask privado alteró la fixture de permisos 0644 y falló; se corrigió el entorno y se repitió.
-- Crumb: ocho pruebas Python de inspección de destino y gate de cobertura pasaron.
-- Sin captura privada, Mac enrolado ni prueba física de iPhone en este entorno.
-
-Referencias: https://github.com/boierito/Crumb/pull/7, https://github.com/boierito/Crumb/pull/8, https://github.com/DrWhax/unfairplay.
-
-## Decisión y trabajo posterior
-
-El usuario confirmó mantener todo en iPhone, sin jailbreak ni JIT. La ruta Mac anterior queda descartada como solución de producto. El uso del binario del runner de desarrollo no implica que el usuario necesite un Mac, ni captura datos de ninguna cuenta.
-
-Se añadió `scripts/generate-fairplay-next-block.py`: genera una función Go candidata para la región real desde 0x100a4be38, utilizando exclusivamente el binario con hash exacto y el traductor del archivo vendorizado verificado. Exige sección ejecutable, instrucciones completas y terminador dentro de un límite; falla ante instrucciones no soportadas. CI guarda únicamente la función candidata, sin binario ni captura de cuenta.
-
-La función candidata no se registra ni se incluye en una IPA: primero debe revisarse y probarse contra una referencia independiente. Cinco tests del generador pasan, incluyendo ejecución de Go generado frente a Unicorn para 22 estados sintéticos (con desbordamiento y destinos variables). Esas pruebas verifican el mecanismo del generador, no las instrucciones del destino real ni el descifrado.
+Referencias históricas: https://github.com/boierito/Crumb/pull/7 y https://github.com/boierito/Crumb/pull/8. Implementación actual: https://github.com/boierito/Crumb/pull/9.

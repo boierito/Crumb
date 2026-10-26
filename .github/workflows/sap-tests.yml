@@ -104,3 +104,6 @@ jobs:
       - run: python3 -m pip install capstone==5.0.6 unicorn==2.1.4
       - name: Compare candidate translator with independent ARM64 execution
         run: python3 scripts/test-generate-fairplay-next-block.py
+      - run: python3 -m pip install keystone-engine==0.9.2
+      - name: Compare integrated bootstrap block with ARM64 reference
+        run: python3 scripts/test-fairplay-next-block-differential.py
