@@ -116,3 +116,41 @@ func TestPostSINFComparisonUnavailableIsNotReportedAsStable(t *testing.T) {
 		t.Fatal("an unavailable memory comparison was reported as valid")
 	}
 }
+
+
+// Real file routing is private. Assert diagnostic counters retain only
+// public file-type labels and keep the aggregate state counts unchanged.
+func TestStateFileLookupsClassifyRequiredVsOptionalSources(t *testing.T) {
+	runtime := &rawSourceRuntime{files: map[string][]byte{}}
+	for _, item := range []struct {
+		requested string
+		found     bool
+	}{
+		{"/var/db/fpsd/SC Info/SC Info.sidb", true},
+		{"/Users/Shared/SC Info/SC Info.sidb", true},
+		{"/var/db/fpsd/SC Info/SC Info.sidd", false},
+		{"/var/db/fpsd/SC Info/SC Info.sidf", false},
+		{"/var/db/fpsd/SC Info/PRIVATE-CANARY.state", false},
+	} {
+		runtime.recordLookup(item.requested, item.found)
+	}
+	diag := runtimeDiagnostic("completed", "", runtime)
+	if diag.Lookups["state"] != (LookupCount{Attempts: 5, Missing: 3}) ||
+		diag.StateFileTypes["sidb"] != (LookupCount{Attempts: 2, Missing: 0}) ||
+		diag.StateFileTypes["sidd"] != (LookupCount{Attempts: 1, Missing: 1}) ||
+		diag.StateFileTypes["sidf"] != (LookupCount{Attempts: 1, Missing: 1}) ||
+		diag.StateFileTypes["other"] != (LookupCount{Attempts: 1, Missing: 1}) ||
+		len(diag.StateFileTypes) != 4 {
+		t.Fatalf("lost state lookup provenance: %+v", diag)
+	}
+	// This snapshot must not accidentally retain underlying paths.
+	original := &recoveryError{diagnostic: diag}
+	copy, ok := RecoveryDetails(original)
+	if !ok {
+		t.Fatal("safe recovery snapshot unavailable")
+	}
+	delete(copy.StateFileTypes, "sidb")
+	if _, ok := original.diagnostic.StateFileTypes["sidb"]; !ok {
+		t.Fatal("mutated original diagnostic through its exported copy")
+	}
+}
