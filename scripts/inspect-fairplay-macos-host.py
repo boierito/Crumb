@@ -18,6 +18,9 @@ EXPECTED = "1e58d37e9602dd0ca5e24b14762063b6c310248b4d3a94272771d815e4ea1784"
 TARGET = 0x1008fff2c
 CANDIDATES = (
     "/usr/libexec/fairplayd",
+    "/System/Library/PrivateFrameworks/CoreFP.framework/Versions/A/fairplayd",
+    "/System/Library/PrivateFrameworks/CoreFP.framework/fairplayd",
+    "/System/Volumes/Preboot/Cryptexes/OS/System/Library/PrivateFrameworks/CoreFP.framework/Versions/A/fairplayd",
     "/System/Library/PrivateFrameworks/FairPlay.framework/Versions/A/fairplayd",
     "/System/Library/PrivateFrameworks/FairPlay.framework/fairplayd",
 )
