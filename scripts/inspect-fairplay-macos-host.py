@@ -98,9 +98,14 @@ def main():
                     rows = [ln.strip() for ln in output.splitlines()
                             if ln.strip().startswith("1008fff") or "1008fff" in ln][:55]
                     report["target_disassembly_available"] = any("1008fff2c" in row for row in rows)
-                    # Keep the text local to the CI console; the stored JSON
-                    # is only coverage metadata and cannot expose system code.
                     report["target_disassembly_lines"] = len(rows)
+                    # This bounded public instruction excerpt permits a
+                    # deterministic handwritten Go translation. Never attach
+                    # or export the Apple executable, model or private data.
+                    target_index = next((i for i, row in enumerate(rows)
+                                         if "1008fff2c" in row), -1)
+                    if target_index >= 0:
+                        report["target_code_excerpt"] = rows[target_index:target_index+35]
                 else:
                     report["status"] = "exact_binary_disassembler_unavailable"
             break
