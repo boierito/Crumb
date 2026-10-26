@@ -1,0 +1,43 @@
+name: Publish tested IPA 23044
+on:
+  push:
+    branches: [distribution/23044]
+    paths: [.github/workflows/distribute-23044.yml]
+permissions:
+  actions: read
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 956650688a26d6c48276ad72bf85e1095f8d856b
+      - uses: actions/download-artifact@v4
+        with:
+          name: Crumb-IPA-Release-40366652536
+          run-id: 40366652536
+          github-token: ${{ github.token }}
+          path: ipa
+      - name: Verify and publish existing tested binary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ipa_file=$(find ipa -type f -name '*.ipa' -print -quit)
+          test -n "$ipa_file"
+          echo "74f875e5096b9956f63295263b29e951553d93202ec0f7ade73930220fbecb5e  $ipa_file" | sha256sum -c -
+          cp "$ipa_file" Crumb-23044-Release.ipa
+          cat > /tmp/notes.md <<'NOTES'
+          Build experimental 23044. Intérprete genérico sin JIT. Requiere firma para instalarse.
+
+          La recuperación de enrollment y la desencriptación real todavía requieren validación en iPhone.
+
+          Prueba: Run self-tests debe mostrar generic_profile con backend generic-profile, profile_version 2 y ready true. Luego ejecutar Download + attempt local recovery on iPhone una sola vez. Conservar Components, Enrollment y Decryption.
+
+          Código y pruebas: https://github.com/boierito/Crumb/pull/10
+          SHA-256 IPA: 74f875e5096b9956f63295263b29e951553d93202ec0f7ade73930220fbecb5e
+          Fuentes y avisos de terceros incluidos en el código fuente de esta versión.
+          NOTES
+          gh release create test-23044 Crumb-23044-Release.ipa THIRD_PARTY_NOTICES.md --repo "$GITHUB_REPOSITORY" --target 956650688a26d6c48276ad72bf85e1095f8d856b --prerelease --title 'Crumb 23044 · prueba del intérprete genérico' --notes-file /tmp/notes.md
