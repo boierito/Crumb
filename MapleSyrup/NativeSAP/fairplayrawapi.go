@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 )
@@ -26,6 +27,7 @@ type LookupCount struct {
 }
 type RecoveryDiagnostic struct {
 	Phase                  string                 `json:"phase"`
+	UnmodeledExternalSlot  string                 `json:"unmodeled_external_slot,omitempty"`
 	Failure                string                 `json:"failure"`
 	Lookups                map[string]LookupCount `json:"file_lookups,omitempty"`
 	StateFileTypes         map[string]LookupCount `json:"state_file_lookups,omitempty"`
@@ -78,6 +80,9 @@ func runtimeDiagnostic(phase, code string, runtime *rawSourceRuntime) RecoveryDi
 		diagnostic.CheckpointCompared = runtime.checkpointCompared
 		diagnostic.SourceChangedAfterSINF = runtime.sourceChangedAfterSINF
 		diagnostic.FrameChangedAfterSINF = runtime.frameChangedAfterSINF
+		if code == "raw_unsupported_external" {
+			diagnostic.UnmodeledExternalSlot = runtime.unmodeledExternalSlot
+		}
 		if code == "raw_unknown_control_flow" || strings.HasPrefix(code, "generic_") {
 			diagnostic.UntranslatedTarget = runtime.untranslatedTarget
 			diagnostic.TargetClass = runtime.targetClass
@@ -319,4 +324,16 @@ func Recover(executable string, hardware []byte, files map[string][]byte) (Resul
 	result.Source, result.Frame = checkpoint.source, checkpoint.frame
 	result.Runtime = runtimeDiagnostic("completed", "", activeRawSourceRuntime)
 	return result, nil
+}
+
+// sourceExternalImportSlot classifies the *public, profile-defined* 26A428
+// Mach-O external stub namespace, not an arbitrary guest address. The high
+// bits and alignment are checked before deriving the bounded slot index.
+// A synthetic/invalid guest branch can never become a raw pointer in logs.
+func sourceExternalImportSlot(pc uint64) string {
+    const base uint64 = 0xf100000000000000
+    if pc < base || pc >= base+(1<<24) || (pc-base)%0x1000 != 0 {
+        return "unclassified_external"
+    }
+    return fmt.Sprintf("external-slot-%03x", (pc-base)/0x1000)
 }
