@@ -69,7 +69,7 @@ struct FairPlayLocalRecoveryGateTests {
             var response = native
             response["result"] = broken
             precondition(!FairPlayLocalRecoveryGate.acceptsNativeEnrollment(response, outputBytes: 4096),
-                         "accepted incomplete enrollment: \\(flag)")
+                         "accepted incomplete enrollment: \(flag)")
         }
         precondition(!FairPlayLocalRecoveryGate.acceptsNativeEnrollment(envelope(successfulResult), outputBytes: 4096),
                      "accepted the wrong operation type for native enrollment")
@@ -90,7 +90,7 @@ struct FairPlayLocalRecoveryGateTests {
             var response = direct
             response["result"] = broken
             precondition(!FairPlayLocalRecoveryGate.acceptsModelDecrypt(response, outputBytes: 4096),
-                         "accepted malformed decryption: \\(key)")
+                         "accepted malformed decryption: \(key)")
         }
         print("FairPlay native, local and direct IPA publish gates: passed")
     }
