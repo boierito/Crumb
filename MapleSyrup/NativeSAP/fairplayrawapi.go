@@ -28,6 +28,7 @@ type RecoveryDiagnostic struct {
 	Phase                  string                 `json:"phase"`
 	Failure                string                 `json:"failure"`
 	Lookups                map[string]LookupCount `json:"file_lookups,omitempty"`
+	StateFileTypes         map[string]LookupCount `json:"state_file_lookups,omitempty"`
 	LastBlock              string                 `json:"last_translated_block,omitempty"`
 	SharedBlockExecutions  int                    `json:"shared_block_executions,omitempty"`
 	UntranslatedTarget     string                 `json:"untranslated_target,omitempty"`
@@ -52,6 +53,10 @@ func RecoveryDetails(err error) (RecoveryDiagnostic, bool) {
 	result.Lookups = make(map[string]LookupCount, len(classified.diagnostic.Lookups))
 	for key, count := range classified.diagnostic.Lookups {
 		result.Lookups[key] = count
+	}
+	result.StateFileTypes = make(map[string]LookupCount, len(classified.diagnostic.StateFileTypes))
+	for key, count := range classified.diagnostic.StateFileTypes {
+		result.StateFileTypes[key] = count
 	}
 	return result, true
 }
@@ -79,6 +84,12 @@ func runtimeDiagnostic(phase, code string, runtime *rawSourceRuntime) RecoveryDi
 		}
 		for key, count := range runtime.lookupCounts {
 			diagnostic.Lookups[key] = count
+		}
+		if len(runtime.stateFileLookupCounts) > 0 {
+			diagnostic.StateFileTypes = make(map[string]LookupCount, len(runtime.stateFileLookupCounts))
+			for key, count := range runtime.stateFileLookupCounts {
+				diagnostic.StateFileTypes[key] = count
+			}
 		}
 	}
 	return diagnostic
@@ -135,6 +146,31 @@ func (r *rawSourceRuntime) recordLookup(requested string, found bool) {
 		count.Missing++
 	}
 	r.lookupCounts[category] = count
+	if category != "state" {
+		return
+	}
+	// Names are discarded immediately; persist only this finite public
+	// extension taxonomy, never account-specific file names or paths.
+	kind := "other"
+	switch {
+	case strings.HasSuffix(lower, ".sidb"):
+		kind = "sidb"
+	case strings.HasSuffix(lower, ".sidd"):
+		kind = "sidd"
+	case strings.HasSuffix(lower, ".sidf"):
+		kind = "sidf"
+	}
+	if r.stateFileLookupCounts == nil {
+		r.stateFileLookupCounts = map[string]LookupCount{}
+	}
+	detail := r.stateFileLookupCounts[kind]
+	if detail.Attempts < 1000000 {
+		detail.Attempts++
+	}
+	if !found && detail.Missing < 1000000 {
+		detail.Missing++
+	}
+	r.stateFileLookupCounts[kind] = detail
 }
 
 // The selection CFG materializes the frame during its second frame call.
