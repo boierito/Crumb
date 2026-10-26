@@ -79,7 +79,7 @@ func TestAnalyzeCaptureIntegrityAndPrivacy(t *testing.T) {
     one := result["transactions"].([]map[string]any)[0]
     if one["sinf_key_family"] != "non-key5" { t.Fatal("non-key5 synthetic fixture misclassified") }
     for _, forbidden := range []string{"user_id", "key_id", "apple_id", "hardware_id", "selector"} {
-        if strings.Contains(string(encoded), "\\""+forbidden+"\\"") { t.Fatalf("private field leaked: %s", forbidden) }
+        if strings.Contains(string(encoded), forbidden) { t.Fatalf("private field leaked: %s", forbidden) }
     }
 	for _, tc := range [][3]bool{{true, false, false}, {false, true, false}, {false, false, true}} {
 		if _, e := analyzeCapture(captureFixture(t, tc[0], tc[1], tc[2])); e == nil {
