@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/majd/ipatool/v2/wafflebridge/recovery/frame"
-	"github.com/majd/ipatool/v2/wafflebridge/recovery/state"
+	statetransform "github.com/majd/ipatool/v2/wafflebridge/recovery/state"
 )
 
 // This uses the actual embedded execution model and the real independent
@@ -23,10 +23,10 @@ func TestEnrollmentCheckpointPreservesSelectionPairAfterSINFMutation(t *testing.
 			clear(page)
 		}
 	}()
-	profile, err := executionProfileForModel(value)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// These are public output locations of the hash-pinned 26A428 test fixture.
+	// Production recovery derives them through currentRawSource* getters.
+	const sourceAddress = uint64(0x7000000fb304)
+	const frameAddress = uint64(0x7000000fb724)
 	worker := newState(value)
 	worker.reset()
 	lastRawSourceState = worker
@@ -40,7 +40,7 @@ func TestEnrollmentCheckpointPreservesSelectionPairAfterSINFMutation(t *testing.
 	for i := range selectionSource {
 		selectionSource[i] = byte(i)
 	}
-	transformed, err := state.Evaluate(selectionSource, nil)
+	transformed, err := statetransform.Evaluate(selectionSource, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,10 +51,10 @@ func TestEnrollmentCheckpointPreservesSelectionPairAfterSINFMutation(t *testing.
 	}
 	defer clear(selectionFrame)
 
-	if err := worker.store(profile.sourceAddress, selectionSource); err != nil {
+	if err := worker.store(sourceAddress, selectionSource); err != nil {
 		t.Fatal(err)
 	}
-	if err := worker.store(profile.frameAddress, selectionFrame); err != nil {
+	if err := worker.store(frameAddress, selectionFrame); err != nil {
 		t.Fatal(err)
 	}
 	checkpoint, err := checkpointEnrollmentOutputs()
@@ -68,10 +68,10 @@ func TestEnrollmentCheckpointPreservesSelectionPairAfterSINFMutation(t *testing.
 
 	// Model an SINF phase that overwrites both guest output locations. The
 	// checkpoint must retain the earlier, independently valid source/frame.
-	if err := worker.store(profile.sourceAddress, bytes.Repeat([]byte{0xA5}, 224)); err != nil {
+	if err := worker.store(sourceAddress, bytes.Repeat([]byte{0xA5}, 224)); err != nil {
 		t.Fatal(err)
 	}
-	if err := worker.store(profile.frameAddress, bytes.Repeat([]byte{0x5A}, 16)); err != nil {
+	if err := worker.store(frameAddress, bytes.Repeat([]byte{0x5A}, 16)); err != nil {
 		t.Fatal(err)
 	}
 	runtime := &rawSourceRuntime{}
@@ -83,7 +83,7 @@ func TestEnrollmentCheckpointPreservesSelectionPairAfterSINFMutation(t *testing.
 		t.Fatal("SINF phase mutated the stored selection checkpoint")
 	}
 
-	postTransform, err := state.Evaluate(checkpoint.source, nil)
+	postTransform, err := statetransform.Evaluate(checkpoint.source, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
