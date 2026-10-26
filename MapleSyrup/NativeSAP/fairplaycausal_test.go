@@ -68,7 +68,7 @@ func TestCausalStudyMutatesPrivateCopiesAndNeverReportsMaterial(t *testing.T) {
     if !bytes.Equal(original, copyOriginal) || !bytes.Equal(hardware, copyHardware) {
         t.Fatal("causal mutation altered the original enrollment")
     }
-    if len(report.Trials) != 5 || report.SIDBContract != "other_header" ||
+    if len(report.Trials) != 6 || report.SIDBContract != "other_header" ||
         !report.SourceFrameVerified || report.SINFModelVerified ||
         report.PrivateStateExported || report.ModelExported || report.PlaintextAuthenticated ||
         !report.OriginalIPARetained {
@@ -78,8 +78,14 @@ func TestCausalStudyMutatesPrivateCopiesAndNeverReportsMaterial(t *testing.T) {
     // byte. A causal change can alter Source and the model while leaving
     // the selected Frame unchanged. Require the instrument to report that
     // distinction instead of asserting non-existent full diffusion.
+    replay := report.Trials[0]
+    if replay.Intervention != "baseline_replay" || replay.Status != "completed" ||
+        replay.SourceChanged || replay.FrameChanged || replay.ModelChanged ||
+        replay.SINFModelVerified {
+        t.Fatalf("unmodified replay was not deterministic: %+v", replay)
+    }
     frameChanged, frameUnchanged := false, false
-    for _, trial := range report.Trials {
+    for _, trial := range report.Trials[1:] {
         if trial.Status != "completed" || !trial.SourceChanged ||
             !trial.ModelChanged || trial.SINFModelVerified {
             t.Fatalf("synthetic causal result unexpectedly accepted or unchanged: %+v", trial)
@@ -110,11 +116,49 @@ func TestCausalStudyLabelsRuntimeRejectionWithoutPrivateCause(t *testing.T) {
     }
     report, err := studySIDBCausality(input, domain, engine)
     if err != nil { t.Fatal(err) }
-    if report.Trials[0].Status != "runtime_rejected" || report.Trials[0].SINFModelVerified {
-        t.Fatalf("runtime failure unexpectedly accepted: %+v", report.Trials[0])
+    if report.Trials[0].Intervention != "baseline_replay" ||
+        report.Trials[0].Status != "completed" {
+        t.Fatalf("unchanged repeat must complete: %+v", report.Trials[0])
+    }
+    if report.Trials[1].Intervention != "sidb_first" ||
+        report.Trials[1].Status != "runtime_rejected" ||
+        report.Trials[1].SINFModelVerified {
+        t.Fatalf("runtime failure unexpectedly accepted: %+v", report.Trials[1])
     }
     encoded, _ := json.Marshal(report)
     if bytes.Contains(encoded, []byte("PRIVATE-ACCOUNT")) {
         t.Fatal("raw private exception leaked")
+    }
+}
+
+func TestCausalReplayFailureCannotBeMisreadAsSIDBDependency(t *testing.T) {
+    input := legacyEnrollmentInput{hardware: []byte{1, 2, 3, 4, 5, 6},
+        files: map[string][]byte{"SC Info.sidb": bytes.Repeat([]byte{0x12}, 863)}}
+    domain := fairplay.PortableEnrollmentInput{ExecutablePath: "/Fixture",
+        Files: map[string][]byte{"Fixture.sinf": {0}}}
+    count := 0
+    engine := func(path string, mac []byte, files map[string][]byte) (rawsource.Result, error) {
+        count++
+        if count > 1 {
+            return rawsource.Result{}, errors.New("PRIVATE-REENTRANT-GUEST-FAILURE")
+        }
+        return syntheticCausalEngine(path, mac, files)
+    }
+    report, err := studySIDBCausality(input, domain, engine)
+    if err != nil { t.Fatal(err) }
+    if len(report.Trials) != 6 || report.Trials[0].Intervention != "baseline_replay" ||
+        report.Trials[0].Status != "runtime_rejected" {
+        t.Fatalf("hidden nonrepeatable baseline: %+v", report.Trials)
+    }
+    encoded, _ := json.Marshal(report)
+    if bytes.Contains(encoded, []byte("PRIVATE-REENTRANT")) { t.Fatal("private replay error leaked") }
+}
+
+func TestCausalFailureLabelsRefuseUntrustedStrings(t *testing.T) {
+    if causalFailurePhase("account-parser") != "account-parser" ||
+       causalFailurePhase("private-user-identifier") != "other" ||
+       causalFailureCode("raw_memory_unavailable") != "raw_memory_unavailable" ||
+       causalFailureCode("SECRET-FILE-PATH") != "other" {
+       t.Fatal("unsafe or incorrect diagnostic labels")
     }
 }
