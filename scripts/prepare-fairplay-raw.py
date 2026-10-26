@@ -67,7 +67,7 @@ for name in names:
         lookup = 'return bestSuffix, bestData, bestSuffix != ""'
         if text.count(field) != 1 or text.count(lookup) != 1:
             raise SystemExit('raw runtime lookup contract changed')
-        text = text.replace(field, field + '\n lookupCounts map[string]LookupCount\n stateFileLookupCounts map[string]LookupCount\n unmodeledExternalSlot string\n lastKnownBlock uint64\n additionalBlocks int\n untranslatedTarget string\n targetClass string\n genericBlocks int\n genericInstructions uint64\n genericLastPC uint64\n checkpointCompared bool\n sourceChangedAfterSINF bool\n frameChangedAfterSINF bool')
+        text = text.replace(field, field + '\n lookupCounts map[string]LookupCount\n stateFileLookupCounts map[string]LookupCount\n stateLookupsByPhase map[string]LookupCount\n phase string\n unmodeledExternalSlot string\n lastKnownBlock uint64\n additionalBlocks int\n untranslatedTarget string\n targetClass string\n genericBlocks int\n genericInstructions uint64\n genericLastPC uint64\n checkpointCompared bool\n sourceChangedAfterSINF bool\n frameChangedAfterSINF bool')
         text = text.replace(lookup, 'r.recordLookup(path, bestSuffix != "")\n\t' + lookup)
         # Record the rejected import's *static model slot*, never a pointer
         # or private guest register. No unsupported function is stubbed.
