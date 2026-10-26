@@ -17,6 +17,10 @@ jobs:
         run: |
           swiftc WaffleStore/DownloadRecord.swift scripts/test-download-record.swift -o /tmp/waffle-download-record-tests
           /tmp/waffle-download-record-tests
+      - name: Test iPhone-only FairPlay local recovery result gate
+        run: |
+          swiftc WaffleStore/App/FairPlayLocalRecoveryGate.swift scripts/test-fairplay-local-recovery-gate.swift -o /tmp/crumb-fairplay-local-gate
+          /tmp/crumb-fairplay-local-gate
       - name: Test SAP protocol and native memory probe
         run: swift test --package-path MapleSyrup/SAPKit
   no-exec:
