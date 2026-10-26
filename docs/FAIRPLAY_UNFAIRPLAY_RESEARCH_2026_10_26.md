@@ -101,3 +101,29 @@ Real `research-causality`, baseline with StoreAgent-native accepted keybag (888 
 Research decision on next device report: **if replay fails**, investigate interpreter/model runtime reentry before blaming private SIDB checksums. **If replay passes but SIDB bit changes fail during account parsing**, investigate SIDB integrity, version and parser geometry rather than altering model/SINF validation. **If hardware-only mutation fails**, that is consistent with binding but does not establish which hardware field is cryptographically bound. An unchanged control followed by successful altered runs is the precondition for downstream Source/Frame/Pack causality claims.
 
 These revisions require a new iOS build before the additional `replay_verified` and `failure_phase`/`failure_code` fields can appear in logs; V13 used the earlier app and its result cannot be retroactively reinterpreted.
+
+
+## V14 on-device causal replay: verified deterministic engine, divergent unsupported imports (2026-10-26)
+
+Owner-device capture from the released `test-23045-sidb-causality-replay` version:
+
+- Keybag 904 bytes; KBSync 196 bytes; SINF private 440 bytes; StoreAgent 10.9 import succeeded with native status 0.
+- SIDB 882 bytes, header `0x0007000b`. Header matches macOS format-family classification, but its source geometry is **not** one of the known 630/642/993/1003-byte native macOS contracts.
+- Baseline source/frame coherent (`source_frame_verified=true`), strict SINF model validation fails (`sinf_model_verified=false`).
+- **`replay_verified=true`: the same inputs reproduced Source, Frame, Pack and the same strict SINF result in an independent invocation. This rules out simple failure of state reset between invocations in this session.**
+- Single-bit modifications:
+  - `sidb_first`: `bootstrap/raw_unsupported_external`.
+  - `sidb_header_end`, `sidb_middle`, `sidb_last`, `hardware_first`: `selection/raw_unsupported_external`.
+  - All trial outputs `source_changed/frame_changed/model_changed=false` are **not real comparisons** because the trial never completed.
+
+### Source-level root of `raw_unsupported_external`
+
+The pinned UnfairPlay `internal/recovery/raw_source_step.go` `rawSourceRuntime.handle(s, pc)` has an explicit set of modeled external entrypoints (file `open/read/mmap/fstat`, selected IOKit/CF operations, allocator, pthread once and locks). Its `default:` **rejects** other calls with `unsupported bootstrap external %#x` rather than impersonating unknown system APIs. Crumb copies this implementation via `scripts/prepare-fairplay-raw.py`. `MapleSyrup/NativeSAP/fairplayrawapi.go` converts that error to the fixed category `raw_unsupported_external`, attached to the active `runEnrollmentSource` phase. Thus the two observed phases are genuine **semantic execution divergence into an unmodeled call**, not failed source/frame equality.
+
+The currently redacted report cannot tell whether those calls are *legitimate, unmodeled imports* used only for rejection/cleanup or *invalid branch targets* triggered by modifying a protected serialized state. **Do not add blind `return 0` shims for all unknown calls.** Doing so could synthesize a fake model and weaken the strict SINF/IPA rejection gate. The 882-byte SIDB remains a **structurally related but cryptographically unvalidated** source, not a converted macOS enrollment.
+
+### Engineering decision
+
+Arbitrary one-bit mutations of opaque SIDB or device identity are now **exhausted as useful end-to-end trials**: once execution aborts, their downstream output comparison cannot answer key derivation. Work on a *valid-state* producer/consumer bridge instead: map the StoreAgent keybag import side effects and the SIDB format and authenticate the target SINF via the real validator. Avoid additional downloads and mutation-only IPA builds until a specific, independently tested import semantics or enrollment transform has been implemented.
+
+The result does **not** support deriving a FairPlay decryption key on an ordinary iPhone today. UnfairPlay requires a separately enrolled native Mac source; our iPhone sandbox does not automatically provide equivalent private account/hardware material.
