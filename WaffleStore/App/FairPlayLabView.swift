@@ -124,6 +124,7 @@ final class FairPlayLab: ObservableObject {
     private var task: Task<Void, Never>?
     private var transactions = 0
     private var auditedTransactions = -1
+    private var probeCompletedForCapture = false
     func log(_ section: String, _ text: String) {
         let line = "[\(Date().formatted(date: .omitted, time: .standard))] \(text)"
         if logs[section] == "Pending" { logs[section] = line }
@@ -170,6 +171,7 @@ final class FairPlayLab: ObservableObject {
         try FairPlayNative.privateWrite(JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted]), to: directory.appendingPathComponent("manifest.json"))
         transactions += 1
         auditedTransactions = -1
+        probeCompletedForCapture = false
         captureArchive = nil
         diagnostic = nil
         enrollmentStages = [:]
@@ -298,10 +300,24 @@ final class FairPlayLab: ObservableObject {
             log("Enrollment", "Multi-probe requires exactly one retained local transaction.")
             return
         }
+        guard !probeCompletedForCapture else {
+            log("Enrollment", "This unchanged capture was already tested in all four modes. Export its diagnostic; repeated probes cannot change its inputs.")
+            return
+        }
         log("Enrollment", "Running four bounded on-device recovery probes with unchanged SIDB; no private values or models exported.")
         let response = try await Task.detached {
             try FairPlayNative.run("probe-capture", source: archive, ipa: input)
         }.value
+        let envelope = (response.data(using: .utf8)
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) }) as? [String: Any] ?? [:]
+        // Only cache a completed four-way response, never a native failure or
+        // truncated run. On a new capture the cache is explicitly invalidated.
+        if envelope["ok"] as? Bool == true,
+           let values = envelope["result"] as? [String: Any],
+           let attempts = values["attempts"] as? Int, attempts == 4,
+           values["truncated_at_time_budget"] as? Bool == false {
+            probeCompletedForCapture = true
+        }
         log("Enrollment", response)
         log("Enrollment", "All probe results are diagnostic only; they do not prove decryption.")
     }
@@ -330,13 +346,18 @@ final class FairPlayLab: ObservableObject {
                 return try FairPlayNative.run("recover-enrollment", source: source, destination: destination, ipa: input)
             }.value
             self.log("Enrollment", result)
-            if let data = result.data(using: .utf8),
-               let value = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-               value["ok"] as? Bool == true {
-                self.nativeRecoveryVerified = true
-                self.output = destination.appendingPathComponent("processed.ipa")
-                self.log("Decryption", "Model derived and matched to IPA licenses. All inventoried images processed; plaintext is not independently authenticated.")
-            } else { try? FileManager.default.removeItem(at: destination) }
+            let envelope = (result.data(using: .utf8)
+                .flatMap { try? JSONSerialization.jsonObject(with: $0) }) as? [String: Any] ?? [:]
+            let processed = destination.appendingPathComponent("processed.ipa")
+            let size = ((try? FileManager.default.attributesOfItem(atPath: processed.path))?[.size] as? NSNumber)?.int64Value ?? 0
+            guard FairPlayLocalRecoveryGate.acceptsNativeEnrollment(envelope, outputBytes: size) else {
+                try? FileManager.default.removeItem(at: destination)
+                self.log("Decryption", "Native enrollment recovery rejected or produced no validated IPA. Nothing exported.")
+                return
+            }
+            self.nativeRecoveryVerified = true
+            self.output = processed
+            self.log("Decryption", "Source/frame, model/SINF and processed IPA checks passed. Plaintext authenticity remains unverified.")
         }
     }
     func decrypt(_ selected: URL) {
@@ -354,9 +375,16 @@ final class FairPlayLab: ObservableObject {
             self.log("Decryption", "Checking model/SINF and processing IPA. Native failures identify the operation; private exception text is suppressed.")
             let result = try await Task.detached { try FairPlayNative.run("decrypt", source: input, destination: output, report: report, model: model) }.value
             self.log("Decryption", result)
-            if let json = result.data(using: .utf8), let value = try JSONSerialization.jsonObject(with: json) as? [String: Any], value["ok"] as? Bool == true {
-                self.output = output
-            } else { try? FileManager.default.removeItem(at: output) }
+            let envelope = (result.data(using: .utf8)
+                .flatMap { try? JSONSerialization.jsonObject(with: $0) }) as? [String: Any] ?? [:]
+            let size = ((try? FileManager.default.attributesOfItem(atPath: output.path))?[.size] as? NSNumber)?.int64Value ?? 0
+            guard FairPlayLocalRecoveryGate.acceptsModelDecrypt(envelope, outputBytes: size) else {
+                try? FileManager.default.removeItem(at: output)
+                self.log("Decryption", "Model-based processing failed validation or produced no IPA. Nothing exported.")
+                return
+            }
+            self.output = output
+            self.log("Decryption", "Processed IPA is available for inspection; plaintext authenticity remains unverified.")
         }
     }
     // Native verification works directly on the capture created in this session.
@@ -439,6 +467,7 @@ final class FairPlayLab: ObservableObject {
         try? FileManager.default.removeItem(at: root)
         input = nil; output = nil; diagnostic = nil; captureArchive = nil; transactions = 0
         auditedTransactions = -1
+        probeCompletedForCapture = false
         enrollmentStages = [:]
         logs = ["Components": "Pending", "Transaction": "Pending", "Inspection": "Pending", "Enrollment": "Pending", "Decryption": "Pending: run enrollment recovery or import a compatible model."]
     }
