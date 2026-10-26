@@ -343,6 +343,24 @@ final class FairPlayLab: ObservableObject {
             self.log("Enrollment", "This research measures sensitivity only. It does not recover a valid model or prove decrypted plaintext.")
         }
     }
+    // Read-only producer/consumer contract audit. Reuses the existing private
+    // capture, runs the authentic interpreter, and validates the actual SINF.
+    func researchCurrentCaptureBridge() {
+        guard input != nil else { return }
+        perform {
+            try await self.analyzeCurrentCaptureFiles()
+            guard self.transactions == 1, let archive = self.captureArchive, let original = self.input else {
+                self.log("Enrollment", "Bridge audit requires one retained transaction and its original IPA.")
+                return
+            }
+            self.log("Enrollment", "Auditing StoreAgent 10.9 state against the modern fairplayd consumer. No downloads or mutations.")
+            let response = try await Task.detached {
+                try FairPlayNative.run("research-bridge", source: archive, ipa: original)
+            }.value
+            self.log("Enrollment", response)
+            self.log("Enrollment", "Only strict SINF validation can establish a usable model. This report exports no keys.")
+        }
+    }
     func recoverEnrollment(_ selected: URL) {
         nativeRecoveryVerified = false
         guard let input else { return }
@@ -551,6 +569,9 @@ struct FairPlayLabView: View {
                 }
                 Section("4 · Recover or import an enrollment") {
                     Button("Attempt recovery from current capture") { lab.recoverCurrentCapture() }.disabled(lab.input == nil)
+                    Button("Audit StoreAgent → fairplayd bridge (no download)") { lab.researchCurrentCaptureBridge() }.disabled(lab.input == nil)
+                    Text("Verifies SIDB/SIDD provenance, records only static import slots and per-phase state-file lookups, and checks the original SINF. No private material leaves this iPhone.")
+                        .font(.footnote)
                     Button("Research SIDB causality (no download)") { lab.researchCurrentCaptureCausality() }.disabled(lab.input == nil)
                     Text("Uses the already captured SIDB and IPA. Runs bounded one-byte changes only on private copies and compares their effect on Source, Frame and model, without exporting secrets.")
                         .font(.footnote)
