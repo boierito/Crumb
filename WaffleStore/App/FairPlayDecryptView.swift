@@ -15,7 +15,7 @@ struct FairPlayDecryptView: View {
             Form {
                 Section("Offline FairPlay decryption") {
                     Text(record.appName)
-                    Text("Import the private enrollment model created with DrWhax/ipatool on a supported Mac. It must match this IPA’s account and SINF selector. Older or migrated accounts are unsupported.")
+                    Text("Import a private enrollment model generated for this IPA's Apple Account and SINF selector. Account age alone does not determine compatibility: legacy key-5 enrollments can be supported, but other migrated layouts require validation.")
                     Text("The exported IPA requires signing before installation.")
                         .foregroundStyle(.secondary)
                     if working {
