@@ -325,6 +325,24 @@ final class FairPlayLab: ObservableObject {
         guard input != nil else { return }
         perform { try await self.performDeepLocalProbe() }
     }
+    // A single local differential experiment on a retained, verified capture.
+    // Does not download another IPA, extract credentials or export a model.
+    func researchCurrentCaptureCausality() {
+        guard input != nil else { return }
+        perform {
+            try await self.analyzeCurrentCaptureFiles()
+            guard self.transactions == 1, let archive = self.captureArchive, let input = self.input else {
+                self.log("Enrollment", "Causal research requires one retained transaction and its original IPA; no download attempted.")
+                return
+            }
+            self.log("Enrollment", "Studying SIDB and virtual identity causal dependencies offline. Original capture unchanged; private bytes remain on this iPhone.")
+            let response = try await Task.detached {
+                try FairPlayNative.run("research-causality", source: archive, ipa: input)
+            }.value
+            self.log("Enrollment", response)
+            self.log("Enrollment", "This research measures sensitivity only. It does not recover a valid model or prove decrypted plaintext.")
+        }
+    }
     func recoverEnrollment(_ selected: URL) {
         nativeRecoveryVerified = false
         guard let input else { return }
@@ -502,13 +520,6 @@ struct FairPlayLabView: View {
                     }.disabled(appData.ipaTool == nil || appInput.isEmpty || lab.input != nil)
                     Text("One-tap experimental path: download, retain the matching keybag context, audit the capture, and attempt recovery entirely on this iPhone. A failed recovery leaves the original IPA available.")
                         .font(.footnote)
-                    Button("Download + four-way diagnostic (iPhone only)") {
-                        if let account = appData.ipaTool?.account {
-                            lab.download(appInput, account: account, deepProbe: true)
-                        }
-                    }.disabled(appData.ipaTool == nil || appInput.isEmpty || lab.input != nil)
-                    Text("One download; four bounded comparisons of how the same SIDB reaches the recovery engine. Does not export private data or a model.")
-                        .font(.footnote)
                     if let record, let url = record.fileURL {
                         Button("Use selected downloaded IPA") { lab.input = url }
                     }
@@ -540,6 +551,9 @@ struct FairPlayLabView: View {
                 }
                 Section("4 · Recover or import an enrollment") {
                     Button("Attempt recovery from current capture") { lab.recoverCurrentCapture() }.disabled(lab.input == nil)
+                    Button("Research SIDB causality (no download)") { lab.researchCurrentCaptureCausality() }.disabled(lab.input == nil)
+                    Text("Uses the already captured SIDB and IPA. Runs bounded one-byte changes only on private copies and compares their effect on Source, Frame and model, without exporting secrets.")
+                        .font(.footnote)
                     Button("Run four-way diagnostic (reuse current capture)") { lab.deepProbeCurrentCapture() }.disabled(lab.input == nil)
                     Text("Compares dual state paths, fpsd-only, shared-only, and SIDB-only without changing the encrypted state bytes. Results appear in Enrollment logs.")
                         .font(.footnote)
