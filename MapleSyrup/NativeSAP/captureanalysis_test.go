@@ -76,6 +76,11 @@ func TestAnalyzeCaptureIntegrityAndPrivacy(t *testing.T) {
 	if _, exists := values["selector"]; exists {
 		t.Fatal("selector leaked")
 	}
+    one := result["transactions"].([]map[string]any)[0]
+    if one["sinf_key_family"] != "non-key5" { t.Fatal("non-key5 synthetic fixture misclassified") }
+    for _, forbidden := range []string{"user_id", "key_id", "apple_id", "hardware_id", "selector"} {
+        if strings.Contains(string(encoded), forbidden) { t.Fatalf("private field leaked: %s", forbidden) }
+    }
 	for _, tc := range [][3]bool{{true, false, false}, {false, true, false}, {false, false, true}} {
 		if _, e := analyzeCapture(captureFixture(t, tc[0], tc[1], tc[2])); e == nil {
 			t.Fatal("unsafe capture accepted")
@@ -107,7 +112,9 @@ func captureV3Fixture(t *testing.T, overrides map[string]any) string {
 		copy(out[8:], b)
 		return out
 	}
-	fields := append(atom("user", make([]byte, 4)), atom("key ", make([]byte, 4))...)
+	key5 := make([]byte, 4)
+    binary.BigEndian.PutUint32(key5, 5)
+    fields := append(atom("user", make([]byte, 4)), atom("key ", key5)...)
 	fields = append(fields, atom("priv", make([]byte, 440))...)
 	report := map[string]any{
 		"consumer": "storeagent-10.9-import-keybag",
@@ -173,6 +180,9 @@ func TestAnalyzeV3ConsumerStagesAndPrivacy(t *testing.T) {
 			if err != nil { t.Fatal(err) }
 			if result["ready_to_decrypt"] != false { t.Fatal("unvalidated model was accepted") }
 			summary := result["transactions"].([]map[string]any)[0]
+            if summary["sinf_key_family"] != "key5" {
+                t.Fatal("key5 SINF family was not recognized in synthetic v3 capture")
+            }
 			if summary["keybag_consumer"] != tc.stage || summary["ready_to_recover"] != false {
 				t.Fatalf("incorrect readiness for %s", tc.name)
 			}

@@ -5,7 +5,35 @@ on:
   pull_request:
 permissions:
   contents: read
+concurrency:
+  group: crumb-sap-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 jobs:
+  fairplay-cfg-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit pinned public FairPlay code and model at iPhone failing branch
+        run: |
+          mkdir -p artifacts
+          python3 scripts/audit-fairplay-public-cfg.py artifacts/fairplay-public-cfg-audit.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FairPlay-public-CFG-audit-${{ github.run_id }}
+          path: artifacts/fairplay-public-cfg-audit.json
+          if-no-files-found: error
+  fairplay-macos27-profile:
+    runs-on: xcode-27
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find exact hash-pinned public FairPlay code profile without jailbreak
+        run: |
+          python3 scripts/inspect-fairplay-macos-host.py artifacts/fairplay-macos27-code-profile.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FairPlay-macos27-code-profile-${{ github.run_id }}
+          path: artifacts/fairplay-macos27-code-profile.json
+          if-no-files-found: error
   protocol:
     runs-on: macos-15
     steps:

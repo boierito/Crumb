@@ -31,6 +31,13 @@ for name in sorted(names):
             blocks.setdefault(int(address, 16), function)
 if len(blocks) != 4262:
     raise SystemExit('pinned CFG block inventory changed')
+# Verified 26A434 public system daemon has the same pinned 26A428 hash.
+# This exact omitted landing block is compiled ahead-of-time: no JIT and
+# no raw executable pages loaded into the phone at runtime.
+supplement_entry = 0x1008fff2c
+if supplement_entry in blocks:
+    raise SystemExit('pinned original CFG now covers the supplement; review upstream before merging')
+blocks[supplement_entry] = 'rawSourceBootstrapBlock1008fff2c'
 registry = ['// Generated from the pinned translated blocks; no native execution.',
             'package rawsource', 'var knownSourceBlocks = map[uint64]sourceBlock{']
 for address, function in sorted(blocks.items()):
@@ -88,7 +95,9 @@ text = api.read_text().replace('RAW_RESOURCE_SHA256', expected)
 
 (target / "api_test.go").write_text((api.parent / "fairplayrawapi_test.go").read_text())
 (target / 'block_dispatch.go').write_text((api.parent / 'fairplayrawblocks.go').read_text())
+(target / 'bootstrap_supplement.go').write_text((api.parent / 'fairplayrawsupplement.go').read_text())
 (target / 'block_dispatch_test.go').write_text((api.parent / 'fairplayrawblocks_test.go').read_text())
+(target / 'bootstrap_supplement_test.go').write_text((api.parent / 'fairplayrawsupplement_test.go').read_text())
 
 for name, origin in [('LICENSE-IPATOOL', source.parent.parent / 'LICENSE'),
                      ('LICENSE-DARKPHOENIX.txt', source / 'LICENSE-DARKPHOENIX.txt'),
