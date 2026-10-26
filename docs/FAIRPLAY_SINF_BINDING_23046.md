@@ -65,3 +65,31 @@ The rawsource runtime now splits its existing **aggregate** state-file lookups i
 This isolates a precise question: were the five failed lookups references to optional sidecar names, or to the main SIDB required for this profile? If all five misses are optional, the root hypothesis shifts toward state compatibility or CPU/key material semantics, **not** a missing SIDB path. This histogram is evidence of file *resolution*, not proof that guest code cryptographically consumed the material.
 
 Do not repeat identical captures for unchanged binaries. Do not infer an iPhone-only decryption implementation from this instrumented runtime.
+
+
+## iPhone V11: state-file routes isolated (2026-10-26, `test-23045-state-lookups`)
+
+The device's genuine StoreAgent consumer returned an 869-byte legacy SIDB, native status zero and a 904-byte keybag. The experiment again reached the selection and SINF phases, produced a 4184-byte `FPSENR2` candidate and failed the **real** resolver: `recovered_model_sinf_decode_failed`, `target_ipa_validated=false`.
+
+The safe runtime counters now narrow nine state-related lookups to:
+
+| Type | Attempts | Missing |
+| --- | ---: | ---: |
+| `sidb` | 4 | 0 |
+| `sidd` | 1 | 1 |
+| `other` | 4 | 4 |
+
+This **disproves the missing-SIDB-file-path hypothesis for these virtual routes**. It does NOT prove that the legacy SIDB is semantically understood by modern 26A428 fairplayd, and the five other missing lookups should not be labeled optional without a reference. Nor does a zero native StoreAgent status prove any model decryption.
+
+### Probe correction
+
+The previously shipped four-mode probe (dual paths, fpsd only, shared only, SIDB alone) checked only internal source/frame coherence; this is insufficient because all recent captures passed that check yet **failed** SINF decoding. `fairplayprobe.go` now calls the existing `fairplay.ResolveLogicalKeyWithModel` against the exact per-domain installed SINF and freshly recovered candidate for *each* routing mode. The underlying model and SINF bytes remain unchanged, and the strict resolver remains authoritative.
+
+Each probe reports separately:
+- `source_frame_verified`: original internal consistency check;
+- `sinf_model_verified`: **only** true if the original SINF resolver really decodes and validates plaintext;
+- a fixed label `sinf_model_validated`, `sinf_model_rejected`, or `sinf_license_not_unique`, never the private resolver cause, keys, selectors, paths or hashes.
+
+The probe never runs IPA page decryption and never publishes output. A positive SINF probe would require a full IPA validation in the standard pipeline before any decryption success claim. Failure of all probe routes indicates virtual routing is not sufficient to repair the cryptographic model, and the next priority becomes the trust/protocol compatibility of legacy StoreAgent state and hardware identity.
+
+Security: four bounded modes; use original owner capture only; no guessed state fields, synthetic keys, network export or cryptographic bypass.
