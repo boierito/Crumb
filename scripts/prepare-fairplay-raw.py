@@ -38,6 +38,12 @@ supplement_entry = 0x1008fff2c
 if supplement_entry in blocks:
     raise SystemExit('pinned original CFG now covers the supplement; review upstream before merging')
 blocks[supplement_entry] = 'rawSourceBootstrapBlock1008fff2c'
+if 0x100a4be38 in blocks:
+    raise SystemExit('upstream now covers next supplement; review before merging')
+blocks[0x100a4be38] = 'rawSourceBootstrapBlock100a4be38'
+if 0x1008c292c in blocks:
+    raise SystemExit('upstream covers exit supplement; review before merging')
+blocks[0x1008c292c] = 'rawSourceBootstrapBlock1008c292c'
 registry = ['// Generated from the pinned translated blocks; no native execution.',
             'package rawsource', 'var knownSourceBlocks = map[uint64]sourceBlock{']
 for address, function in sorted(blocks.items()):
@@ -103,3 +109,11 @@ for name, origin in [('LICENSE-IPATOOL', source.parent.parent / 'LICENSE'),
                      ('LICENSE-DARKPHOENIX.txt', source / 'LICENSE-DARKPHOENIX.txt'),
                      ('PROFILE-README.md', source / 'profiles/README.md')]:
     (target / name).write_bytes(origin.read_bytes())
+
+(target / 'bootstrap_next.go').write_text((api.parent / 'fairplayrawsupplement_next.go').read_text())
+(target / 'bootstrap_next_test.go').write_text((api.parent / 'fairplayrawsupplement_next_test.go').read_text())
+(target / 'testdata').mkdir(exist_ok=True)
+(target / 'testdata/bootstrap-next.json').write_bytes((api.parent.parent.parent / 'scripts/fixtures/fairplay-bootstrap-next.json').read_bytes())
+
+(target / 'bootstrap_exit.go').write_text((api.parent / 'fairplayrawsupplement_exit.go').read_text())
+(target / 'bootstrap_exit_test.go').write_text((api.parent / 'fairplayrawsupplement_exit_test.go').read_text())
