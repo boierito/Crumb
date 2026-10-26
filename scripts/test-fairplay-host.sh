@@ -28,7 +28,10 @@ cp "$ROOT/MapleSyrup/NativeSAP/fairplaymulti.go" "$WORK/test/internal/fairplay/"
 cp "$ROOT/MapleSyrup/NativeSAP/fairplaymulti_test.go" "$WORK/test/internal/fairplay/"
 python3 "$ROOT/scripts/prepare-fairplay-portable.py" "$SOURCE/tools/fairplay-recovery" "$WORK/test/wafflebridge/recovery"
 bash "$ROOT/scripts/fetch-fairplay-raw.sh" "$WORK/test/wafflebridge/recovery/rawsource"
-for name in fairplayerrors.go fairplaycapturebridge.go fairplaycapturebridge_test.go fairplayprobe.go fairplayprobe_test.go fairplayenrollment.go fairplayenrollment_test.go captureanalysis.go captureanalysis_test.go fairplaylabcore.go fairplaylab_test.go; do
+mkdir -p "$WORK/test/wafflebridge/credentialengine/pipeline"
+cp "$ROOT/MapleSyrup/NativeSAP/credentialengine/"*.go "$WORK/test/wafflebridge/credentialengine/"
+cp "$ROOT/MapleSyrup/NativeSAP/credentialengine/pipeline/"*.go "$WORK/test/wafflebridge/credentialengine/pipeline/"
+for name in fairplaycredential.go fairplaycredential_test.go fairplayerrors.go fairplaycapturebridge.go fairplaycapturebridge_test.go fairplayprobe.go fairplayprobe_test.go fairplayenrollment.go fairplayenrollment_test.go captureanalysis.go captureanalysis_test.go fairplaylabcore.go fairplaylab_test.go; do
   cp "$ROOT/MapleSyrup/NativeSAP/$name" "$WORK/test/wafflebridge/labtest/"
 done
 cat > "$WORK/test/go.mod" <<'MOD'
@@ -43,4 +46,4 @@ require (
 MOD
 cd "$WORK/test"
 go mod tidy
-go test -p=1 -race -count=1 ./internal/fairplay ./wafflebridge/recovery/... ./wafflebridge/labtest
+go test -p=1 -race -count=1 ./internal/fairplay ./wafflebridge/credentialengine/... ./wafflebridge/recovery/... ./wafflebridge/labtest
