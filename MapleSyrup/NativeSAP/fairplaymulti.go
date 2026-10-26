@@ -100,13 +100,14 @@ func resolveImageMaterials(inventory ipaInventory, files map[string]*zip.File, m
 			return ResolveLogicalKey(sinf)
 		}
 		var material KeyMaterial
+		var resolveErr error
 		if registry {
-			material, err = ResolveLogicalKeyWithModels(sinf, packs)
+			material, resolveErr = ResolveLogicalKeyWithModels(sinf, packs)
 		} else {
-			material, err = ResolveLogicalKeyWithModel(sinf, packs[0])
+			material, resolveErr = ResolveLogicalKeyWithModel(sinf, packs[0])
 		}
-		if err != nil {
-			return KeyMaterial{}, classifyModelSINFBindingFailure(sinf, packs, registry, err)
+		if resolveErr != nil {
+			return KeyMaterial{}, classifyModelSINFBindingFailure(sinf, packs, registry, resolveErr)
 		}
 		return material, nil
 	})
