@@ -175,7 +175,7 @@ final class FairPlayLab: ObservableObject {
         enrollmentStages = [:]
         log("Transaction", "Validated exchange \(transactions): kbsync \(transaction.kbsync.count) bytes; keybag \(transaction.keybag?.count ?? 0) bytes; SINF count \(transaction.sinfs.count). Capture saved privately.")
     }
-    func download(_ text: String, account: StoreAccount) {
+    func download(_ text: String, account: StoreAccount, autoRecover: Bool = false) {
         perform {
             guard self.input == nil else { return }
             self.transactions = 0
@@ -199,6 +199,19 @@ final class FairPlayLab: ObservableObject {
             try? FileManager.default.removeItem(at: source)
             self.input = destination
             self.log("Transaction", "IPA downloaded and prepared. Original retained until this test is erased.")
+            if autoRecover {
+                // All operations happen inside the iOS application sandbox.
+                // Missing ent/keybag data must not trigger speculative recovery.
+                if self.transactions == 1 {
+                    self.log("Enrollment", "Automatic on-device recovery requested for the retained transaction.")
+                    do { try await self.attemptCurrentCaptureRecovery() }
+                    catch {
+                        self.log("Enrollment", "Local recovery unavailable (capture/validation). Original IPA retained; see the sanitized diagnostic.")
+                    }
+                } else {
+                    self.log("Enrollment", "Automatic recovery skipped: exactly one retained transaction is required. Original IPA retained.")
+                }
+            }
         }
     }
     func analyzeCapture(_ selected: URL) {
@@ -218,38 +231,55 @@ final class FairPlayLab: ObservableObject {
             self.log("Inspection", "Inspection reports encryption geometry only. Attempt recovery from current capture tests enrollment compatibility; inspection does not decrypt pages.")
         }
     }
-    func recoverCurrentCapture() {
-        guard let input else { return }
-        perform {
-            self.output = nil
-            self.nativeRecoveryVerified = false
-            for stage in ["Portable raw state verified", "Enrollment frame verified", "Portable model validated"] { self.enrollmentStages[stage] = false }
-            try await self.analyzeCurrentCaptureFiles()
-            guard let archive = self.captureArchive else { throw CocoaError(.fileReadNoSuchFile) }
-            let destination = self.root.appendingPathComponent(UUID().uuidString + ".recovery")
-            defer {
-                try? FileManager.default.removeItem(at: destination.appendingPathComponent("models"))
-                try? FileManager.default.removeItem(at: destination.appendingPathComponent("private-report.json"))
-            }
-            self.log("Enrollment", "Trying the complete retained SIDB with its original hardware identity. Compatibility is unproven until source/frame, model and target IPA checks pass.")
-            let result = try await Task.detached {
-                try FairPlayNative.run("recover-capture", source: archive, destination: destination, ipa: input)
-            }.value
-            self.log("Enrollment", result)
-            if let data = result.data(using: .utf8),
-               let value = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-               value["ok"] as? Bool == true {
-                self.nativeRecoveryVerified = true
-                self.output = destination.appendingPathComponent("processed.ipa")
-                self.enrollmentStages["Portable raw state verified"] = true
-                self.enrollmentStages["Enrollment frame verified"] = true
-                self.enrollmentStages["Portable model validated"] = true
-                self.log("Decryption", "Capture-derived model matched the target IPA. Plaintext is not independently authenticated; completion does not prove 100% correctness.")
-            } else {
-                try? FileManager.default.removeItem(at: destination)
-                self.log("Decryption", "Recovery rejected before producing an IPA. See Enrollment for the failing stage and code.")
-            }
+    // Used by both the one-tap iPhone flow and manual troubleshooting.
+    // The native bridge reports success only after source/frame and SINF/IPA
+    // validation. The additional Swift gate rejects partial/malformed replies.
+    private func attemptCurrentCaptureRecovery() async throws {
+        guard let input else { throw CocoaError(.fileReadNoSuchFile) }
+        output = nil
+        nativeRecoveryVerified = false
+        for stage in ["Portable raw state verified", "Enrollment frame verified", "Portable model validated"] {
+            enrollmentStages[stage] = false
         }
+        try await analyzeCurrentCaptureFiles()
+        guard transactions == 1, let archive = captureArchive else {
+            log("Enrollment", "Recovery requires exactly one verified retained iPhone transaction.")
+            return
+        }
+        let destination = root.appendingPathComponent(UUID().uuidString + ".recovery")
+        let processed = destination.appendingPathComponent("processed.ipa")
+        var validated = false
+        defer {
+            // Never persist enrollment models or reports outside this attempt.
+            try? FileManager.default.removeItem(at: destination.appendingPathComponent("models"))
+            try? FileManager.default.removeItem(at: destination.appendingPathComponent("private-report.json"))
+            if !validated { try? FileManager.default.removeItem(at: destination) }
+        }
+        log("Enrollment", "Attempting local recovery with the complete retained SIDB and its original identity. Compatibility remains experimental.")
+        let response = try await Task.detached {
+            try FairPlayNative.run("recover-capture", source: archive, destination: destination, ipa: input)
+        }.value
+        log("Enrollment", response)
+        let envelope = (response.data(using: .utf8)
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) }) as? [String: Any] ?? [:]
+        let size = ((try? FileManager.default.attributesOfItem(atPath: processed.path))?[.size] as? NSNumber)?.int64Value ?? 0
+        guard FairPlayLocalRecoveryGate.accepts(envelope, outputBytes: size) else {
+            log("Decryption", "Local recovery rejected or incomplete. Original IPA retained; no processed IPA published.")
+            return
+        }
+        // These three indicators describe recovered model consistency only,
+        // never independently authenticated plaintext or installation.
+        enrollmentStages["Portable raw state verified"] = true
+        enrollmentStages["Enrollment frame verified"] = true
+        enrollmentStages["Portable model validated"] = true
+        nativeRecoveryVerified = true
+        output = processed
+        validated = true
+        log("Decryption", "Source/frame and model/SINF checks passed locally. IPA is available for analysis; plaintext correctness and installation remain unverified.")
+    }
+    func recoverCurrentCapture() {
+        guard input != nil else { return }
+        perform { try await self.attemptCurrentCaptureRecovery() }
     }
     func recoverEnrollment(_ selected: URL) {
         nativeRecoveryVerified = false
@@ -408,6 +438,13 @@ struct FairPlayLabView: View {
                     Button("Download and capture transaction") {
                         if let account = appData.ipaTool?.account { lab.download(appInput, account: account) }
                     }.disabled(appData.ipaTool == nil || appInput.isEmpty || lab.input != nil)
+                    Button("Download + attempt local recovery on iPhone") {
+                        if let account = appData.ipaTool?.account {
+                            lab.download(appInput, account: account, autoRecover: true)
+                        }
+                    }.disabled(appData.ipaTool == nil || appInput.isEmpty || lab.input != nil)
+                    Text("One-tap experimental path: download, retain the matching keybag context, audit the capture, and attempt recovery entirely on this iPhone. A failed recovery leaves the original IPA available.")
+                        .font(.footnote)
                     if let record, let url = record.fileURL {
                         Button("Use selected downloaded IPA") { lab.input = url }
                     }
