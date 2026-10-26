@@ -32,12 +32,20 @@ jobs:
       - name: Check next unmapped target at 0xa4be38 without private data
         run: |
           python3 scripts/inspect-fairplay-next-target.py artifacts/fairplay-next-target.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned development-only translator dependencies
+        run: python3 -m pip install capstone==5.0.6 unicorn==2.1.4
+      - name: Generate next-block Go review candidate from exact system profile
+        run: python3 scripts/generate-fairplay-next-block.py --output artifacts/next-block-candidate.go.txt
       - uses: actions/upload-artifact@v4
         with:
           name: FairPlay-macos27-code-profile-${{ github.run_id }}
           path: |
             artifacts/fairplay-macos27-code-profile.json
             artifacts/fairplay-next-target.json
+            artifacts/next-block-candidate.go.txt
           if-no-files-found: error
   protocol:
     runs-on: macos-15
@@ -90,3 +98,9 @@ jobs:
           go-version: '1.26.0'
       - name: Verify portable FairPlay and capture contracts with public fixtures
         run: bash scripts/test-fairplay-host.sh
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install capstone==5.0.6 unicorn==2.1.4
+      - name: Compare candidate translator with independent ARM64 execution
+        run: python3 scripts/test-generate-fairplay-next-block.py
