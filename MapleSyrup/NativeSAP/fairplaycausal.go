@@ -34,6 +34,8 @@ func classifyCanonicalSIDB(blob []byte) string {
 type causalTrial struct {
     Intervention string `json:"intervention"`
     Status string `json:"status"`
+    FailurePhase string `json:"failure_phase,omitempty"`
+    FailureCode string `json:"failure_code,omitempty"`
     SourceChanged bool `json:"source_changed"`
     FrameChanged bool `json:"frame_changed"`
     ModelChanged bool `json:"model_changed"`
@@ -116,17 +118,28 @@ func studySIDBCausality(input legacyEnrollmentInput, domain fairplay.PortableEnr
         stimuli = append(stimuli, stimulus{name: item.label, offset: item.offset})
     }
     stimuli = append(stimuli, stimulus{name: "hardware_first", offset: 0, identity: true})
-    for _, test := range stimuli {
+    // A deterministic, unmodified replay distinguishes state corruption or
+    // identity binding from a failure to reset the interpreter between runs.
+    // If this control fails, mutation conclusions are not interpretable.
+    trials := append([]stimulus{{name: "baseline_replay", offset: -1}}, stimuli...)
+    for _, test := range trials {
         privateSIDB := bytes.Clone(sidb)
         privateHardware := bytes.Clone(input.hardware)
         if test.identity {
             privateHardware[test.offset] ^= 1
-        } else {
+        } else if test.offset >= 0 {
             privateSIDB[test.offset] ^= 1
         }
         changed, runErr := engine(domain.ExecutablePath, privateHardware, causalMappings(domain, input.files, privateSIDB))
         entry := causalTrial{Intervention: test.name, Status: "runtime_rejected"}
-        if runErr == nil {
+        if runErr != nil {
+            if details, ok := rawsource.RecoveryDetails(runErr); ok {
+                // The runtime contract exposes only typed, fixed error
+                // classifications, never a private filename, key or address.
+                entry.FailurePhase = causalFailurePhase(details.Phase)
+                entry.FailureCode = causalFailureCode(details.Failure)
+            }
+        } else {
             entry.Status = "completed"
             entry.SourceChanged = !bytes.Equal(baseline.Source, changed.Source)
             entry.FrameChanged = !bytes.Equal(baseline.Frame, changed.Frame)
@@ -139,6 +152,33 @@ func studySIDBCausality(input legacyEnrollmentInput, domain fairplay.PortableEnr
         clear(privateHardware)
     }
     return report, nil
+}
+
+// Preserve only known, fixed tags from the enclave's public diagnostic ABI.
+// Never pass through Error(), guest paths, or arbitrary strings from sources.
+func causalFailurePhase(value string) string {
+    switch value {
+    case "inputs", "resource", "configure", "account-parser",
+        "bootstrap", "source", "selection", "selection-output",
+        "sinf", "pack":
+        return value
+    default:
+        return "other"
+    }
+}
+
+func causalFailureCode(value string) string {
+    switch value {
+    case "raw_invalid_inputs", "raw_resource_invalid", "raw_binary_mismatch",
+        "raw_setup_failed", "raw_input_size_limit", "raw_memory_unavailable",
+        "raw_unsupported_external", "raw_unknown_control_flow", "raw_step_limit",
+        "raw_unsupported_operation", "raw_operation_rejected",
+        "raw_selection_output_unavailable", "raw_pack_unavailable",
+        "generic_invalid_instruction", "generic_execution_failed":
+        return value
+    default:
+        return "other"
+    }
 }
 
 // No IPA download or consumer invocation. The caller must already have a
