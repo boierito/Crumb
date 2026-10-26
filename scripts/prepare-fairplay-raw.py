@@ -74,7 +74,7 @@ for name in names:
         rejected = 'return pc, fmt.Errorf("unsupported bootstrap external %#x", pc)'
         if text.count(rejected) != 1:
             raise SystemExit('pinned external dispatch changed; review required')
-        text = text.replace(rejected, 'r.unmodeledExternalSlot = sourceExternalImportSlot(pc)\\n\\t\\t' + rejected)
+        text = text.replace(rejected, 'r.unmodeledExternalSlot = sourceExternalImportSlot(pc)\n\t\t' + rejected)
 
     if name in cfg_ends:
         # Preserve the original cases. Only their unknown-target branch may
