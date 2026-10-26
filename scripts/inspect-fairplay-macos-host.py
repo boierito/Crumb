@@ -7,6 +7,7 @@ A hash mismatch is an explicit stop, not permission to invent branch code.
 """
 import hashlib
 import json
+import re
 import os
 from pathlib import Path
 import shutil
@@ -16,6 +17,15 @@ import tempfile
 
 EXPECTED = "1e58d37e9602dd0ca5e24b14762063b6c310248b4d3a94272771d815e4ea1784"
 TARGET = 0x1008fff2c
+PINNED_BRIDGE_WORDS = (
+    "b9018fe4", "b90193fb", "b90197f9", "aa1503fb",
+    "aa1303f9", "b9011bf4", "52800002", "528c9c89",
+    "0b090189", "f869dbc6", "528c9a49", "0b090189",
+    "5291e8ea", "72b5e8ea", "528001ab", "52800dee",
+    "528860ef", "72a0002f", "52801610", "528004a0",
+    "528707a1", "72a00201", "52800923", "528014a4",
+    "52800dc5", "f940dfed", "d28c5771", "d71f08d1",
+)
 CANDIDATES = (
     "/usr/libexec/fairplayd",
     "/System/Library/PrivateFrameworks/CoreFP.framework/Versions/A/fairplayd",
@@ -106,6 +116,14 @@ def main():
                                          if "1008fff2c" in row), -1)
                     if target_index >= 0:
                         report["target_code_excerpt"] = rows[target_index:target_index+35]
+                        actual = []
+                        for line in rows[target_index:target_index+len(PINNED_BRIDGE_WORDS)]:
+                            parsed = re.match(r"^[0-9a-f]+:\s+([0-9a-f]{8})", line)
+                            if parsed:
+                                actual.append(parsed.group(1))
+                        report["pinned_branch_words_verified"] = tuple(actual) == PINNED_BRIDGE_WORDS
+                        if not report["pinned_branch_words_verified"]:
+                            raise RuntimeError("exact daemon fingerprint matched but bootstrap words changed")
                 else:
                     report["status"] = "exact_binary_disassembler_unavailable"
             break
