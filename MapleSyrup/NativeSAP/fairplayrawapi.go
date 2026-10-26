@@ -28,6 +28,8 @@ type RecoveryDiagnostic struct {
 	Lookups               map[string]LookupCount `json:"file_lookups,omitempty"`
 	LastBlock             string                 `json:"last_translated_block,omitempty"`
 	SharedBlockExecutions int                    `json:"shared_block_executions,omitempty"`
+	UntranslatedTarget string                 `json:"untranslated_target,omitempty"`
+	TargetClass         string                 `json:"target_class,omitempty"`
 }
 type recoveryError struct{ diagnostic RecoveryDiagnostic }
 
@@ -49,6 +51,10 @@ func recoveryFailed(phase, code string, runtime *rawSourceRuntime) error {
 	if runtime != nil {
 		diagnostic.LastBlock = knownSourceBlocks[runtime.lastKnownBlock].label
 		diagnostic.SharedBlockExecutions = runtime.additionalBlocks
+		if code == "raw_unknown_control_flow" {
+			diagnostic.UntranslatedTarget = runtime.untranslatedTarget
+			diagnostic.TargetClass = runtime.targetClass
+		}
 		for key, count := range runtime.lookupCounts {
 			diagnostic.Lookups[key] = count
 		}
