@@ -6,6 +6,7 @@ package main
 // are written to disk or returned to Swift.
 import (
     "fmt"
+    "strings"
     "time"
 
     "github.com/majd/ipatool/v2/internal/fairplay"
@@ -22,10 +23,36 @@ type localProbe struct {
     SharedBlocks int `json:"shared_block_executions"`
     FileLookups map[string]rawsource.LookupCount `json:"file_lookups,omitempty"`
     SourceFrameVerified bool `json:"source_frame_verified"`
+    SINFModelVerified bool `json:"sinf_model_verified"`
     DurationMs int64 `json:"milliseconds"`
 }
 
 var localProbeModes = []string{"dual", "fpsd-only", "shared-only", "sidb-only"}
+
+
+// Validate the *actual* installed license with the existing strict resolver.
+// Earlier probes only compared the source and frame, which are internally
+// coherent even when the candidate does not decrypt the SINF. Never log the
+// selector, internal resolver error, plaintext or recovered logical key.
+func probeModelSINF(files map[string][]byte, pack []byte) (bool, string) {
+    var sinf []byte
+    matches := 0
+    for name, data := range files {
+        if strings.HasSuffix(name, ".sinf") {
+            sinf = data
+            matches++
+        }
+    }
+    if matches != 1 {
+        return false, "sinf_license_not_unique"
+    }
+    material, err := fairplay.ResolveLogicalKeyWithModel(sinf, pack)
+    defer clear(material.LogicalKey[:])
+    if err != nil {
+        return false, "sinf_model_rejected"
+    }
+    return true, "sinf_model_validated"
+}
 
 // Routing, not mutation: retains opaque bytes and preserved device identity.
 // Every variant is based on exactly the same per-domain IPA file inventory.
@@ -112,8 +139,9 @@ func probeCaptureEnrollment(source, ipa string) (any, error) {
                 }
             } else if verifyRecoveredEnrollment(value) == nil {
                 result.Phase = "model-validation"
-                result.Code = "source_frame_verified"
                 result.SourceFrameVerified = true
+                result.SINFModelVerified, result.Code = probeModelSINF(domain.Files, value.Pack)
+                result.Phase = "sinf-validation"
             } else {
                 result.Phase = "model-validation"
                 result.Code = "source_frame_mismatch"
