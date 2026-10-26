@@ -1,0 +1,83 @@
+name: Publish verified FairPlay SIDB causal replay IPA
+on:
+  push:
+    branches: [fix/fairplay-phase-consistent-recovery]
+    paths:
+      - '.github/workflows/publish-fairplay-sidb-causal-replay.yml'
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish-tested-artifact:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require successful pinned tests and IPA build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: 3d21100e39b88f8b38dccef3004dc02718232db2
+        shell: bash
+        run: |
+          set -euo pipefail
+          for RUN in 40415400064 40415400081; do
+            test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" --jq .conclusion)" = success
+            test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" --jq .head_sha)" = "$SOURCE_SHA"
+          done
+      - name: Download exact tested unsigned Release IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: Crumb-IPA-Release-40415400081
+          run-id: 40415400081
+          github-token: ${{ github.token }}
+          path: ipa-input
+      - name: Download license notices and corresponding sources
+        uses: actions/download-artifact@v4
+        with:
+          name: Crumb-Release-40415400081
+          run-id: 40415400081
+          github-token: ${{ github.token }}
+          path: source-input
+      - name: Verify release IPA SHA256, metadata and source bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, plistlib, zipfile, shutil
+          ipa = Path('ipa-input/Crumb-Release.ipa')
+          expected = '32e0a24164d5212a1de675ce13390c82b559a4b592dd5385a4d90e3ec7e84fd6'
+          assert ipa.is_file(), 'Pinned IPA not found'
+          assert hashlib.sha256(ipa.read_bytes()).hexdigest() == expected, 'Pinned IPA SHA256 mismatch'
+          with zipfile.ZipFile(ipa) as archive:
+              assert archive.testzip() is None, 'Invalid IPA ZIP'
+              info = plistlib.loads(archive.read('Payload/Crumb.app/Info.plist'))
+              assert info['CFBundleVersion'] == '23045', 'Unexpected internal app build'
+              assert info['CFBundleIdentifier'] == 'com.certlium.crumb'
+              assert not any(name.endswith('embedded.mobileprovision') for name in archive.namelist())
+          shutil.copyfile(ipa, 'release/Crumb-23045-sidb-causality-replay-Release.ipa')
+          for filename in [
+              'IPATOOL-LICENSE', 'UNICORN-COPYING',
+              'ipatool-sap-corresponding-source.tar.gz',
+              'unicorn-tci-corresponding-source.tar.gz',
+          ]:
+              src = Path('source-input') / filename
+              assert src.is_file(), 'Missing license or source: '+filename
+              shutil.copyfile(src, Path('release') / filename)
+          print('VERIFIED IPA SHA256:', expected)
+          PY
+      - name: Publish immutable diagnostic prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=test-23045-sidb-causality-replay
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'Release exists; refusing to overwrite' >&2
+            exit 1
+          fi
+          gh release create "$TAG" release/* --repo "$GITHUB_REPOSITORY" \
+            --target 3d21100e39b88f8b38dccef3004dc02718232db2 \
+            --title 'Crumb 23045 · SIDB causality with reproducibility control (PR #12)' \
+            --prerelease \
+            --notes 'Unsigned iOS diagnostic IPA from PR #12 source 7f6a89af, verified by all pinned protocol, portable, generic, no-JIT and Debug/Release iOS checks. Internal CFBundleVersion remains 23045. This version includes a no-download, SIDB and virtual-identity causal experiment using a prior private capture, a strict unchanged-baseline reproducibility gate, and allowlisted per-trial error phases and codes. Does not alter model selection, key material, plaintext verification, or acceptance criteria. No authorized IPA has yet been decrypted and validated on-device. Five SAP protocol CI jobs and both iOS IPA build jobs passed for pinned source commit 3d21100e. The new baseline_replay field must pass before any mutation conclusions. SHA256: 32e0a24164d5212a1de675ce13390c82b559a4b592dd5385a4d90e3ec7e84fd6. User must sign by their own iPhone installation method. Private enrollment material is never included.'
