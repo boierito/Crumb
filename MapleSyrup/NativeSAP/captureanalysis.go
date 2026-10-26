@@ -74,6 +74,7 @@ func analyzeCapture(source string) (map[string]any, error) {
 		consumerStage := "not_observed"
 		summary := map[string]any{"schema": manifest.Schema, "integrity": "verified", "keybag_consumer": consumerStage, "ready_to_recover": false, "generation_context_metadata": false}
 		sinfs := 0
+        licenseFamily := ""
 		for _, entry := range manifest.Files {
 			if path.Base(entry.Name) != entry.Name || seen[entry.Name] {
 				return nil, fmt.Errorf("capture_manifest_path")
@@ -175,6 +176,15 @@ func analyzeCapture(source string) (map[string]any, error) {
 					return nil, fmt.Errorf("capture_sinf")
 				}
 				sinfs++
+                // SINF key ID is the license generation, not the account's
+                // age. Report only a fixed family label; never emit user ID,
+                // selector, private payload, or per-app identifier.
+                selector, selectorErr := fairplay.ParseSINFSelector(b)
+                if selectorErr != nil { return nil, fmt.Errorf("capture_sinf_selector") }
+                family := "non-key5"
+                if selector.Key == 5 { family = "key5" }
+                if licenseFamily == "" { licenseFamily = family
+                } else if licenseFamily != family { licenseFamily = "mixed" }
 				summary["sinf_current_layout"] = info.CurrentLayout
 				summary["sinf_private_bytes"] = info.PrivateBytes
 			default:
@@ -191,6 +201,7 @@ func analyzeCapture(source string) (map[string]any, error) {
 			}
 		}
 		summary["sinf_count"] = sinfs
+        summary["sinf_key_family"] = licenseFamily
 		summary["keybag_consumer"] = consumerStage
 		missing := []string{}
 		switch consumerStage {
