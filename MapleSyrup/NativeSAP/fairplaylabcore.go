@@ -29,6 +29,8 @@ func labRun(r labRequest) (any, error) {
 		return probeCaptureEnrollment(r.Source, r.IPA)
 	case "research-causality":
 		return researchCaptureCausality(r.Source, r.IPA)
+	case "research-bridge":
+		return researchCaptureBridge(r.Source, r.IPA)
 	case "recover-enrollment":
 		return recoverModernEnrollment(r.Source, r.IPA, r.Destination)
 	case "analyze-capture":
