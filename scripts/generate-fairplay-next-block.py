@@ -77,6 +77,8 @@ def generate(database, decoder, translator, start=TARGET):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, help="Exact thin daemon; defaults to build-host system daemon")
+    parser.add_argument("--target", type=lambda value: int(value, 0), default=TARGET,
+                        help="Instruction address in the exact executable section")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     archive = ROOT / "third_party/archives" / f"ipatool-fairplay-{REV}.tar.gz"
@@ -97,7 +99,7 @@ def main():
         from raw_macho_db import RawMachODatabase
         decoder = Cs(CS_ARCH_ARM64, CS_MODE_ARM)
         decoder.detail = True
-        candidate = generate(RawMachODatabase(binary), decoder, translator)
+        candidate = generate(RawMachODatabase(binary), decoder, translator, args.target)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(candidate)
     print("Generated review candidate; dispatcher and release coverage unchanged.")

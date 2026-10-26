@@ -39,6 +39,8 @@ jobs:
         run: python3 -m pip install capstone==5.0.6 unicorn==2.1.4
       - name: Generate next-block Go review candidate from exact system profile
         run: python3 scripts/generate-fairplay-next-block.py --output artifacts/next-block-candidate.go.txt
+      - name: Generate next missing block observed on iPhone 23042
+        run: python3 scripts/generate-fairplay-next-block.py --target 0x1008c292c --output artifacts/next-block-8c292c.go.txt
       - uses: actions/upload-artifact@v4
         with:
           name: FairPlay-macos27-code-profile-${{ github.run_id }}
@@ -46,6 +48,7 @@ jobs:
             artifacts/fairplay-macos27-code-profile.json
             artifacts/fairplay-next-target.json
             artifacts/next-block-candidate.go.txt
+            artifacts/next-block-8c292c.go.txt
           if-no-files-found: error
   protocol:
     runs-on: macos-15
