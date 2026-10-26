@@ -74,11 +74,21 @@ func TestCausalStudyMutatesPrivateCopiesAndNeverReportsMaterial(t *testing.T) {
         !report.OriginalIPARetained {
         t.Fatalf("unexpected research summary: %+v", report)
     }
+    // A frame is a selected transformation slot, NOT a hash of every SIDB
+    // byte. A causal change can alter Source and the model while leaving
+    // the selected Frame unchanged. Require the instrument to report that
+    // distinction instead of asserting non-existent full diffusion.
+    frameChanged, frameUnchanged := false, false
     for _, trial := range report.Trials {
-        if trial.Status != "completed" || !trial.SourceChanged || !trial.FrameChanged ||
+        if trial.Status != "completed" || !trial.SourceChanged ||
             !trial.ModelChanged || trial.SINFModelVerified {
-            t.Fatalf("synthetic input mutation did not alter all downstream material: %+v", trial)
+            t.Fatalf("synthetic causal result unexpectedly accepted or unchanged: %+v", trial)
         }
+        frameChanged = frameChanged || trial.FrameChanged
+        frameUnchanged = frameUnchanged || !trial.FrameChanged
+    }
+    if !frameChanged || !frameUnchanged {
+        t.Fatal("synthetic fixture did not distinguish Frame-sensitive from Frame-insensitive changes")
     }
     encoded, err := json.Marshal(report)
     if err != nil { t.Fatal(err) }
