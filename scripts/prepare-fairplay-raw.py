@@ -54,7 +54,7 @@ for name in names:
         lookup = 'return bestSuffix, bestData, bestSuffix != ""'
         if text.count(field) != 1 or text.count(lookup) != 1:
             raise SystemExit('raw runtime lookup contract changed')
-        text = text.replace(field, field + '\n lookupCounts map[string]LookupCount\n lastKnownBlock uint64\n additionalBlocks int')
+        text = text.replace(field, field + '\n lookupCounts map[string]LookupCount\n lastKnownBlock uint64\n additionalBlocks int\n untranslatedTarget string\n targetClass string')
         text = text.replace(lookup, 'r.recordLookup(path, bestSuffix != "")\n\t' + lookup)
     if name in cfg_ends:
         # Preserve the original cases. Only their unknown-target branch may
