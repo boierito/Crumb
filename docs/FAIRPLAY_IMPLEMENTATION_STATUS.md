@@ -476,3 +476,43 @@ contadores acotados, resultados vacíos al rechazar y perfil embebido intacto.
 La siguiente ejecución real debe aportar fase/categoría y disponibilidad de
 archivos para decidir qué integración falta sin adivinar a partir del retorno
 nativo cero.
+
+
+## 17. Cobertura compartida del CFG — build 23036
+
+El V4 real de 23035 llega a `bootstrap` con
+`raw_unknown_control_flow`. El parser terminó y encontró SINF y SUPF
+(un intento, cero ausencias para cada uno). No hay búsquedas de estado en ese
+informe. Esto no demuestra compatibilidad ni incompatibilidad del SIDB de
+884 bytes: el motor aún no acredita haberlo consumido por esta ruta.
+
+Los generadores upstream construyen CFGs a partir de trazas observadas. El
+bootstrap tiene 953 entradas locales, pero la misma distribución fijada contiene
+4.262 entradas únicas entre account, bootstrap, selection y SINF: 3.309 entradas
+adicionales ya traducidas a Go que su dispatcher anterior rechazaba si las
+alcanzaba indirectamente desde bootstrap. El destino exacto del V4 no estaba en
+el diagnóstico; no se afirma que pertenezca a este conjunto adicional.
+
+23036 genera un registro determinista de esas funciones existentes y lo usa
+únicamente en el caso desconocido de cada dispatcher. Los casos originales
+conservan sus operaciones. No se traduce ni ejecuta código nativo nuevo, no se
+inventa una operación para un destino sin cobertura y no se convierte un rechazo
+en éxito. Cada bloque reutilizado sigue consumiendo el presupuesto del bucle.
+La dirección de salida de la fase se vigila con los checks por instrucción ya
+existentes y se devuelve al bucle para conservar el contrato de dos visitas de
+selection. Un stop explícito se conserva y la configuración temporal se restaura.
+
+Las pruebas usan un bloque SINF real ausente de bootstrap para comprobar sus
+efectos sobre registros, el retorno natural, la frontera interior, las visitas
+al punto de salida, la preservación de un stop explícito y el rechazo de un
+destino no traducido. No necesitan cuentas ni estados privados.
+
+El informe añade `shared_block_executions` y `last_translated_block`. Este último
+es una etiqueta fija del código público generado (`text+0x…`), seleccionada
+solamente del registro de entradas conocidas: nunca serializa el destino
+desconocido, un registro privado o una dirección de memoria del estado. Permitirá
+localizar el último bloque cubierto si persiste el fallo. No contiene claves.
+
+La generalización de cobertura no demuestra que se haya superado el bootstrap
+real, recuperado el modelo o descifrado una IPA. Esas validaciones permanecen
+obligatorias y sin evidencia positiva en el dispositivo.

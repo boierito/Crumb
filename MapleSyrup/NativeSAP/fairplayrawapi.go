@@ -23,9 +23,11 @@ type LookupCount struct {
 	Missing  int `json:"missing"`
 }
 type RecoveryDiagnostic struct {
-	Phase   string                 `json:"phase"`
-	Failure string                 `json:"failure"`
-	Lookups map[string]LookupCount `json:"file_lookups,omitempty"`
+	Phase                 string                 `json:"phase"`
+	Failure               string                 `json:"failure"`
+	Lookups               map[string]LookupCount `json:"file_lookups,omitempty"`
+	LastBlock             string                 `json:"last_translated_block,omitempty"`
+	SharedBlockExecutions int                    `json:"shared_block_executions,omitempty"`
 }
 type recoveryError struct{ diagnostic RecoveryDiagnostic }
 
@@ -45,6 +47,8 @@ func RecoveryDetails(err error) (RecoveryDiagnostic, bool) {
 func recoveryFailed(phase, code string, runtime *rawSourceRuntime) error {
 	diagnostic := RecoveryDiagnostic{Phase: phase, Failure: code, Lookups: map[string]LookupCount{}}
 	if runtime != nil {
+		diagnostic.LastBlock = knownSourceBlocks[runtime.lastKnownBlock].label
+		diagnostic.SharedBlockExecutions = runtime.additionalBlocks
 		for key, count := range runtime.lookupCounts {
 			diagnostic.Lookups[key] = count
 		}
