@@ -28,6 +28,7 @@ type LookupCount struct {
 type RecoveryDiagnostic struct {
 	Phase                  string                 `json:"phase"`
 	UnmodeledExternalSlot  string                 `json:"unmodeled_external_slot,omitempty"`
+	StateLookupsByPhase    map[string]LookupCount `json:"state_lookups_by_phase,omitempty"`
 	Failure                string                 `json:"failure"`
 	Lookups                map[string]LookupCount `json:"file_lookups,omitempty"`
 	StateFileTypes         map[string]LookupCount `json:"state_file_lookups,omitempty"`
@@ -68,6 +69,10 @@ func recoveryFailed(phase, code string, runtime *rawSourceRuntime) error {
 func runtimeDiagnostic(phase, code string, runtime *rawSourceRuntime) RecoveryDiagnostic {
 	diagnostic := RecoveryDiagnostic{Phase: phase, Failure: code, Lookups: map[string]LookupCount{}}
 	if runtime != nil {
+		if len(runtime.stateLookupsByPhase) != 0 {
+			diagnostic.StateLookupsByPhase = make(map[string]LookupCount, len(runtime.stateLookupsByPhase))
+			for k,v := range runtime.stateLookupsByPhase { diagnostic.StateLookupsByPhase[k] = v }
+		}
 		diagnostic.LastBlock = sourceBlockLabel(runtime.lastKnownBlock)
 		diagnostic.SharedBlockExecutions = runtime.additionalBlocks
 		diagnostic.ExecutionBackend = "aot"
@@ -154,6 +159,13 @@ func (r *rawSourceRuntime) recordLookup(requested string, found bool) {
 	if category != "state" {
 		return
 	}
+	if r.phase != "" {
+		if r.stateLookupsByPhase == nil { r.stateLookupsByPhase = make(map[string]LookupCount) }
+		phase := r.stateLookupsByPhase[r.phase]
+		if phase.Attempts < 1000000 { phase.Attempts++ }
+		if !found && phase.Missing < 1000000 { phase.Missing++ }
+		r.stateLookupsByPhase[r.phase] = phase
+	}
 	// Names are discarded immediately; persist only this finite public
 	// extension taxonomy, never account-specific file names or paths.
 	kind := "other"
@@ -232,15 +244,19 @@ func runEnrollmentSource(value *model, runtime *rawSourceRuntime) (enrollmentOut
 	worker := newState(value)
 	worker.reset()
 	lastRawSourceState = worker
+	runtime.phase = "account-parser"
 	if _, _, err := runRawSourceAccountEntryCFG(worker, runtime, 1000000); err != nil {
 		return enrollmentOutputCheckpoint{}, runtimeFailure("account-parser", err, runtime)
 	}
+	runtime.phase = "bootstrap"
 	if _, _, err := runRawSourceBootstrapCFG(worker, runtime, 1000000); err != nil {
 		return enrollmentOutputCheckpoint{}, runtimeFailure("bootstrap", err, runtime)
 	}
+	runtime.phase = "source"
 	if _, err := runRawSourceKernelLoop(worker, "outer"); err != nil {
 		return enrollmentOutputCheckpoint{}, runtimeFailure("source", err, runtime)
 	}
+	runtime.phase = "selection"
 	if _, _, err := runRawSourceSelectionCFG(worker, runtime, 2000000); err != nil {
 		return enrollmentOutputCheckpoint{}, runtimeFailure("selection", err, runtime)
 	}
@@ -248,6 +264,7 @@ func runEnrollmentSource(value *model, runtime *rawSourceRuntime) (enrollmentOut
 	if err != nil {
 		return enrollmentOutputCheckpoint{}, recoveryFailed("selection-output", "raw_selection_output_unavailable", runtime)
 	}
+	runtime.phase = "sinf"
 	if _, _, err := runRawSourceSINFEntryCFG(worker, runtime, 2000000); err != nil {
 		checkpoint.clear()
 		return enrollmentOutputCheckpoint{}, runtimeFailure("sinf", err, runtime)
