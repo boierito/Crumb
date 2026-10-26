@@ -14,6 +14,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 PINNED_SHA256 = "1e58d37e9602dd0ca5e24b14762063b6c310248b4d3a94272771d815e4ea1784"
@@ -91,22 +92,34 @@ def main() -> None:
             continue
         if source.stat().st_size > 128 * 1024 * 1024:
             continue
-        if hashlib.sha256(source.read_bytes()).hexdigest() != PINNED_SHA256:
-            continue
-        status["exact_binary_verified"] = True
-        status["status"] = "disassembler_unavailable"
-        rc, tool = run(["xcrun", "-f", "llvm-objdump"])
-        executable = tool.strip() if rc == 0 else shutil.which("llvm-objdump")
-        if not executable:
+        # macOS framework binaries may be universal. The pinned public
+        # model identifies the arm64e/thin slice, not necessarily the
+        # surrounding FAT container. Verify each candidate independently.
+        with tempfile.TemporaryDirectory(prefix="crumb-target-slice-") as temp:
+            candidates = [source]
+            for arch in ("arm64e", "arm64"):
+                thin = Path(temp) / ("fairplayd-" + arch)
+                rc, _ = run(["lipo", "-thin", arch, str(source), "-output", str(thin)])
+                if rc == 0 and thin.is_file():
+                    candidates.append(thin)
+            exact = next((candidate for candidate in candidates if
+                          hashlib.sha256(candidate.read_bytes()).hexdigest() == PINNED_SHA256), None)
+            if exact is None:
+                continue
+            status["exact_binary_verified"] = True
+            status["status"] = "disassembler_unavailable"
+            rc, tool = run(["xcrun", "-f", "llvm-objdump"])
+            executable = tool.strip() if rc == 0 else shutil.which("llvm-objdump")
+            if not executable:
+                break
+            rc, stdout = run([executable, "--disassemble",
+                              "--start-address="+hex(TARGET),
+                              "--stop-address="+hex(TARGET+0x200), str(exact)])
+            if rc == 0:
+                status.update(summarize_disassembly(stdout, TARGET, TARGET+0x200))
+                status["status"] = ("target_in_exact_binary" if status["target_is_disassemblable"]
+                                    else "target_not_disassemblable")
             break
-        rc, stdout = run([executable, "--disassemble",
-                          "--start-address="+hex(TARGET),
-                          "--stop-address="+hex(TARGET+0x200), file_name])
-        if rc == 0:
-            status.update(summarize_disassembly(stdout, TARGET, TARGET+0x200))
-            status["status"] = ("target_in_exact_binary" if status["target_is_disassemblable"]
-                                else "target_not_disassemblable")
-        break
     encoded = json.dumps(status, sort_keys=True, indent=2) + "\n"
     print(encoded)
     if len(sys.argv) > 1:
