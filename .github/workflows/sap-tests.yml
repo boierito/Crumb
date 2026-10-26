@@ -1,7 +1,7 @@
 name: SAP protocol tests
 on:
   push:
-    branches: [main, 'feature/**', 'release/**', 'fix/**', '!feature/fairplay-generic-runtime']
+    branches: [main, 'feature/**', 'release/**', 'fix/**', '!feature/fairplay-generic-runtime', '!fix/fairplay-validation-diagnostics']
   pull_request:
 permissions:
   contents: read

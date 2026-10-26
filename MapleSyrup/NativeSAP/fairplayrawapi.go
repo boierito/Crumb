@@ -14,6 +14,7 @@ var recoveryLock sync.Mutex
 
 type Result struct {
 	Source, Frame, Pack []byte
+	Runtime             RecoveryDiagnostic `json:"-"`
 }
 
 // RecoveryDiagnostic contains only fixed labels and aggregate lookup counts.
@@ -51,6 +52,9 @@ func RecoveryDetails(err error) (RecoveryDiagnostic, bool) {
 	return result, true
 }
 func recoveryFailed(phase, code string, runtime *rawSourceRuntime) error {
+	return &recoveryError{runtimeDiagnostic(phase, code, runtime)}
+}
+func runtimeDiagnostic(phase, code string, runtime *rawSourceRuntime) RecoveryDiagnostic {
 	diagnostic := RecoveryDiagnostic{Phase: phase, Failure: code, Lookups: map[string]LookupCount{}}
 	if runtime != nil {
 		diagnostic.LastBlock = sourceBlockLabel(runtime.lastKnownBlock)
@@ -70,7 +74,7 @@ func recoveryFailed(phase, code string, runtime *rawSourceRuntime) error {
 			diagnostic.Lookups[key] = count
 		}
 	}
-	return &recoveryError{diagnostic}
+	return diagnostic
 }
 func runtimeFailure(phase string, err error, runtime *rawSourceRuntime) error {
 	var generic *genericExecutionError
@@ -226,5 +230,6 @@ func Recover(executable string, hardware []byte, files map[string][]byte) (Resul
 		clear(result.Source)
 		return Result{}, recoveryFailed("frame-output", "raw_frame_unavailable", activeRawSourceRuntime)
 	}
+	result.Runtime = runtimeDiagnostic("completed", "", activeRawSourceRuntime)
 	return result, nil
 }

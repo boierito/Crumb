@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -208,5 +209,47 @@ func TestPortableInputsSafeFailureCodes(t *testing.T) {
 		if !errors.As(err, &classified) || classified.Code != test.code || err.Error() != test.code {
 			t.Fatalf("unsafe or wrong diagnostic: %v", err)
 		}
+	}
+}
+
+func TestDecryptionDiagnosticPreservesInnermostFixedStage(t *testing.T) {
+	private := errors.New("PRIVATE-ERROR-AND-PATH")
+	inner := decryptionFailure("arm64-audit", private)
+	outer := decryptionFailure("image-decryption", inner)
+	stage, ok := DecryptionFailureStage(outer)
+	if !ok || stage != "arm64-audit" || !errors.Is(outer, private) {
+		t.Fatal("lost typed failure or cause")
+	}
+	if stage, ok := DecryptionFailureStage(decryptionFailure("PRIVATE-STAGE", private)); ok || stage != "" {
+		t.Fatal("exposed unrecognized stage")
+	}
+	if strings.Contains(outer.Error(), "PRIVATE") {
+		t.Fatal("cause exposed by public error")
+	}
+}
+
+func TestDecryptionDiagnosticUsesRealInventoryAndImageGates(t *testing.T) {
+	root := t.TempDir()
+	_, err := DecryptIPA(DecryptOptions{InputPath: filepath.Join(root, "PRIVATE-MISSING.ipa"), OutputPath: filepath.Join(root, "out.ipa"), ReportPath: filepath.Join(root, "report.json")})
+	if stage, ok := DecryptionFailureStage(err); !ok || stage != "paths" {
+		t.Fatalf("path gate: %s / %v", stage, err)
+	}
+	input := filepath.Join(root, "invalid.ipa")
+	if err := os.WriteFile(input, []byte("PRIVATE-INVALID-ZIP"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = DecryptIPA(DecryptOptions{InputPath: input, OutputPath: filepath.Join(root, "out.ipa"), ReportPath: filepath.Join(root, "report.json")})
+	if stage, ok := DecryptionFailureStage(err); !ok || stage != "ipa-inventory" {
+		t.Fatalf("inventory gate: %s / %v", stage, err)
+	}
+	_, err = decryptImage(nil, encryptedImage{}, nil, [16]byte{}, nil)
+	if stage, ok := DecryptionFailureStage(err); !ok || stage != "image-geometry" {
+		t.Fatalf("geometry gate: %s / %v", stage, err)
+	}
+	if strings.Contains(err.Error(), "PRIVATE") {
+		t.Fatal("private error exposed")
+	}
+	if _, err := os.Stat(filepath.Join(root, "out.ipa")); !os.IsNotExist(err) {
+		t.Fatal("invalid output published")
 	}
 }

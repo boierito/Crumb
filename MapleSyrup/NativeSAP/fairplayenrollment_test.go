@@ -1,14 +1,19 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/majd/ipatool/v2/internal/fairplay"
+	"github.com/majd/ipatool/v2/wafflebridge/recovery/frame"
+	"github.com/majd/ipatool/v2/wafflebridge/recovery/rawsource"
+	"github.com/majd/ipatool/v2/wafflebridge/recovery/state"
 )
 
 func modernCaptureFixture(t *testing.T) string {
@@ -89,5 +94,96 @@ func TestModernEnrollmentRejectsSymlinksAndLegacySchema(t *testing.T) {
 	}
 	if _, _, err := readModernEnrollment(root); err == nil {
 		t.Fatal("legacy capture treated as modern state")
+	}
+}
+
+// Exercise real evaluators and filesystem gates, rather than mocking the stage
+// labels: a single recovery must identify where accepted CPU output is rejected.
+func syntheticRecoveredResult(t *testing.T) rawsource.Result {
+	t.Helper()
+	source := make([]byte, 224)
+	for i := range source {
+		source[i] = byte(i)
+	}
+	transformed, err := state.Evaluate(source, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clear(transformed)
+	selected, err := frame.Evaluate(transformed[8*16:9*16], nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rawsource.Result{Source: source, Frame: selected, Pack: []byte("PRIVATE-PACK-CANARY"),
+		Runtime: rawsource.RecoveryDiagnostic{Phase: "completed", ExecutionBackend: "generic-profile", GenericInstructions: 123456, Lookups: map[string]rawsource.LookupCount{"state": {Attempts: 1}}}}
+}
+
+func TestRecoveredValidationIdentifiesGateAndPreservesRuntime(t *testing.T) {
+	for _, mode := range []string{"state", "frame", "directory", "ipa"} {
+		t.Run(mode, func(t *testing.T) {
+			value := syntheticRecoveredResult(t)
+			destination := filepath.Join(t.TempDir(), "output")
+			wantCode := ""
+			switch mode {
+			case "state":
+				value.Source = []byte("PRIVATE-BAD-STATE")
+				wantCode = "recovered_state_evaluation_failed"
+			case "frame":
+				value.Frame = []byte("PRIVATE-BAD-FRAME")
+				wantCode = "recovered_source_frame_mismatch"
+			case "directory":
+				if err := os.Mkdir(destination, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(destination, "sentinel"), []byte("keep"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				wantCode = "recovery_output_directory_failed"
+			case "ipa":
+				wantCode = "recovered_ipa_inventory_failed"
+			}
+			ipa := filepath.Join(t.TempDir(), "PRIVATE-INVALID.ipa")
+			if err := os.WriteFile(ipa, []byte("PRIVATE-BAD-ZIP"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			result, err := finishRecoveredEnrollments([]rawsource.Result{value}, ipa, destination)
+			if err == nil || result != nil {
+				t.Fatal("unvalidated result accepted")
+			}
+			fields := labFailureFields("recover-capture", fmt.Errorf("PRIVATE-WRAPPER: %w", recoveryFailure("recovered-validation", "recovered_output_validation_failed", err)))
+			if fields["code"] != wantCode {
+				t.Fatalf("got %v, want %s", fields, wantCode)
+			}
+			report := fields["validation"].(*recoveredValidationDiagnostic)
+			runtime := fields["runtime"].(*rawsource.RecoveryDiagnostic)
+			if runtime.Phase != "completed" || runtime.GenericInstructions != 123456 || runtime.Lookups["state"].Attempts != 1 {
+				t.Fatal("lost runtime after successful execution")
+			}
+			if mode != "state" && (!report.StateEvaluationPassed || report.FrameCandidatesChecked != 14) {
+				t.Fatalf("incomplete cross-check: %+v", report)
+			}
+			if (mode == "directory" || mode == "ipa") && (!report.SourceFrameMatched || report.DomainsCrossChecked != 1) {
+				t.Fatal("lost successful prior gates")
+			}
+			if report.TargetIPAValidated {
+				t.Fatal("failed validation marked as successful")
+			}
+			document, err := json.Marshal(fields)
+			if err != nil || bytes.Contains(document, []byte("PRIVATE")) {
+				t.Fatal("private input or error escaped")
+			}
+			for _, data := range [][]byte{value.Source, value.Frame, value.Pack} {
+				if !bytes.Equal(data, make([]byte, len(data))) {
+					t.Fatal("failed recovery retained private output")
+				}
+			}
+			if mode == "directory" {
+				if _, err := os.Stat(filepath.Join(destination, "sentinel")); err != nil {
+					t.Fatal("deleted preexisting destination")
+				}
+			} else if _, err := os.Stat(destination); !os.IsNotExist(err) {
+				t.Fatal("failed recovery left an output directory")
+			}
+		})
 	}
 }

@@ -108,7 +108,7 @@ func labRun(r labRequest) (any, error) {
 				return nil, fmt.Errorf("fixture mismatch")
 			}
 		}
-		return map[string]any{"state": "passed", "frame": "passed", "sidb": "passed", "synthetic": true, "revision": "ef98227", "generic_profile": rawsource.ExecutionProfileSummary()}, nil
+		return map[string]any{"state": "passed", "frame": "passed", "sidb": "passed", "synthetic": true, "revision": "ef98227", "generic_profile": rawsource.ExecutionProfileSummary(), "recovery_diagnostics_version": 2}, nil
 	case "inspect":
 		return fairplay.InspectPortableIPA(r.Source)
 	case "state":
