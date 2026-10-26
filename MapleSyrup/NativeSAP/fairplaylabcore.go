@@ -116,6 +116,8 @@ func labRun(r labRequest) (any, error) {
 		return frame.Evaluate(r.Input, nil)
 	case "sidb":
 		return sidb.Recover(r.Frame, 2)
+	case "decrypt-credential":
+		return decryptIPACredential(r.Source, r.Destination, r.Model)
 	case "decrypt":
 		if r.Model == "" {
 			return nil, fmt.Errorf("model required")

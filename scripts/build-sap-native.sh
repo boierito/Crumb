@@ -56,9 +56,14 @@ cp "$ROOT/MapleSyrup/NativeSAP/fairplaymulti_test.go" "$SOURCE/internal/fairplay
 python3 "$ROOT/scripts/prepare-fairplay-portable.py" "$WORK/ipatool-$FAIRPLAY_REV/tools/fairplay-recovery" "$SOURCE/wafflebridge/recovery"
 bash "$ROOT/scripts/fetch-fairplay-raw.sh" "$SOURCE/wafflebridge/recovery/rawsource"
 cp "$ROOT/MapleSyrup/NativeSAP/captureanalysis.go" "$SOURCE/wafflebridge/"
-cp "$ROOT/MapleSyrup/NativeSAP/fairplayenrollment.go" "$ROOT/MapleSyrup/NativeSAP/fairplaycapturebridge.go" "$ROOT/MapleSyrup/NativeSAP/fairplayerrors.go" "$ROOT/MapleSyrup/NativeSAP/fairplayprobe.go" "$SOURCE/wafflebridge/"
+cp "$ROOT/MapleSyrup/NativeSAP/fairplayenrollment.go" "$ROOT/MapleSyrup/NativeSAP/fairplaycapturebridge.go" "$ROOT/MapleSyrup/NativeSAP/fairplayerrors.go" "$ROOT/MapleSyrup/NativeSAP/fairplayprobe.go" "$ROOT/MapleSyrup/NativeSAP/fairplaycredential.go" "$SOURCE/wafflebridge/"
+mkdir -p "$SOURCE/wafflebridge/credentialengine/pipeline"
+cp "$ROOT/MapleSyrup/NativeSAP/credentialengine/"*.go "$SOURCE/wafflebridge/credentialengine/"
+cp "$ROOT/MapleSyrup/NativeSAP/credentialengine/pipeline/"*.go "$SOURCE/wafflebridge/credentialengine/pipeline/"
+cp "$ROOT/MapleSyrup/NativeSAP/credentialengine/LICENSE-UPSTREAM" "$SOURCE/wafflebridge/credentialengine/"
+(cd "$SOURCE" && go test ./wafflebridge/credentialengine/...)
 mkdir -p "$SOURCE/wafflebridge/labtest"
-cp "$ROOT/MapleSyrup/NativeSAP/fairplayenrollment.go" "$ROOT/MapleSyrup/NativeSAP/fairplayenrollment_test.go" "$ROOT/MapleSyrup/NativeSAP/fairplaycapturebridge.go" "$ROOT/MapleSyrup/NativeSAP/fairplaycapturebridge_test.go" "$ROOT/MapleSyrup/NativeSAP/fairplayerrors.go" "$ROOT/MapleSyrup/NativeSAP/fairplayprobe.go" "$ROOT/MapleSyrup/NativeSAP/fairplayprobe_test.go" "$SOURCE/wafflebridge/labtest/"
+cp "$ROOT/MapleSyrup/NativeSAP/fairplayenrollment.go" "$ROOT/MapleSyrup/NativeSAP/fairplayenrollment_test.go" "$ROOT/MapleSyrup/NativeSAP/fairplaycapturebridge.go" "$ROOT/MapleSyrup/NativeSAP/fairplaycapturebridge_test.go" "$ROOT/MapleSyrup/NativeSAP/fairplayerrors.go" "$ROOT/MapleSyrup/NativeSAP/fairplayprobe.go" "$ROOT/MapleSyrup/NativeSAP/fairplayprobe_test.go" "$ROOT/MapleSyrup/NativeSAP/fairplaycredential.go" "$ROOT/MapleSyrup/NativeSAP/fairplaycredential_test.go" "$SOURCE/wafflebridge/labtest/"
 cp "$ROOT/MapleSyrup/NativeSAP/fairplaylab.go" "$ROOT/MapleSyrup/NativeSAP/fairplaylabcore.go" "$SOURCE/wafflebridge/"
 cp "$ROOT/MapleSyrup/NativeSAP/captureanalysis.go" "$ROOT/MapleSyrup/NativeSAP/captureanalysis_test.go" "$ROOT/MapleSyrup/NativeSAP/fairplaylabcore.go" "$ROOT/MapleSyrup/NativeSAP/fairplaylab_test.go" "$SOURCE/wafflebridge/labtest/"
 # Full rawsource/lab race tests run in the Linux fairplay-portable CI job.

@@ -339,6 +339,47 @@ final class FairPlayLab: ObservableObject {
             } else { try? FileManager.default.removeItem(at: destination) }
         }
     }
+    func decryptCredential(_ selected: URL) {
+        guard let input else { return }
+        perform {
+            self.output = nil
+            self.nativeRecoveryVerified = false
+            let access = selected.startAccessingSecurityScopedResource()
+            defer { if access { selected.stopAccessingSecurityScopedResource() } }
+            let credential = self.root.appendingPathComponent(UUID().uuidString + ".credential")
+            let candidate = self.root.appendingPathComponent(UUID().uuidString + ".credential-decrypted.ipa")
+            defer { try? FileManager.default.removeItem(at: credential) }
+            var secret = try Data(contentsOf: selected)
+            defer { secret.resetBytes(in: 0..<secret.count) }
+            guard secret.count == 16 else {
+                self.log("Decryption", "Alternate decoder requires a separate 16-byte account credential. Legacy SIDB and keybag files are not compatible.")
+                return
+            }
+            try FairPlayNative.privateWrite(secret, to: credential)
+            self.log("Decryption", "Running independent credential-based decoder locally. No JIT or enrollment-model derivation.")
+            let response = try await Task.detached {
+                try FairPlayNative.run("decrypt-credential", source: input, destination: candidate, model: credential)
+            }.value
+            self.log("Decryption", response)
+            guard let data = response.data(using: .utf8),
+                  let envelope = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  envelope["ok"] as? Bool == true,
+                  let result = envelope["result"] as? [String: Any],
+                  result["engine"] as? String == "credential16",
+                  result["completed"] as? Bool == true,
+                  result["credential_sinf_matched"] as? Bool == true,
+                  result["all_encrypted_images_processed"] as? Bool == true,
+                  (result["remaining_encrypted_images"] as? Int) == 0,
+                  let attributes = try? FileManager.default.attributesOfItem(atPath: candidate.path),
+                  (attributes[.size] as? NSNumber)?.int64Value ?? 0 > 0 else {
+                try? FileManager.default.removeItem(at: candidate)
+                self.log("Decryption", "Independent decoder rejected this credential/IPA combination. Original retained; no processed IPA published.")
+                return
+            }
+            self.output = candidate
+            self.log("Decryption", "All inventoried encrypted images processed and remaining cryptid count is zero. Plaintext still requires independent authentication and installation testing.")
+        }
+    }
     func decrypt(_ selected: URL) {
         guard let input else { return }
         perform {
@@ -452,6 +493,7 @@ struct FairPlayLabView: View {
     @State private var appInput = ""
     @State private var importing = false
     @State private var importingCapture = false
+    @State private var importingCredential = false
     @State private var importingEnrollment = false
     var body: some View {
         NavigationStack {
@@ -518,7 +560,12 @@ struct FairPlayLabView: View {
                     Button("Recover model from native enrollment folder") { importingEnrollment = true; importingCapture = false; importing = true }.disabled(lab.input == nil)
                     if lab.nativeRecoveryVerified { Label("Derived source and frame cross-checked; model matches target SINF", systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
                     Text("Requires a modern native enrollment capture from your own App Store account, including its hardware identity and state files. The current StoreAgent capture is a separate format.")
-                    Button("Import model or model folder and decrypt") { importingEnrollment = false; importingCapture = false; importing = true }.disabled(lab.input == nil)
+                    Button("Import model or model folder and decrypt") { importingEnrollment = false; importingCapture = false; importingCredential = false; importing = true }.disabled(lab.input == nil)
+                    Button("Import 16-byte account credential (alternate decoder)") {
+                        importingEnrollment = false; importingCapture = false; importingCredential = true; importing = true
+                    }.disabled(lab.input == nil)
+                    Text("Optional independent offline decrypter. Requires a pre-existing legitimate 16-byte credential for the same Apple Account; this application cannot mint it on a stock iPhone. Do NOT select your SIDB or keybag.")
+                        .font(.footnote)
                     Text("Import one model file or a folder of selector-bound .bin models. Each executable uses its associated license. Output plaintext is not authenticated.")
                     if let output = lab.output { ShareLink("Export processed IPA (unverified)", item: output) }
                     Text("Sign the exported IPA before installation. Record whether it installs and opens; compilation and structural checks alone do not prove correct plaintext.")
@@ -542,9 +589,12 @@ struct FairPlayLabView: View {
             .navigationTitle("FairPlay Laboratory")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() }.disabled(lab.busy) } }
             .interactiveDismissDisabled(lab.busy)
-            .fileImporter(isPresented: $importing, allowedContentTypes: importingEnrollment ? [.folder] : (importingCapture ? [.zip] : [.data, .folder])) { result in
+            .fileImporter(isPresented: $importing, allowedContentTypes: importingEnrollment ? [.folder] : (importingCapture ? [.zip] : (importingCredential ? [.data] : [.data, .folder]))) { result in
                 if case .success(let url) = result {
-                    if importingEnrollment { lab.recoverEnrollment(url) } else if importingCapture { lab.analyzeCapture(url) } else { lab.decrypt(url) }
+                    if importingEnrollment { lab.recoverEnrollment(url) }
+                    else if importingCapture { lab.analyzeCapture(url) }
+                    else if importingCredential { lab.decryptCredential(url) }
+                    else { lab.decrypt(url) }
                 }
             }
             .onDisappear { lab.erase() }
