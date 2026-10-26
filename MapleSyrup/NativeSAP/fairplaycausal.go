@@ -46,6 +46,7 @@ type causalReport struct {
     Schema string `json:"schema"`
     SIDBContract string `json:"sidb_contract"`
     SIDBBytes int `json:"sidb_bytes"`
+    ReplayVerified bool `json:"replay_verified"`
     SourceFrameVerified bool `json:"source_frame_verified"`
     SINFModelVerified bool `json:"sinf_model_verified"`
     Trials []causalTrial `json:"trials"`
@@ -147,9 +148,21 @@ func studySIDBCausality(input legacyEnrollmentInput, domain fairplay.PortableEnr
             entry.SINFModelVerified, _ = probeModelSINF(domain.Files, changed.Pack)
         }
         report.Trials = append(report.Trials, entry)
+        // If identical inputs cannot be replayed, any later mutation
+        // experiment is causally uninterpretable. Never present five
+        // synthetic-looking rejections as evidence of input sensitivity.
+        if test.name == "baseline_replay" {
+            report.ReplayVerified = entry.Status == "completed" &&
+                !entry.SourceChanged && !entry.FrameChanged &&
+                !entry.ModelChanged &&
+                entry.SINFModelVerified == report.SINFModelVerified
+        }
         wipeRecovery(&changed)
         clear(privateSIDB)
         clear(privateHardware)
+        if test.name == "baseline_replay" && !report.ReplayVerified {
+            return report, nil
+        }
     }
     return report, nil
 }
@@ -174,7 +187,9 @@ func causalFailureCode(value string) string {
         "raw_unsupported_external", "raw_unknown_control_flow", "raw_step_limit",
         "raw_unsupported_operation", "raw_operation_rejected",
         "raw_selection_output_unavailable", "raw_pack_unavailable",
-        "generic_invalid_instruction", "generic_execution_failed":
+        "generic_execution_rejected", "generic_instruction_limit",
+        "generic_pc_outside_profile", "generic_profile_missing",
+        "generic_runtime_missing", "generic_unsupported_instruction":
         return value
     default:
         return "other"
