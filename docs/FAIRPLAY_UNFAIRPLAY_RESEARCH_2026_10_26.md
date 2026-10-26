@@ -127,3 +127,33 @@ The currently redacted report cannot tell whether those calls are *legitimate, u
 Arbitrary one-bit mutations of opaque SIDB or device identity are now **exhausted as useful end-to-end trials**: once execution aborts, their downstream output comparison cannot answer key derivation. Work on a *valid-state* producer/consumer bridge instead: map the StoreAgent keybag import side effects and the SIDB format and authenticate the target SINF via the real validator. Avoid additional downloads and mutation-only IPA builds until a specific, independently tested import semantics or enrollment transform has been implemented.
 
 The result does **not** support deriving a FairPlay decryption key on an ordinary iPhone today. UnfairPlay requires a separately enrolled native Mac source; our iPhone sandbox does not automatically provide equivalent private account/hardware material.
+
+
+## Producer/consumer implementation audit — commit f78dbc91
+
+### Confirmed implementation boundaries, not assumptions
+
+**Producer (StoreAgent 10.9 guest on iPhone):**
+- `MapleSyrup/NativeSAP/kbsyncretained.go`: `OpenRetainedKBSync` loads the existing pinned native StoreAgent image, establishes one virtual six-byte MAC/DSID identity, obtains KBSync, then `ImportKeybag` invokes the observed native entrypoint `storeAgentBase+0xd5ce0` on the *same retained guest*. It snapshots the virtual filesystem only after the return.
+- `MapleSyrup/NativeSAP/gueststate.go`: the producer's virtual `SC Info` filesystem implements open/read/write/stat/lseek/fcntl/catalog metadata and a bounded 64-operation path-free trace. The real device snapshots show SIDB and an empty companion/lock file but no populated `SC Info.sidd`. An accepted native return code is **not** a completed FairPlay enrollment or decryption key.
+- `MapleSyrup/NativeSAP/kbsyncbridge.go`: keybag is consumed only once; state files and category-only I/O metadata are persisted inside the protected private capture. The consumer does not synthesise modern daemon state.
+
+**Consumer (UnfairPlay fairplayd 26A428 translated runtime):**
+- `scripts/fetch-fairplay-raw.sh` pins the upstream source; `scripts/prepare-fairplay-raw.py` uses its original external-call switch and generated CFG and adds the verified generic instruction profile, not native macOS execution.
+- Pinned `raw_source_step.go` supports specific file, IOKit/CF, pthread, and memory external-call stubs; its unknown external entrypoint explicitly returns an error. Five one-bit device experiments changed the control flow to these unsupported endpoints, making any missing Source/Frame/Pack comparisons inapplicable.
+- `MapleSyrup/NativeSAP/fairplayrawapi.go` now preserves the **static public import slot** for this exact class of failure, only if its PC is within the pinned model's synthetic `F100000000000000` import space, 0x1000-aligned and within 4096 possible entries. All private pointers, guest registers, raw unsupported PCs, call arguments and return values remain unreported. The execution *still fails closed*; no generic externals are replaced by no-op stubs.
+- For each of `account-parser`, `bootstrap`, `source`, `selection`, and `sinf`, aggregate virtual state-file lookup/missing counts are saved. These establish whether the daemon actually attempted to consult SIDB/SIDD, not whether cryptographic decryption succeeded.
+
+### Native bridge auditor implementation
+
+`MapleSyrup/NativeSAP/fairplaybridgeaudit.go` implements `research-bridge` via the **original**, checked capture and exactly bound original encrypted IPA. It reads the existing StoreAgent state *without modifying it*, reports file presence and conservative upstream SIDB family/geometry, executes actual UnfairPlay recovery once, reports only phase-level state-file lookup coverage and sanitized static external import slot when failed, and requires `verifyRecoveredEnrollment` **plus strict `probeModelSINF`** to claim a usable model. All transient buffers are cleared. It cannot export a model or key or authenticate plaintext on its own.
+
+Added a specific on-device control **Audit StoreAgent → fairplayd bridge (no download)**, native Go routing, host + iOS build integration and tests for simulated 882-byte legacy SIDB, missing SIDD, no mutation of captured state, strict model rejection, unknown runtime error privacy, bounded import labels, and immutable phase trace snapshots.
+
+### What is not implemented / cannot be asserted
+
+- No evidence establishes a legitimate macOS 26A428 FairPlay enrollment model from the legacy StoreAgent 10.9 virtual SIDB alone. Their differing generations, state paths and 882-byte geometry prevent claiming an exact portable conversion merely from matching `0x0007000b`.
+- No source-verified modern SIDD construction, modern account-key provisioning, license-bound model derivation, or authenticated executable plaintext is established. In particular **do not fabricate SIDD**, claim keybag import is a license key, or ignore SINF validation.
+- The exact function behind a rejected external import slot can only be implemented once mapped to an independently identified public/binary import symbol and ABI plus a relevant reproducible test; treating an unknown call as success is prohibited.
+
+The bridge audit is a real implementation of a safer *producer/consumer contract verifier*, **not** the fully functioning DRM decryption solution requested. All public fixture and iOS tests must pass before a new release is described as validated.
