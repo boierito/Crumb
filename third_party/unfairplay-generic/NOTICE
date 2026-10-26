@@ -1,0 +1,10 @@
+UnfairPlay contains code originally developed in the ipatool project and its
+DrWhax FairPlay research fork through commit 60208cf. That code is used under
+the MIT License; see LICENSE.
+
+The in-process AES differential-fault recovery code was adapted from the
+Apache-2.0 DarkPhoenix project. See LICENSE-DARKPHOENIX.txt and the source-file
+notices.
+
+Apple, FairPlay, macOS, iOS, and App Store are trademarks of Apple Inc. This
+project is independent and is not affiliated with or endorsed by Apple.

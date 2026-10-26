@@ -50,6 +50,31 @@ jobs:
             artifacts/next-block-candidate.go.txt
             artifacts/next-block-8c292c.go.txt
           if-no-files-found: error
+  fairplay-generic-profile:
+    runs-on: xcode-27
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build hash-pinned generic semantic profile compiler
+        run: |
+          python3 scripts/prepare-fairplay-generic.py compiler /tmp/crumb-generic-compiler
+          cd /tmp/crumb-generic-compiler
+          go mod tidy
+          go build -o compiler .
+      - name: Enumerate every instruction slot in exact executable section
+        run: python3 scripts/generate-fairplay-generic-profile.py --compiler /tmp/crumb-generic-compiler/compiler --output-directory artifacts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FairPlay-generic-profile-${{ github.run_id }}
+          path: |
+            artifacts/fairplay-generic.ir.gz
+            artifacts/fairplay-generic-census.json
+          if-no-files-found: error
   protocol:
     runs-on: macos-15
     steps:

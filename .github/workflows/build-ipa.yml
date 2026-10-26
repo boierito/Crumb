@@ -31,7 +31,10 @@ jobs:
         if: github.ref_name == 'feature/fairplay-target-23040' || github.head_ref == 'feature/fairplay-target-23040' || github.ref_name == 'fix/fairplay-next-block-aot' || github.head_ref == 'fix/fairplay-next-block-aot'
         run: |
           python3 scripts/test-verify-fairplay-release-coverage.py
-          python3 scripts/verify-fairplay-release-coverage.py --target 0x1008c292c
+          python3 scripts/verify-fairplay-release-coverage.py --target 0x100a06948
+      - name: Require integrated generic interpreter and verified profile
+        if: github.ref_name == 'feature/fairplay-generic-runtime' || github.head_ref == 'feature/fairplay-generic-runtime'
+        run: python3 scripts/verify-fairplay-generic-profile.py
       - uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '26.0'
