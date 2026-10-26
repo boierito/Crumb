@@ -23,13 +23,17 @@ type LookupCount struct {
 	Missing  int `json:"missing"`
 }
 type RecoveryDiagnostic struct {
-	Phase                 string                 `json:"phase"`
-	Failure               string                 `json:"failure"`
-	Lookups               map[string]LookupCount `json:"file_lookups,omitempty"`
-	LastBlock             string                 `json:"last_translated_block,omitempty"`
-	SharedBlockExecutions int                    `json:"shared_block_executions,omitempty"`
-	UntranslatedTarget string                 `json:"untranslated_target,omitempty"`
-	TargetClass         string                 `json:"target_class,omitempty"`
+	Phase                  string                 `json:"phase"`
+	Failure                string                 `json:"failure"`
+	Lookups                map[string]LookupCount `json:"file_lookups,omitempty"`
+	LastBlock              string                 `json:"last_translated_block,omitempty"`
+	SharedBlockExecutions  int                    `json:"shared_block_executions,omitempty"`
+	UntranslatedTarget     string                 `json:"untranslated_target,omitempty"`
+	TargetClass            string                 `json:"target_class,omitempty"`
+	ExecutionBackend       string                 `json:"execution_backend,omitempty"`
+	GenericInstructions    uint64                 `json:"generic_instructions,omitempty"`
+	GenericLastInstruction string                 `json:"generic_last_instruction,omitempty"`
+	GenericBlocks          int                    `json:"generic_blocks,omitempty"`
 }
 type recoveryError struct{ diagnostic RecoveryDiagnostic }
 
@@ -49,9 +53,16 @@ func RecoveryDetails(err error) (RecoveryDiagnostic, bool) {
 func recoveryFailed(phase, code string, runtime *rawSourceRuntime) error {
 	diagnostic := RecoveryDiagnostic{Phase: phase, Failure: code, Lookups: map[string]LookupCount{}}
 	if runtime != nil {
-		diagnostic.LastBlock = knownSourceBlocks[runtime.lastKnownBlock].label
+		diagnostic.LastBlock = sourceBlockLabel(runtime.lastKnownBlock)
 		diagnostic.SharedBlockExecutions = runtime.additionalBlocks
-		if code == "raw_unknown_control_flow" {
+		diagnostic.ExecutionBackend = "aot"
+		if runtime.genericBlocks > 0 {
+			diagnostic.ExecutionBackend = "generic-profile"
+		}
+		diagnostic.GenericInstructions = runtime.genericInstructions
+		diagnostic.GenericLastInstruction = sourceBlockLabel(runtime.genericLastPC)
+		diagnostic.GenericBlocks = runtime.genericBlocks
+		if code == "raw_unknown_control_flow" || strings.HasPrefix(code, "generic_") {
 			diagnostic.UntranslatedTarget = runtime.untranslatedTarget
 			diagnostic.TargetClass = runtime.targetClass
 		}
@@ -62,6 +73,10 @@ func recoveryFailed(phase, code string, runtime *rawSourceRuntime) error {
 	return &recoveryError{diagnostic}
 }
 func runtimeFailure(phase string, err error, runtime *rawSourceRuntime) error {
+	var generic *genericExecutionError
+	if errors.As(err, &generic) {
+		return recoveryFailed(phase, generic.code, runtime)
+	}
 	code := "raw_operation_rejected"
 	message := strings.ToLower(err.Error())
 	switch {
@@ -139,7 +154,7 @@ func runEnrollmentSource(value *model, runtime *rawSourceRuntime) error {
 
 func VerifyResource() bool {
 	sum := sha256.Sum256(rawSourceModel)
-	return hex.EncodeToString(sum[:]) == "RAW_RESOURCE_SHA256"
+	return hex.EncodeToString(sum[:]) == "RAW_RESOURCE_SHA256" && genericImage != nil
 }
 
 // Recover constructs the source field, selection frame and selector-bound pack

@@ -67,7 +67,7 @@ for name in names:
         lookup = 'return bestSuffix, bestData, bestSuffix != ""'
         if text.count(field) != 1 or text.count(lookup) != 1:
             raise SystemExit('raw runtime lookup contract changed')
-        text = text.replace(field, field + '\n lookupCounts map[string]LookupCount\n lastKnownBlock uint64\n additionalBlocks int\n untranslatedTarget string\n targetClass string')
+        text = text.replace(field, field + '\n lookupCounts map[string]LookupCount\n lastKnownBlock uint64\n additionalBlocks int\n untranslatedTarget string\n targetClass string\n genericBlocks int\n genericInstructions uint64\n genericLastPC uint64')
         text = text.replace(lookup, 'r.recordLookup(path, bestSuffix != "")\n\t' + lookup)
     if name in cfg_ends:
         # Preserve the original cases. Only their unknown-target branch may
@@ -117,3 +117,14 @@ for name, origin in [('LICENSE-IPATOOL', source.parent.parent / 'LICENSE'),
 
 (target / 'bootstrap_exit.go').write_text((api.parent / 'fairplayrawsupplement_exit.go').read_text())
 (target / 'bootstrap_exit_test.go').write_text((api.parent / 'fairplayrawsupplement_exit_test.go').read_text())
+
+# Generic instruction profile: data covering every executable-section slot.
+import subprocess, json
+root = api.parent.parent.parent
+subprocess.run([sys.executable, str(root/'scripts/prepare-fairplay-generic.py'), 'runtime', str(target)], check=True)
+for source_name, target_name in [('fairplaygeneric.go','generic.go'), ('fairplaygeneric_test.go','generic_test.go'), ('fairplaygeneric_real_test.go','generic_real_test.go')]:
+    (target/target_name).write_bytes((api.parent/source_name).read_bytes())
+from fairplay_generic_resource import read_profile
+compressed,pin=read_profile(root)
+(target/'profiles/fairplay-generic.ir.gz').write_bytes(compressed)
+(target/'generic_embed.go').write_text('package rawsource\nimport (_ "embed"; "crypto/sha256"; "encoding/hex")\n//go:embed profiles/fairplay-generic.ir.gz\nvar genericProfileCompressed []byte\nfunc init() {\n sum:=sha256.Sum256(genericProfileCompressed)\n if hex.EncodeToString(sum[:]) != "GENERIC_RESOURCE_SHA256" { return }\n image,err:=loadGenericInstructionProfile(genericProfileCompressed,rawSourceBinaryHash,genericKernelABI)\n if err==nil { genericImage=image }\n}\n'.replace('GENERIC_RESOURCE_SHA256',pin['compressed_sha256']))

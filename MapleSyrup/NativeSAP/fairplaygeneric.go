@@ -157,9 +157,11 @@ func runGenericInstructionBlock(s *state, runtime *rawSourceRuntime, start uint6
 			return pc, false, &genericExecutionError{"generic_instruction_limit"}
 		}
 		if !genericImage.contains(pc) {
-			runtime.recordUnknownPC(pc)
+			runtime.untranslatedTarget = ""
+			runtime.targetClass = "outside_generic_profile"
 			return pc, false, &genericExecutionError{"generic_pc_outside_profile"}
 		}
+		runtime.genericLastPC = pc
 		record := genericImage.record(pc)
 		if record[0] == 0 {
 			runtime.recordUnknownPC(pc)
