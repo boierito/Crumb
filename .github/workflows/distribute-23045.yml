@@ -50,6 +50,7 @@ jobs:
           target = pathlib.Path('distribution/Crumb-23045-Release.ipa')
           ipa.rename(target)
           digest = hashlib.sha256(target.read_bytes()).hexdigest()
+          assert digest == 'b6e2fcceeec6d0844b8652b823bc7a52b51869a898bc1978f3b1cd9095ed265d'
           print(json.dumps({'build':23045, 'sha256':digest, 'generic_profile_embedded':True, 'validation_diagnostics_present':True}))
           pathlib.Path('/tmp/notes.md').write_text('Build experimental 23045. Requiere firma para instalarse.\n\nDiagnóstico de todas las etapas de recovered-validation y contadores del intérprete después de completarlo. No demuestra recuperación de enrollment ni desencriptación real.\n\nPrueba: Run self-tests debe mostrar recovery_diagnostics_version: 2. Luego ejecutar Download + attempt local recovery on iPhone una vez y conservar Components, Enrollment y Decryption.\n\nCódigo y pruebas: https://github.com/boierito/Crumb/pull/11\n\nSHA-256 IPA: '+digest+'\n\nSe adjuntan los archivos de fuentes correspondientes y licencias.\n')
       - name: Publish direct IPA and corresponding sources
