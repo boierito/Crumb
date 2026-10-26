@@ -93,3 +93,23 @@ Each probe reports separately:
 The probe never runs IPA page decryption and never publishes output. A positive SINF probe would require a full IPA validation in the standard pipeline before any decryption success claim. Failure of all probe routes indicates virtual routing is not sufficient to repair the cryptographic model, and the next priority becomes the trust/protocol compatibility of legacy StoreAgent state and hardware identity.
 
 Security: four bounded modes; use original owner capture only; no guessed state fields, synthetic keys, network export or cryptographic bypass.
+
+
+## iPhone V12: complete four-route SINF probe (2026-10-26)
+
+The signed owner iPhone tested the verified release test-23045-fourway-sinf-probe, using the same real StoreAgent transaction throughout four bounded diagnostic modes.
+
+| Virtual state route | Source/frame | Strict model/SINF decryption | Code |
+| --- | --- | --- | --- |
+| dual | verified | rejected | sinf_model_rejected |
+| fpsd only | verified | rejected | sinf_model_rejected |
+| shared only | not reached (bootstrap memory unavailable) | not reached | raw_memory_unavailable |
+| SIDB alone in both aliases | verified | rejected | sinf_model_rejected |
+
+The original default recovery independently returned recovered_model_sinf_decode_failed and target_ipa_validated=false. The matching keybag was 904 bytes; the imported StoreAgent SIDB 863 bytes. The runtime resolved four of four SIDB path requests, missed one SIDD and four other state requests. No SINF plaintext or target IPA was validated.
+
+**Conclusion:** the four tested virtual mount mappings and removal of optional guest sidecars did not repair SINF decryption. Source/frame coherence is an *internal* test, not proof of the correct SINF key. Repeating this four-way probe on the unchanged pipeline adds no useful information.
+
+**Engineering pivot:** test a *genuine* StoreAgent 10.9-compatible license/key derivation path or implement the missing modern device enrollment producer; do not infer equivalence from legacy SIDB presence or native status zero. The existing 26A428 path has independently validated native Mac controls but has **not** been proven compatible with a synthetic/legacy StoreAgent virtual enrollment. No guessed key, alternate selector, skipped atom validation, or exported unverified decrypted IPA is acceptable.
+
+Further work on the emulator should be driven by a reproducible difference between native and translated key derivation on a controlled authenticated enrollment. Keep raw SIDB, SINF, identity, key material and any private hashes entirely off public logs/repositories.
