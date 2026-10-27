@@ -162,3 +162,31 @@ func TestStateFileLookupsClassifyRequiredVsOptionalSources(t *testing.T) {
 		t.Fatal("mutated original diagnostic through its exported copy")
 	}
 }
+
+func TestCheckpointSelectsOnlyAnIndependentlyValidSourceWidth(t *testing.T) {
+	for _, width := range []int{192, 224} {
+		source := make([]byte, 224)
+		for i := range source {
+			source[i] = byte(i*17 + 3)
+		}
+		transformed, err := statetransform.Evaluate(source[:width], nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		selection, err := frame.Evaluate(transformed[8*16:9*16], nil)
+		clear(transformed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkpoint := enrollmentOutputCheckpoint{source: source, frame: selection}
+		if !normalizeEnrollmentCheckpoint(&checkpoint) || len(checkpoint.source) != width || !verifyEnrollmentCheckpoint(checkpoint) {
+			t.Fatalf("valid %d-byte source rejected or changed", width)
+		}
+		checkpoint.clear()
+	}
+	invalid := enrollmentOutputCheckpoint{source: make([]byte, 224), frame: make([]byte, 15)}
+	if normalizeEnrollmentCheckpoint(&invalid) {
+		t.Fatal("invalid frame accepted")
+	}
+	invalid.clear()
+}

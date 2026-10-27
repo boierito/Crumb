@@ -274,7 +274,7 @@ func observePostSINFOutputs(runtime *rawSourceRuntime, checkpoint enrollmentOutp
 	if runtime == nil {
 		return
 	}
-	postSource, sourceErr := currentRawSourceBytes(224)
+	postSource, sourceErr := currentRawSourceBytes(len(checkpoint.source))
 	postFrame, frameErr := currentRawSourceFrameBytes()
 	defer clear(postSource)
 	defer clear(postFrame)
@@ -314,7 +314,7 @@ func runEnrollmentSource(value *model, runtime *rawSourceRuntime, validate func(
 			frameVisits++
 			runtime.phase = "sinf"
 			candidate, err := checkpointEnrollmentOutputs()
-			if err == nil && verifyEnrollmentCheckpoint(candidate) {
+			if err == nil && normalizeEnrollmentCheckpoint(&candidate) {
 				checkpoint.clear()
 				checkpoint = candidate
 			} else {
@@ -341,7 +341,7 @@ func runEnrollmentSource(value *model, runtime *rawSourceRuntime, validate func(
 		// their candidate must continue at this PC, never restart the frame body.
 		if len(checkpoint.source) == 0 {
 			candidate, err := checkpointEnrollmentOutputs()
-			if err == nil && verifyEnrollmentCheckpoint(candidate) {
+			if err == nil && normalizeEnrollmentCheckpoint(&candidate) {
 				checkpoint = candidate
 			} else {
 				candidate.clear()
@@ -373,8 +373,28 @@ func runEnrollmentSource(value *model, runtime *rawSourceRuntime, validate func(
 	return checkpoint, nil
 }
 
+// Both source widths are documented by the pinned state evaluator. Keep only
+// a naturally captured width whose independent frame equation actually holds.
+// No SIDB length or header is used to guess the source geometry.
+func normalizeEnrollmentCheckpoint(checkpoint *enrollmentOutputCheckpoint) bool {
+	if verifyEnrollmentCheckpoint(*checkpoint) {
+		return true
+	}
+	if len(checkpoint.source) != 224 {
+		return false
+	}
+	short := enrollmentOutputCheckpoint{source: checkpoint.source[:192], frame: checkpoint.frame}
+	if !verifyEnrollmentCheckpoint(short) {
+		return false
+	}
+	selected := bytes.Clone(short.source)
+	clear(checkpoint.source)
+	checkpoint.source = selected
+	return true
+}
+
 func verifyEnrollmentCheckpoint(checkpoint enrollmentOutputCheckpoint) bool {
-	if len(checkpoint.source) != 224 || len(checkpoint.frame) != 16 {
+	if (len(checkpoint.source) != 192 && len(checkpoint.source) != 224) || len(checkpoint.frame) != 16 {
 		return false
 	}
 	transformed, err := stateTransform.Evaluate(checkpoint.source, nil)
