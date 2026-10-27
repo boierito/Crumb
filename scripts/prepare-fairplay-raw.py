@@ -72,6 +72,11 @@ for name in names:
         if text.count(fault) != 1:
             raise SystemExit('oracle unmapped memory contract changed')
         text = text.replace(fault, 'return nil, &sourceMemoryError{address: address, write: write}')
+        read_anchor = 'func (s *state) load(address uint64, size int) (uint64, error) {'
+        write_anchor = 'func (s *state) store(address uint64, value []byte) error {'
+        if text.count(read_anchor) != 1 or text.count(write_anchor) != 1: raise SystemExit('oracle output contract changed')
+        text = text.replace(read_anchor, read_anchor + '\n if err := sourceOutputRead(s, address, size); err != nil { return 0, err }')
+        text = text.replace(write_anchor, write_anchor + '\n if err := sourceOutputStore(s, address, value); err != nil { return err }')
     if name == 'raw_source_step.go':
         # Replace the pinned bump allocator as a unit. Its old fixed 1 MiB
         # advance aliases every larger allocation with subsequent allocations.
@@ -91,6 +96,10 @@ for name in names:
             raise SystemExit('raw runtime lookup contract changed')
         text = text.replace(field, field + '\n lookupCounts map[string]LookupCount\n stateFileLookupCounts map[string]LookupCount\n stateLookupsByPhase map[string]LookupCount\n phase string\n genericOnly bool\n observe func(uint64)\n boundary func() (bool,error)\n candidateChecks int\n candidateSINFVerified bool\n rwlocks map[uint64]int\n qosClass uint32\n qosRelative int32\n qosSet bool\n currentInstruction uint64\n executionContext string\n lastExternalSlot string\n unmodeledExternalSlot string\n lastKnownBlock uint64\n additionalBlocks int\n untranslatedTarget string\n targetClass string\n genericBlocks int\n genericInstructions uint64\n genericLastPC uint64\n checkpointCompared bool\n sourceChangedAfterSINF bool\n frameChangedAfterSINF bool')
         text = text.replace(' genericOnly bool\n', ' genericOnly bool\n byteLoop genericLoopObservation\n', 1)
+        text = text.replace(' genericOnly bool\n', ' genericOnly bool\n outputScratchEnabled bool\n outputScratchReady uint8\n', 1)
+        runtime_anchor = '\tactiveRawSourceRuntime = runtime\n\treturn nil'
+        if text.count(runtime_anchor) != 1: raise SystemExit('runtime output contract changed')
+        text = text.replace(runtime_anchor, '\truntime.outputScratchEnabled = kernel == "enrollment-sinf" && sourceOutputContract(value)\n' + runtime_anchor)
         # Replace legacy no-op pthread operations as a group. The new model
         # accepts only lifecycle states supported by native reference tests.
         legacy = "\tcase 0xF10000000000E000, // pthread_rwlock_unlock\n\t\t0xF100000000040000, // pthread_rwlock_rdlock\n\t\t0xF10000000005C000, // pthread_rwlock_init\n\t\t0xF100000000065000: // pthread_rwlock_wrlock\n\t\ts.x[0] = 0"
@@ -146,6 +155,9 @@ text = api.read_text().replace('RAW_RESOURCE_SHA256', expected)
 
 (target/'source_rwlock.go').write_bytes((api.parent/'fairplayrawrwlock.go').read_bytes())
 (target/'source_rwlock_test.go').write_bytes((api.parent/'fairplayrawrwlock_test.go').read_bytes())
+(target/'source_outputs.go').write_bytes((api.parent/'fairplayrawoutputs.go').read_bytes())
+(target/'source_outputs_test.go').write_bytes((api.parent/'fairplayrawoutputs_test.go').read_bytes())
+(target/'source_outputs_real_test.go').write_bytes((api.parent/'fairplayrawoutputs_real_test.go').read_bytes())
 
 (target/'candidate_validation.go').write_bytes((api.parent/'fairplayrawcandidates.go').read_bytes())
 (target/'candidate_validation_test.go').write_bytes((api.parent/'fairplayrawcandidates_test.go').read_bytes())
