@@ -37,3 +37,24 @@ jobs:
           name: fairplay-public-imports
           path: artifacts/*
           if-no-files-found: error
+      - name: Compare native pthread lock lifecycle on synthetic memory
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/rwlock_probe.c" <<'C'
+          #include <pthread.h>
+          #include <stdint.h>
+          #include <stdio.h>
+          #include <string.h>
+          static void run(int mode) {
+            pthread_rwlock_t l = PTHREAD_RWLOCK_INITIALIZER;
+            if (mode == 1) { memset(&l, 0, sizeof(l)); printf("init=%d ", pthread_rwlock_init(&l, NULL)); }
+            if (mode == 2) { printf("rdlock=%d ", pthread_rwlock_rdlock(&l)); }
+            unsigned long before = l.__sig;
+            int d = pthread_rwlock_destroy(&l);
+            printf("mode=%d destroy=%d size=%zu before=%08lx after=%08lx\n", mode, d, sizeof(l), before, (unsigned long)l.__sig);
+            if (mode == 2) { printf("unlock=%d destroy_after_unlock=%d\n", pthread_rwlock_unlock(&l), pthread_rwlock_destroy(&l)); }
+          }
+          int main(void) { run(0); run(1); run(2); return 0; }
+          C
+          clang -Wall -Wextra -Werror "$RUNNER_TEMP/rwlock_probe.c" -o "$RUNNER_TEMP/rwlock_probe"
+          "$RUNNER_TEMP/rwlock_probe"
