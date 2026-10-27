@@ -158,6 +158,8 @@ compressed,pin=read_profile(root)
 # state is reconstructed; account/heap/stack gaps retain fail-closed behavior.
 from fairplay_image_resource import read_image_text
 image_text, image_pin = read_image_text(root)
+(target/'IMMUTABLE-IMAGE-PROVENANCE.json').write_bytes((root/'third_party/fairplay-immutable-image/IMAGE.json').read_bytes())
+(target/'IMMUTABLE-IMAGE-README.md').write_bytes((root/'third_party/fairplay-immutable-image/README.md').read_bytes())
 (target/'profiles/fairplay-immutable-text.bin.gz').write_bytes(image_text)
 (target/'image_text.go').write_bytes((api.parent/'fairplayrawimage.go').read_bytes())
 (target/'image_text_test.go').write_bytes((api.parent/'fairplayrawimage_test.go').read_bytes())

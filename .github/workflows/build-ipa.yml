@@ -45,7 +45,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/Native
-          key: crumb-native-macos15-xcode26-go125-${{ hashFiles('scripts/*.sh', 'scripts/*.py', 'MapleSyrup/NativeSAP/**/*.go', 'third_party/archives/*.tar.gz', 'third_party/unfairplay-generic/**') }}
+          key: crumb-native-macos15-xcode26-go125-${{ hashFiles('scripts/*.sh', 'scripts/*.py', 'MapleSyrup/NativeSAP/**/*.go', 'third_party/archives/*.tar.gz', 'third_party/unfairplay-generic/**', 'third_party/fairplay-immutable-image/**') }}
       - name: Build and verify native library fingerprint
         run: bash scripts/ensure-native.sh
       - name: Share compiled native libraries across configurations

@@ -84,7 +84,8 @@ func runtimeDiagnostic(phase, code string, runtime *rawSourceRuntime) RecoveryDi
 			diagnostic.LastExternalSlot = runtime.lastExternalSlot
 		}
 		if code == "raw_memory_unavailable" || code == "raw_unsupported_external" ||
-			code == "raw_operation_rejected" || code == "raw_unsupported_operation" || strings.HasPrefix(code, "generic_") {
+			code == "raw_operation_rejected" || code == "raw_unsupported_operation" ||
+			code == "generic_execution_rejected" || code == "generic_unsupported_instruction" {
 			diagnostic.FaultInstruction = sourceBlockLabel(runtime.currentInstruction)
 			switch runtime.executionContext {
 			case "aot", "generic", "external":
