@@ -15,14 +15,15 @@ iterations, while leaving all cryptographic admission checks unchanged.
 - `FairPlayLab.useExistingOriginalIPA`: accepts a user-chosen regular
   `.ipa` file from Files, enforces a 512 MiB upper bound, copies it into
   the protected lab directory, invokes the native `inspect` operation and,
-  when a ZIP is already loaded, checks the ZIP/IPA association with
-  `research-bridge`.
-- `FairPlayLab.verifyImportedBinding`: invokes the **unchanged** authentic
-  `research-bridge` operation, whose Go implementation checks the SHA-256
-  of SINF from the retained transaction against the exact SINF in the
-  encrypted IPA. Only a correctly bound audit result is accepted. A
-  `sinf_rejected` audit status permits **research**, never decrypt-ready
-  status; no model is created or exported.
+  when a ZIP is already loaded, checks the ZIP/IPA association with the new
+  `verify-capture-ipa` native operation.
+- `FairPlayLab.verifyImportedBinding`: invokes the **new, exact and
+  bounded** `verify-capture-ipa` operation, which rechecks captured
+  transaction integrity and checks the SHA-256 of its SINF against the
+  original encrypted IPA's SINF. It **never runs the fairplayd interpreter**,
+  so a valid capture/IPa pair is not rejected merely because modern
+  enrollment recovery is incompatible. A matching pair permits **research**
+  only; no model is derived, accepted or exported.
 - `analyzeCurrentCaptureFiles`: routes the existing audit/recovery/causality
   operations through the imported ZIP if present, otherwise uses the
   original in-session native capture/export path.
@@ -39,7 +40,9 @@ iterations, while leaving all cryptographic admission checks unchanged.
 2. Install a newer signed Crumb IPA and open `FairPlay Laboratory`.
 3. Select `Import an older capture ZIP for offline research`.
 4. Select `Import existing encrypted IPA from Files (no download)`.
-   Their SINF association is checked locally. Either import order is
+   Their SINF association is checked locally, without running FairPlay
+   model recovery. The laboratory now has a separate **Save original
+   encrypted IPA for offline reuse** ShareLink. Either import order is
    supported.
 5. Run `Audit StoreAgent → fairplayd bridge (no download)`, or an
    appropriate bounded local recovery attempt. Do not assume model validity
@@ -69,9 +72,11 @@ FairPlay IPA.
 
 ## Validation
 
-The preexisting Go `researchCaptureBridge` binding is exercised by the
-host test suite and rejects transaction mismatches; the iOS-specific
-import/file-picker changes are compiled in the Debug and Release IPA jobs.
+The new Go `verifyCaptureIPABinding` helper, plus the
+`capturedSINFMatchesDomains` one-to-one predicate, are exercised by host
+tests: exact SHA match, mismatch, empty hash, missing domain, multiple
+domains and fixed-label error privacy. Swift import/file-picker changes
+are compiled in Debug and Release IPA jobs.
 This document must not label iOS compilation or device-side workflows
 successful until those jobs conclude.
 
