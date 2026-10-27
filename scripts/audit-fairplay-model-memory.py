@@ -93,6 +93,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--text-output", type=Path,
+                        help="Export exact immutable image bytes, never snapshot bytes")
     args = parser.parse_args()
     spec = importlib.util.spec_from_file_location("exact", ROOT/"scripts/generate-fairplay-next-block.py")
     exact = importlib.util.module_from_spec(spec)
@@ -116,6 +118,37 @@ def main():
         if hashlib.sha256(image).hexdigest() != exact.BINARY_HASH:
             raise ValueError("exact reference binary required")
         result = census(image, gzip.decompress(encoded))
+        if args.text_output:
+            text = next(s for s in result["segments"] if s["name"] == "__TEXT")
+            if (text["initial_protection"] != 5 or text["maximum_protection"] != 5
+                    or text["address"] % PAGE or text["file_bytes"] % PAGE
+                    or text["file_bytes"] != text["virtual_bytes"]):
+                raise ValueError("complete immutable text segment required")
+            at = 32
+            for _ in range(struct.unpack_from("<I", image, 16)[0]):
+                command, length = struct.unpack_from("<II", image, at)
+                if command in (0x22, 0x80000022):
+                    raise ValueError("legacy relocation commands require separate review")
+                if command == 0x80000034:
+                    offset, size = struct.unpack_from("<II", image, at+8)
+                    if offset+size > len(image) or size < 28:
+                        raise ValueError("invalid chained fixups")
+                    start = offset + struct.unpack_from("<I", image, offset+4)[0]
+                    segment_count = struct.unpack_from("<I", image, start)[0]
+                    if segment_count != len(result["segments"]) or start+4+4*segment_count > offset+size:
+                        raise ValueError("invalid chained segment inventory")
+                    index = result["segments"].index(text)
+                    if struct.unpack_from("<I", image, start+4+4*index)[0] != 0:
+                        raise ValueError("text needs runtime relocation; cannot export raw bytes")
+                at += length
+            raw = image[text["offset"]:text["offset"]+text["file_bytes"]]
+            compressed = gzip.compress(raw, mtime=0)
+            args.text_output.parent.mkdir(parents=True, exist_ok=True)
+            args.text_output.write_bytes(compressed)
+            result["immutable_text"] = dict(address=text["address"], bytes=len(raw),
+                sha256=hashlib.sha256(raw).hexdigest(),
+                compressed_sha256=hashlib.sha256(compressed).hexdigest(),
+                compressed_bytes=len(compressed), chained_fixups=False)
     result["binary_sha256"] = exact.BINARY_HASH
     result["model_sha256"] = MODEL_SHA
     args.output.parent.mkdir(parents=True, exist_ok=True)

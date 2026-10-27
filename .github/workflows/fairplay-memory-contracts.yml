@@ -17,9 +17,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: Compare every public snapshot page against the exact system image
-        run: python3 scripts/audit-fairplay-model-memory.py --output artifacts/model-memory-census.json
+        run: python3 scripts/audit-fairplay-model-memory.py --output artifacts/model-memory-census.json --text-output artifacts/fairplay-immutable-text.bin.gz
       - uses: actions/upload-artifact@v4
         with:
           name: FairPlay-public-memory-census
-          path: artifacts/model-memory-census.json
+          path: artifacts/*
           if-no-files-found: error
