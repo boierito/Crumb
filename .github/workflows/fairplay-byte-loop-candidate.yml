@@ -14,7 +14,32 @@ jobs:
         with:
           python-version: '3.12'
       - run: python3 -m pip install capstone==5.0.6 unicorn==2.1.4
-      - run: python3 scripts/generate-fairplay-next-block.py --target 0x1001005ac --output artifacts/loop.go --reference-output artifacts/loop.json
+      - name: Generate public hot blocks
+        run: |
+          python3 - <<'PY'
+          import hashlib, importlib, importlib.util, json, pathlib, sys, tarfile, tempfile
+          from capstone import CS_ARCH_ARM64, CS_MODE_ARM, Cs
+          root=pathlib.Path.cwd(); spec=importlib.util.spec_from_file_location('exact',root/'scripts/generate-fairplay-next-block.py')
+          exact=importlib.util.module_from_spec(spec);spec.loader.exec_module(exact)
+          archive=root/'third_party/archives'/f'ipatool-fairplay-{exact.REV}.tar.gz'
+          assert hashlib.sha256(archive.read_bytes()).hexdigest()==exact.ARCHIVE_HASH
+          with tempfile.TemporaryDirectory() as folder:
+              binary=exact.exact_system_binary(folder)
+              with tarfile.open(archive) as tar:tar.extractall(folder,filter='data')
+              sys.path.insert(0,str(pathlib.Path(folder)/f'ipatool-{exact.REV}/tools/fairplay-recovery/python'))
+              translator=importlib.import_module('generate_macos26a428_bootstrap_cfg_go')
+              from raw_macho_db import RawMachODatabase
+              db=RawMachODatabase(binary); decoder=Cs(CS_ARCH_ARM64,CS_MODE_ARM);decoder.detail=True
+              original=exact.block_instructions
+              exact.block_instructions=lambda db,decoder,translator,start: original(db,decoder,translator,start,limit=2048)
+              out=root/'artifacts';out.mkdir(exist_ok=True)
+              for target in (0x1009a1f04,0x100b0b1d0,0x100a1278c,0x100a42a30,0x100aa281c):
+                  rows=exact.block_instructions(db,decoder,translator,target)
+                  (out/f'{target:x}.go').write_text(exact.generate(db,decoder,translator,target))
+                  ref={'binary_sha256':exact.BINARY_HASH,'start':target,'instructions':[{'address':i.address,'hex':bytes(i.bytes).hex(),'assembly':i.mnemonic+' '+i.op_str} for i in rows]}
+                  (out/f'{target:x}.json').write_text(json.dumps(ref,indent=2)+'\n')
+                  print(hex(target),len(rows))
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: pinned-byte-loop-candidate
