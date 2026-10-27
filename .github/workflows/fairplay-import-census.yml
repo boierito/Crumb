@@ -1,0 +1,39 @@
+name: FairPlay public import census
+on:
+  push:
+    branches: ['distribution/fairplay-import-census']
+    paths: ['.github/workflows/fairplay-import-census.yml']
+permissions:
+  contents: read
+jobs:
+  census:
+    runs-on: xcode-27
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Inspect imports of the exact public system daemon
+        run: |
+          python3 - <<'PY'
+          import hashlib, importlib.util, pathlib, subprocess, tempfile
+          root=pathlib.Path.cwd()
+          spec=importlib.util.spec_from_file_location('exact',root/'scripts/generate-fairplay-next-block.py')
+          exact=importlib.util.module_from_spec(spec);spec.loader.exec_module(exact)
+          out=root/'artifacts';out.mkdir(exist_ok=True)
+          with tempfile.TemporaryDirectory(prefix='fairplay-import-census-') as directory:
+              image=exact.exact_system_binary(directory)
+              assert hashlib.sha256(image.read_bytes()).hexdigest()==exact.BINARY_HASH
+              successful=0
+              for option in ('-fixups','-bind','-imports'):
+                  p=subprocess.run(['xcrun','dyld_info',option,str(image)],capture_output=True,text=True)
+                  (out/(option[1:]+'.txt')).write_text(p.stdout+'\n'+p.stderr)
+                  print(option,'status',p.returncode,'output bytes',len(p.stdout))
+                  successful+=p.returncode==0 and len(p.stdout)>0
+              if not successful: raise SystemExit('No public import inspection command succeeded')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fairplay-public-imports
+          path: artifacts/*
+          if-no-files-found: error
