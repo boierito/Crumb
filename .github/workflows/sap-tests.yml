@@ -65,6 +65,8 @@ jobs:
           go-version: '1.25.1'
       - name: Test redacted next-target coverage inspector
         run: python3 scripts/test-inspect-fairplay-next-target.py
+      - name: Verify mobile SINF and page primitives against independent reference vectors
+        run: go -C MapleSyrup/NativeSAP/mobilelicense test -race ./...
       - name: Verify streaming IPA preparation
         run: go -C MapleSyrup/NativeSAP/packageipa test -race ./...
 
@@ -88,3 +90,15 @@ jobs:
         run: python3 scripts/test-fairplay-next-block-differential.py
       - name: Compare bootstrap continuation with ARM64 reference
         run: python3 scripts/test-fairplay-bootstrap-exit-differential.py
+
+  legacy-producer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.0'
+      - name: Verify source overlay contracts
+        run: python3 scripts/test-prepare-retained-storeagent.py
+      - name: Verify retained producer with hash-pinned Apple code and non-JIT TCI
+        run: bash scripts/test-sap-host.sh

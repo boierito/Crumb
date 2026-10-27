@@ -237,3 +237,26 @@ func TestBindingMismatchUsesFixedErrorWithoutPrivateMaterial(t *testing.T) {
     encoded,_:=json.Marshal(map[string]string{"stage":stage,"code":code})
     if bytes.Contains(encoded,[]byte("PRIVATE")) {t.Fatal("private file path leaked")}
 }
+
+func TestLegacyProducerDSIDIsPrivateAndStrict(t *testing.T) {
+	consumer, _ := json.Marshal(map[string]any{"consumer": "storeagent-10.9-import-keybag", "emulator_completed": true, "import_succeeded": true, "native_status": 0, "state_files": map[string][]byte{"SC Info.sidb": {0, 7, 0, 11}}})
+	for _, text := range []string{"1", "18446744073709551615", "0", "-1", "18446744073709551616", "private-invalid-dsid"} {
+		document, _ := json.Marshal(map[string]any{"schema": "crumb-fairplay-context-v2", "producer": "retained-storeagent", "hardware_id": []byte{2, 0, 0, 0, 0, 1}, "dsid": text})
+		input, err := decodeLegacyEnrollment(document, consumer)
+		if text == "1" || text == "18446744073709551615" {
+			if err != nil || input.dsid == 0 {
+				t.Fatal("valid DSID rejected")
+			}
+			input.clear()
+		} else {
+			if err == nil {
+				input.clear()
+				t.Fatal("invalid DSID accepted")
+			}
+			data, _ := json.Marshal(labFailureFields("probe-legacy-producer", err))
+			if bytes.Contains(data, []byte(text)) {
+				t.Fatal("private DSID in failure")
+			}
+		}
+	}
+}

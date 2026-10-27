@@ -256,13 +256,14 @@ func (s *shims) fsMkdir() error {
 	return s.fsError(17)
 }
 
-// Enabled only for the retained laboratory producer, after ordinary initialization.
+// Enabled only for retained producers; restored state is installed before initialization.
 func (s *shims) enableGuestState() error {
 	for _, entry := range []struct {
 		names   []string
 		handler shimHandler
 	}{
 		{[]string{"_open", "_open$UNIX2003"}, s.guestOpen}, {[]string{"_read", "_read$UNIX2003"}, s.guestRead},
+		{[]string{"_unlink", "_unlink$UNIX2003"}, s.fsUnlink},
 		{[]string{"_write", "_write$UNIX2003"}, s.fsWrite}, {[]string{"_lockf", "_fsync"}, s.fsLock},
 		{[]string{"_close", "_close$UNIX2003"}, s.fsClose}, {[]string{"_lseek", "_lseek$UNIX2003"}, s.fsSeek},
 		{[]string{"_FSSetCatalogInfo"}, s.fsSetCatalogInfo},
@@ -406,8 +407,8 @@ func (s *shims) guestStateTrace() map[string]any {
 	events := append([]guestStateEvent(nil), fs.trace...)
 	return map[string]any{
 		"total_calls": fs.traceCalls,
-		"truncated": fs.traceCalls > guestStateTraceLimit,
-		"recent": events,
+		"truncated":   fs.traceCalls > guestStateTraceLimit,
+		"recent":      events,
 	}
 }
 
@@ -862,6 +863,43 @@ func (s *shims) fsSetCatalogInfo() error {
 			s.rfs().finderInfo = map[string][16]byte{}
 		}
 		s.rfs().finderInfo[p] = finder
+	}
+	return s.setResult(0)
+}
+
+// fsUnlink only operates on private virtual copies. Open descriptors currently
+// refer to paths rather than inode objects, so refuse that unsupported case
+// instead of falsely claiming POSIX unlink-while-open semantics.
+func (s *shims) fsUnlink() error {
+	pointer, err := s.argument(0)
+	if err != nil {
+		return err
+	}
+	name, err := s.readCString(pointer)
+	if err != nil {
+		return err
+	}
+	if !guestStatePath(name) {
+		return s.fsError(13)
+	}
+	fs := s.rfs()
+	data, exists := fs.files[name]
+	if !exists {
+		return s.fsError(2)
+	}
+	for _, file := range fs.open {
+		if file.name == name {
+			return s.fsError(16)
+		}
+	}
+	clear(data)
+	delete(fs.files, name)
+	delete(fs.permissions, name)
+	delete(fs.finderInfo, name)
+	for token, target := range fs.refs {
+		if target == name {
+			delete(fs.refs, token)
+		}
 	}
 	return s.setResult(0)
 }

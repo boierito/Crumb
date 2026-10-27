@@ -21,6 +21,9 @@ tar -xzf "$WORK/ipatool.tar.gz" -C "$WORK"
 SOURCE="$WORK/ipatool-3411d57f451f5111ae115641c22f7ed17bbd5fbe"
 mkdir -p "$SOURCE/wafflebridge"
 cp "$ROOT/MapleSyrup/NativeSAP/main.go" "$SOURCE/wafflebridge/main.go"
+mkdir -p "$SOURCE/wafflebridge/mobilelicense"
+cp "$ROOT/MapleSyrup/NativeSAP/mobilelicense/"*.go "$SOURCE/wafflebridge/mobilelicense/"
+cp "$ROOT/MapleSyrup/NativeSAP/mobilelicense/LICENSE-UPSTREAM" "$SOURCE/wafflebridge/mobilelicense/"
 mkdir -p "$SOURCE/wafflebridge/packageipa"
 cp "$ROOT/MapleSyrup/NativeSAP/packageipa/"*.go "$SOURCE/wafflebridge/packageipa/"
 python3 - "$SOURCE" <<'PY'
@@ -58,22 +61,23 @@ bash "$ROOT/scripts/fetch-fairplay-raw.sh" "$SOURCE/wafflebridge/recovery/rawsou
 cp "$ROOT/MapleSyrup/NativeSAP/captureanalysis.go" "$SOURCE/wafflebridge/"
 cp "$ROOT/MapleSyrup/NativeSAP/fairplayenrollment.go" "$ROOT/MapleSyrup/NativeSAP/fairplaycapturebridge.go" "$ROOT/MapleSyrup/NativeSAP/fairplayerrors.go" "$ROOT/MapleSyrup/NativeSAP/fairplayprobe.go" "$ROOT/MapleSyrup/NativeSAP/fairplaycausal.go" "$ROOT/MapleSyrup/NativeSAP/fairplaybridgeaudit.go" "$SOURCE/wafflebridge/"
 mkdir -p "$SOURCE/wafflebridge/labtest"
+cp "$ROOT/MapleSyrup/NativeSAP/fairplayauthorizationstate.go" "$ROOT/MapleSyrup/NativeSAP/fairplayauthorizationstate_test.go" "$SOURCE/wafflebridge/labtest/"
 cp "$ROOT/MapleSyrup/NativeSAP/fairplayenrollment.go" "$ROOT/MapleSyrup/NativeSAP/fairplayenrollment_test.go" "$ROOT/MapleSyrup/NativeSAP/fairplaycapturebridge.go" "$ROOT/MapleSyrup/NativeSAP/fairplaycapturebridge_test.go" "$ROOT/MapleSyrup/NativeSAP/fairplayerrors.go" "$ROOT/MapleSyrup/NativeSAP/fairplayprobe.go" "$ROOT/MapleSyrup/NativeSAP/fairplayprobe_test.go" "$ROOT/MapleSyrup/NativeSAP/fairplaycausal.go" "$ROOT/MapleSyrup/NativeSAP/fairplaycausal_test.go" "$ROOT/MapleSyrup/NativeSAP/fairplaybridgeaudit.go" "$ROOT/MapleSyrup/NativeSAP/fairplaybridgeaudit_test.go" "$SOURCE/wafflebridge/labtest/"
+cp "$ROOT/MapleSyrup/NativeSAP/fairplayauthorizationbridge.go" "$ROOT/MapleSyrup/NativeSAP/fairplayauthorizationstate.go" "$SOURCE/wafflebridge/"
+cp "$ROOT/MapleSyrup/NativeSAP/fairplayproducernative.go" "$SOURCE/wafflebridge/"
 cp "$ROOT/MapleSyrup/NativeSAP/fairplaylab.go" "$ROOT/MapleSyrup/NativeSAP/fairplaylabcore.go" "$SOURCE/wafflebridge/"
 cp "$ROOT/MapleSyrup/NativeSAP/captureanalysis.go" "$ROOT/MapleSyrup/NativeSAP/captureanalysis_test.go" "$ROOT/MapleSyrup/NativeSAP/fairplaylabcore.go" "$ROOT/MapleSyrup/NativeSAP/fairplaylab_test.go" "$SOURCE/wafflebridge/labtest/"
 # Full rawsource/lab race tests run in the Linux fairplay-portable CI job.
 # Compile the large raw CFG once for iOS here, rather than twice for host tests.
 (cd "$SOURCE" && go test -p=1 ./wafflebridge/recovery/state ./wafflebridge/recovery/frame ./wafflebridge/recovery/sidb)
 cp "$ROOT/MapleSyrup/NativeSAP/gueststate.go" "$SOURCE/internal/sap/machine/"
-python3 - "$SOURCE/internal/sap/machine/shims.go" <<'STATEPATCH'
-import pathlib,sys
-p=pathlib.Path(sys.argv[1]);s=p.read_text();assert s.count('type shims struct {')==1
-p.write_text(s.replace('type shims struct {','type shims struct {\n guestStateFS *guestStateFS',1))
-STATEPATCH
+python3 "$ROOT/scripts/prepare-retained-storeagent.py" "$SOURCE/internal/sap/machine"
+cp "$ROOT/MapleSyrup/NativeSAP/guestrestore.go" "$SOURCE/internal/sap/machine/"
 cp "$ROOT/MapleSyrup/NativeSAP/kbsyncretained.go" "$SOURCE/internal/sap/machine/"
 cp "$ROOT/MapleSyrup/NativeSAP/kbsyncbridge.go" "$SOURCE/wafflebridge/"
-cp "$ROOT/MapleSyrup/NativeSAP/gueststate_test.go" "$SOURCE/internal/sap/machine/"
+cp "$ROOT/MapleSyrup/NativeSAP/gueststate_test.go" "$ROOT/MapleSyrup/NativeSAP/guestrestore_test.go" "$SOURCE/internal/sap/machine/"
 (cd "$SOURCE" && CGO_ENABLED=0 go test -run '^TestGuestState' ./internal/sap/machine)
+(cd "$SOURCE" && CGO_ENABLED=0 GOOS=ios GOARCH=arm64 go build ./wafflebridge/mobilelicense)
 SDK=$(xcrun --sdk iphoneos --show-sdk-path)
 CLANG=$(xcrun --sdk iphoneos --find clang)
 cd "$SOURCE"

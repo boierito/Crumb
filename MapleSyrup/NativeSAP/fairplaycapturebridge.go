@@ -16,6 +16,7 @@ import (
 )
 
 type legacyEnrollmentInput struct {
+	dsid     uint64
 	hardware []byte
 	files    map[string][]byte
 	sinfs    map[string]bool
@@ -128,6 +129,7 @@ func decodeLegacyEnrollment(context, consumer []byte) (result legacyEnrollmentIn
 		Schema   string `json:"schema"`
 		Hardware []byte `json:"hardware_id"`
 		Producer string `json:"producer"`
+		DSID     string `json:"dsid"`
 	}
 	var state struct {
 		Consumer  string            `json:"consumer"`
@@ -183,7 +185,13 @@ func decodeLegacyEnrollment(context, consumer []byte) (result legacyEnrollmentIn
 			return result, recoveryFailure("state-files", "state_byte_limit", nil)
 		}
 	}
-	result.hardware, result.files = identity.Hardware, state.Files
+	if identity.DSID != "" {
+        result.dsid, err = strconv.ParseUint(identity.DSID, 10, 64)
+        if err != nil || result.dsid == 0 {
+            return result, recoveryFailure("identity", "capture_dsid_invalid", nil)
+        }
+    }
+    result.hardware, result.files = identity.Hardware, state.Files
 	return result, nil
 }
 
@@ -270,4 +278,18 @@ func recoverCaptureEnrollment(source, ipa, destination string) (any, error) {
 		return nil, recoveryFailure("recovered-validation", "recovered_output_validation_failed", err)
 	}
 	return result, nil
+}
+
+// Initial enrollment may cover several license domains. Compare complete SINF
+// sets; never pick a license by ZIP order or assume one executable per IPA.
+// Capture bootstrap requires the complete license set. Once a matching account
+// state is saved, each later IPA is validated against its own original SINFs.
+func capturedSINFMatchesAllDomains(sinfs map[string]bool, domains []fairplay.PortableEnrollmentInput) bool {
+	if len(domains) == 0 || len(sinfs) == 0 { return false }
+	seen := map[string]bool{}
+	for _, domain := range domains {
+		if domain.SINFSHA256 == "" || !sinfs[domain.SINFSHA256] { return false }
+		seen[domain.SINFSHA256] = true
+	}
+	return len(seen) == len(sinfs)
 }

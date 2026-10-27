@@ -13,6 +13,12 @@ tar -xzf "$WORK/ipatool.tar.gz" -C "$WORK"
 SOURCE="$WORK/ipatool-3411d57f451f5111ae115641c22f7ed17bbd5fbe"
 cp "$ROOT/scripts/sap-host-probe_test.go" "$SOURCE/internal/sap/tci_probe_test.go"
 cp "$ROOT/scripts/kbsync-host-probe_test.go" "$SOURCE/internal/sap/kbsync_tci_test.go"
+python3 "$ROOT/scripts/prepare-retained-storeagent.py" "$SOURCE/internal/sap/machine"
+for name in gueststate.go gueststate_test.go guestrestore.go guestrestore_test.go kbsyncretained.go; do
+ cp "$ROOT/MapleSyrup/NativeSAP/$name" "$SOURCE/internal/sap/machine/"
+done
+cp "$ROOT/scripts/producer-native-probe_test.go" "$SOURCE/internal/sap/machine/"
+
 python3 - "$SOURCE" "$WORK/native/libunicorn.so.2" <<'PY'
 import pathlib,sys,json
 path=pathlib.Path(sys.argv[1])/'internal/sap/unicorn/library_unix.go'
@@ -25,5 +31,8 @@ PY
 cd "$SOURCE"
 XDG_CACHE_HOME="$WORK/cache" go test ./internal/sap/machine \
   -run 'TestHardwareBlock|TestGuestServiceDispatchAndStackArguments|TestUnknownGuestServiceFailsClosed|TestGuestAllocatorReusesAndClearsFreedMemory' -v
+XDG_CACHE_HOME="$WORK/cache" go test ./internal/sap/machine -run 'TestGuestState|TestProducerNative' -v -timeout 6m
 XDG_CACHE_HOME="$WORK/cache" go test ./internal/sap -run 'TestTCIDynamicSAPSmoke|TestTCIKBSyncSmoke' -v -timeout 6m
+python3 "$ROOT/scripts/verify-storeagent-license-profile.py" "$WORK/cache/ipatool/sap/apple-storeagent-v1/storeagent"
+python3 "$ROOT/scripts/verify-store-authorization-profile.py" "$WORK/cache/ipatool/sap/apple-storeagent-v1/storeagent" "$WORK/cache/ipatool/sap/apple-assets-v2/CommerceKit"
 echo 'Host SAP test passed. Physical jailed iOS execution and Apple login remain separate milestones.'
