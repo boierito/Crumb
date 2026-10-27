@@ -1,13 +1,14 @@
 package rawsource
 
 type replayDiagnostic struct {
-	Phase                 string `json:"phase"`
-	Failure               string `json:"failure"`
-	FaultInstruction      string `json:"fault_instruction,omitempty"`
-	FaultRegion           string `json:"fault_region,omitempty"`
-	CandidateChecks       int    `json:"candidate_sinf_checks,omitempty"`
-	CandidateSINFVerified bool   `json:"candidate_sinf_verified"`
-	RuntimeCompleted      bool   `json:"runtime_completed"`
+	Phase                 string              `json:"phase"`
+	Failure               string              `json:"failure"`
+	FaultInstruction      string              `json:"fault_instruction,omitempty"`
+	FaultRegion           string              `json:"fault_region,omitempty"`
+	CandidateChecks       int                 `json:"candidate_sinf_checks,omitempty"`
+	CandidateSINFVerified bool                `json:"candidate_sinf_verified"`
+	RuntimeCompleted      bool                `json:"runtime_completed"`
+	ByteLoop              *byteLoopDiagnostic `json:"native_byte_loop,omitempty"`
 }
 
 // A second engine always starts from fresh model/files/CPU state. It never
@@ -40,6 +41,7 @@ func recoverWithReplay(attempt func(bool) (Result, error)) (Result, error) {
 		report.Phase, report.Failure = diagnostic.Phase, diagnostic.Failure
 		report.CandidateChecks, report.CandidateSINFVerified = diagnostic.CandidateChecks, diagnostic.CandidateSINFVerified
 		report.FaultInstruction, report.FaultRegion = diagnostic.FaultInstruction, diagnostic.FaultRegion
+		report.ByteLoop = diagnostic.ByteLoop
 	} else {
 		report.Failure = "unclassified_replay_rejection"
 	}

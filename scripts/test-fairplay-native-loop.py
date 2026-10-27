@@ -28,7 +28,7 @@ for length in [1,2,15,16,17,32,440,448,888,4096]:
  u.emu_start(start,end,count=65*length+2)
  pc=u.reg_read(arm.UC_ARM64_REG_PC);assert pc==end,(length,hex(pc),u.reg_read(arm.UC_ARM64_REG_X9))
  nzcv=u.reg_read(arm.UC_ARM64_REG_NZCV)
- expected.append({'PC':pc,'SP':u.reg_read(arm.UC_ARM64_REG_SP),'Registers':[u.reg_read(r) for r in regsids],'Flags':[bool(nzcv&(1<<(31-j))) for j in range(4)],'Vectors':[[0]*16 for _ in range(32)],'Pages':{str(a):base64.b64encode(u.mem_read(a,4096)).decode() for a in pages}})
+ expected.append({'PC':pc,'SP':u.reg_read(arm.UC_ARM64_REG_SP),'Registers':[u.reg_read(r) for r in regsids],'Flags':[bool(nzcv&(1<<(31-j))) for j in range(4)],'Vectors':[[0]*16 for _ in range(32)],'Pages':{str(a):base64.b64encode(u.mem_read(a,4096)).decode() for a in pages},'LoopVisits':length,'LoopSequences':1,'LoopBucket':'1_to_4096'})
  fixtures.append({'PC':start,'End':end,'SP':0x71010000,'Registers':regs,'Flags':[False]*4,'Vectors':[[0]*16 for _ in range(32)],'Pages':{str(a):base64.b64encode(v).decode() for a,v in pages.items()}})
 with tempfile.TemporaryDirectory(prefix='crumb-native-loop-') as folder:
  work=pathlib.Path(folder);runner=work/'runtime'
@@ -41,6 +41,7 @@ with tempfile.TemporaryDirectory(prefix='crumb-native-loop-') as folder:
  for name in ('fairplaygeneric.go','fairplaygeneric_atomic.go','fairplayrawblocks.go','fairplayrawflow.go'):(runner/name).write_bytes((root/'MapleSyrup/NativeSAP'/name).read_bytes())
  for p in runner.glob('*.go'):p.write_text(p.read_text().replace('package rawsource','package main',1))
  h=mod.HARNESS.replace('PC,SP uint64;Chunks','PC,SP,End uint64;Chunks').replace('"differential",f.PC,0x200000,1,128','"differential",f.PC,f.End,1,20000').replace('sha256.Sum256(text)!=source','hex.EncodeToString(sha256Sum(text))!="'+imgpin['immutable_text']['sha256']+'"')
+ h=h.replace('Vectors [32][16]byte;Pages map[uint64][]byte}\nfunc main()', 'Vectors [32][16]byte;Pages map[uint64][]byte;LoopVisits,LoopSequences uint64;LoopBucket string}\nfunc main()').replace('s.vectors,pages})','s.vectors,pages,runtime.byteLoop.visits,runtime.byteLoop.sequences,runtime.byteLoop.maxBucket})')
  # Keep native source identity pinned, while verifying the exact __TEXT segment.
  h=h.replace('func main(){','func sha256Sum(b []byte)[]byte{s:=sha256.Sum256(b);return s[:]}\nfunc main(){')
  (runner/'main.go').write_text(h);(work/'profile.gz').write_bytes(enc);(work/'text.bin').write_bytes(text)

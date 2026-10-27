@@ -83,6 +83,7 @@ for name in names:
         if text.count(field) != 1 or text.count(lookup) != 1:
             raise SystemExit('raw runtime lookup contract changed')
         text = text.replace(field, field + '\n lookupCounts map[string]LookupCount\n stateFileLookupCounts map[string]LookupCount\n stateLookupsByPhase map[string]LookupCount\n phase string\n genericOnly bool\n observe func(uint64)\n boundary func() (bool,error)\n candidateChecks int\n candidateSINFVerified bool\n rwlocks map[uint64]int\n qosClass uint32\n qosRelative int32\n qosSet bool\n currentInstruction uint64\n executionContext string\n lastExternalSlot string\n unmodeledExternalSlot string\n lastKnownBlock uint64\n additionalBlocks int\n untranslatedTarget string\n targetClass string\n genericBlocks int\n genericInstructions uint64\n genericLastPC uint64\n checkpointCompared bool\n sourceChangedAfterSINF bool\n frameChangedAfterSINF bool')
+        text = text.replace(' genericOnly bool\n', ' genericOnly bool\n byteLoop genericLoopObservation\n', 1)
         # Replace legacy no-op pthread operations as a group. The new model
         # accepts only lifecycle states supported by native reference tests.
         legacy = "\tcase 0xF10000000000E000, // pthread_rwlock_unlock\n\t\t0xF100000000040000, // pthread_rwlock_rdlock\n\t\t0xF10000000005C000, // pthread_rwlock_init\n\t\t0xF100000000065000: // pthread_rwlock_wrlock\n\t\ts.x[0] = 0"

@@ -2,6 +2,34 @@ package rawsource
 
 import "fmt"
 
+// Aggregate only the known native byte loop's counter behaviour. Counter
+// values are retained privately during this attempt and never serialized.
+type genericLoopObservation struct {
+	visits, sequences uint64
+	last              uint64
+	maxBucket         string
+}
+
+func (o *genericLoopObservation) observe(counter uint64) {
+	if o.visits == 0 || o.last == 0 || counter != o.last-1 {
+		o.sequences++
+	}
+	o.visits++
+	o.last = counter
+	if counter > 1<<20 {
+		o.maxBucket = "over_1m"
+	} else if counter > 4096 && o.maxBucket != "over_1m" {
+		o.maxBucket = "4097_to_1m"
+	} else if counter > 0 && o.maxBucket == "" {
+		o.maxBucket = "1_to_4096"
+	} else if counter == 0 && o.maxBucket == "" {
+		o.maxBucket = "zero"
+	}
+	if counter > 0 && o.maxBucket == "zero" {
+		o.maxBucket = "1_to_4096"
+	}
+}
+
 // CAS{A,L,AL}{B,H} executes in the single, serialized guest CPU. Acquire/release
 // do not add an observable action in this private sequential memory model.
 // CASP and all other LSE encodings deliberately remain unsupported.
