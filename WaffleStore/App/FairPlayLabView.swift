@@ -694,6 +694,11 @@ struct FairPlayLabView: View {
                     Button("Prepare exports") { lab.export() }
                     if let diagnostic = lab.diagnostic { ShareLink("Share diagnostic (no secret blobs)", item: diagnostic) }
                     if let capture = lab.captureArchive { ShareLink("Share PRIVATE capture — contains secrets", item: capture) }
+                    if let original = lab.input, original.pathExtension.lowercased() == "ipa" {
+                        ShareLink("Save original encrypted IPA for offline reuse", item: original)
+                    }
+                    Text("Keep both files together. The capture ZIP contains account-derived material. Avoid public sharing; both files are needed for offline replay.")
+                        .font(.footnote)
                     Button("Copy logs") { UIPasteboard.general.string = lab.logs.keys.sorted().map { $0 + "\n" + (lab.logs[$0] ?? "") }.joined(separator: "\n\n") }
                     Button("Erase this test", role: .destructive) { lab.erase() }
                     Text("Export before closing. This session’s temporary files are removed when you close the laboratory. Download history and your Apple session are preserved.")
