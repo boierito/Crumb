@@ -58,3 +58,28 @@ jobs:
           C
           clang -Wall -Wextra -Werror "$RUNNER_TEMP/rwlock_probe.c" -o "$RUNNER_TEMP/rwlock_probe"
           "$RUNNER_TEMP/rwlock_probe"
+      - name: Measure lock state transitions with synthetic memory
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/rwlock_bytes.c" <<'C'
+          #include <pthread.h>
+          #include <stdio.h>
+          #include <string.h>
+          static void dump(const char *label, pthread_rwlock_t *lock) {
+            unsigned char *p=(unsigned char *)lock;
+            printf("%s=",label);
+            for (int i=0;i<64;i++) printf("%02x",p[i]);
+            puts("");
+          }
+          int main(void) {
+            pthread_rwlock_t l; memset(&l, 0, sizeof(l));
+            int a=pthread_rwlock_init(&l,0); dump("init",&l);
+            int b=pthread_rwlock_rdlock(&l); dump("read_locked",&l);
+            int c=pthread_rwlock_unlock(&l); dump("unlocked",&l);
+            int d=pthread_rwlock_destroy(&l); dump("destroyed",&l);
+            printf("results=%d,%d,%d,%d\n",a,b,c,d);
+            return a||b||c||d;
+          }
+          C
+          clang -Wall -Wextra -Werror "$RUNNER_TEMP/rwlock_bytes.c" -o "$RUNNER_TEMP/rwlock_bytes"
+          "$RUNNER_TEMP/rwlock_bytes"
