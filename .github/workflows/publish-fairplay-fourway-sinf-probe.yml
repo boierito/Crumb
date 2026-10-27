@@ -1,0 +1,83 @@
+name: Publish verified FairPlay four-way SINF probe IPA
+on:
+  push:
+    branches: [fix/fairplay-phase-consistent-recovery]
+    paths:
+      - '.github/workflows/publish-fairplay-fourway-sinf-probe.yml'
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish-tested-artifact:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require successful pinned tests and IPA build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: 7f6a89af4ec79946c5855a0a8e2eb4d3e05c0dbf
+        shell: bash
+        run: |
+          set -euo pipefail
+          for RUN in 40405950897 40405950914; do
+            test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" --jq .conclusion)" = success
+            test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" --jq .head_sha)" = "$SOURCE_SHA"
+          done
+      - name: Download exact tested unsigned Release IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: Crumb-IPA-Release-40405950914
+          run-id: 40405950914
+          github-token: ${{ github.token }}
+          path: ipa-input
+      - name: Download license notices and corresponding sources
+        uses: actions/download-artifact@v4
+        with:
+          name: Crumb-Release-40405950914
+          run-id: 40405950914
+          github-token: ${{ github.token }}
+          path: source-input
+      - name: Verify release IPA SHA256, metadata and source bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, plistlib, zipfile, shutil
+          ipa = Path('ipa-input/Crumb-Release.ipa')
+          expected = '069b4f775bcb338efd45503ed623690b65deb6697fb5bfcdfa4b4e7927a6f8f3'
+          assert ipa.is_file(), 'Pinned IPA not found'
+          assert hashlib.sha256(ipa.read_bytes()).hexdigest() == expected, 'Pinned IPA SHA256 mismatch'
+          with zipfile.ZipFile(ipa) as archive:
+              assert archive.testzip() is None, 'Invalid IPA ZIP'
+              info = plistlib.loads(archive.read('Payload/Crumb.app/Info.plist'))
+              assert info['CFBundleVersion'] == '23045', 'Unexpected internal app build'
+              assert info['CFBundleIdentifier'] == 'com.certlium.crumb'
+              assert not any(name.endswith('embedded.mobileprovision') for name in archive.namelist())
+          shutil.copyfile(ipa, 'release/Crumb-23045-fourway-sinf-probe-Release.ipa')
+          for filename in [
+              'IPATOOL-LICENSE', 'UNICORN-COPYING',
+              'ipatool-sap-corresponding-source.tar.gz',
+              'unicorn-tci-corresponding-source.tar.gz',
+          ]:
+              src = Path('source-input') / filename
+              assert src.is_file(), 'Missing license or source: '+filename
+              shutil.copyfile(src, Path('release') / filename)
+          print('VERIFIED IPA SHA256:', expected)
+          PY
+      - name: Publish immutable diagnostic prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=test-23045-fourway-sinf-probe
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'Release exists; refusing to overwrite' >&2
+            exit 1
+          fi
+          gh release create "$TAG" release/* --repo "$GITHUB_REPOSITORY" \
+            --target 7f6a89af4ec79946c5855a0a8e2eb4d3e05c0dbf \
+            --title 'Crumb 23045 · four-way SINF validation probe (PR #12)' \
+            --prerelease \
+            --notes 'Unsigned iOS diagnostic IPA from PR #12 source 7f6a89af, verified by all pinned protocol, portable, generic, no-JIT and Debug/Release iOS checks. Internal CFBundleVersion remains 23045. This version includes the proven phase-consistent checkpoint plus exact safe classification of model/SINF validation for each of four unmodified StoreAgent state mappings and privacy-safe state-file counters. Does not alter model selection, key material, plaintext verification, or acceptance criteria. No authorized IPA has yet been decrypted and validated on-device. SHA256: 069b4f775bcb338efd45503ed623690b65deb6697fb5bfcdfa4b4e7927a6f8f3. User must sign by their own iPhone installation method. Private enrollment material is never included.'

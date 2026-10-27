@@ -54,3 +54,27 @@ func TestProbeReportHasNoPrivateMaterialFields(t *testing.T) {
         if bytes.Contains(data, []byte("\""+key+"\"")) { t.Fatalf("unsafe field %s", key) }
     }
 }
+
+
+func TestProbeModelSINFRequiresUniqueRealLicenseAndNeverAcceptsInvalidModel(t *testing.T) {
+    if accepted, code := probeModelSINF(nil, []byte("irrelevant")); accepted || code != "sinf_license_not_unique" {
+        t.Fatalf("missing SINF accepted: %s", code)
+    }
+    if accepted, code := probeModelSINF(map[string][]byte{
+        "/Fixture.sinf": {1}, "/Fixture.v5.sinf": {2},
+    }, []byte("irrelevant")); accepted || code != "sinf_license_not_unique" {
+        t.Fatalf("ambiguous SINF accepted: %s", code)
+    }
+    if accepted, code := probeModelSINF(map[string][]byte{
+        "/Fixture.sinf": {0x01, 0x02, 0x03},
+    }, []byte("invalid-model")); accepted || code != "sinf_model_rejected" {
+        t.Fatalf("unvalidated model was accepted: %s", code)
+    }
+    report := localProbe{Mode: "dual", SourceFrameVerified: true, SINFModelVerified: false,
+        Phase: "sinf-validation", Code: "sinf_model_rejected"}
+    document, err := json.Marshal(report)
+    if err != nil || bytes.Contains(document, []byte("invalid-model")) ||
+        bytes.Contains(document, []byte("Fixture")) {
+        t.Fatal("private probe state exposed through fixed diagnostic")
+    }
+}

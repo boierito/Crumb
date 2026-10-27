@@ -28,7 +28,7 @@ cp "$ROOT/MapleSyrup/NativeSAP/fairplaymulti.go" "$WORK/test/internal/fairplay/"
 cp "$ROOT/MapleSyrup/NativeSAP/fairplaymulti_test.go" "$WORK/test/internal/fairplay/"
 python3 "$ROOT/scripts/prepare-fairplay-portable.py" "$SOURCE/tools/fairplay-recovery" "$WORK/test/wafflebridge/recovery"
 bash "$ROOT/scripts/fetch-fairplay-raw.sh" "$WORK/test/wafflebridge/recovery/rawsource"
-for name in fairplayerrors.go fairplaycapturebridge.go fairplaycapturebridge_test.go fairplayprobe.go fairplayprobe_test.go fairplayenrollment.go fairplayenrollment_test.go captureanalysis.go captureanalysis_test.go fairplaylabcore.go fairplaylab_test.go; do
+for name in fairplayerrors.go fairplaycapturebridge.go fairplaycapturebridge_test.go fairplayprobe.go fairplayprobe_test.go fairplaycausal.go fairplaycausal_test.go fairplaybridgeaudit.go fairplaybridgeaudit_test.go fairplayenrollment.go fairplayenrollment_test.go captureanalysis.go captureanalysis_test.go fairplaylabcore.go fairplaylab_test.go; do
   cp "$ROOT/MapleSyrup/NativeSAP/$name" "$WORK/test/wafflebridge/labtest/"
 done
 cat > "$WORK/test/go.mod" <<'MOD'

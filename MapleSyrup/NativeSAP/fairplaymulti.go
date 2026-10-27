@@ -91,7 +91,7 @@ func resolveImageMaterials(inventory ipaInventory, files map[string]*zip.File, m
 			}
 		}
 		if err != nil {
-			return nil, err
+			return nil, decryptionFailure("model-pack-input", err)
 		}
 		defer clearModelPacks(packs)
 	}
@@ -99,11 +99,48 @@ func resolveImageMaterials(inventory ipaInventory, files map[string]*zip.File, m
 		if len(packs) == 0 {
 			return ResolveLogicalKey(sinf)
 		}
+		var material KeyMaterial
+		var resolveErr error
 		if registry {
-			return ResolveLogicalKeyWithModels(sinf, packs)
+			material, resolveErr = ResolveLogicalKeyWithModels(sinf, packs)
+		} else {
+			material, resolveErr = ResolveLogicalKeyWithModel(sinf, packs[0])
 		}
-		return ResolveLogicalKeyWithModel(sinf, packs[0])
+		if resolveErr != nil {
+			return KeyMaterial{}, classifyModelSINFBindingFailure(sinf, packs, registry, resolveErr)
+		}
+		return material, nil
 	})
+}
+
+// Classify the original resolver's failure without retrying another model,
+// substituting key material, changing selectors, or exposing private bytes.
+// This is a read-only diagnostic over the same input, pack and selector.
+func classifyModelSINFBindingFailure(sinf []byte, packs [][]byte, registry bool, cause error) error {
+	selector, err := ParseSINFSelector(sinf)
+	if err != nil {
+		return decryptionFailure("model-sinf-structure", cause)
+	}
+	matches := 0
+	for _, pack := range packs {
+		model, parseErr := parseCurrentSINFModel(pack)
+		if parseErr != nil {
+			return decryptionFailure("model-sinf-envelope", cause)
+		}
+		if registry && !model.hasSelector {
+			return decryptionFailure("model-sinf-selector", cause)
+		}
+		if !model.hasSelector || model.selector == selector {
+			matches++
+		}
+	}
+	if matches != 1 {
+		return decryptionFailure("model-sinf-selector", cause)
+	}
+	if errors.Is(cause, errCurrentSINFProfileMismatch) {
+		return decryptionFailure("model-sinf-decode", cause)
+	}
+	return decryptionFailure("model-sinf-resolution", cause)
 }
 
 // Resolve every domain before creating output. All slices of one member share
@@ -262,6 +299,7 @@ func DecryptionFailureStage(err error) (string, bool) {
 	}
 	switch classified.stage {
 	case "platform", "paths", "output-directory", "ipa-inventory", "model-sinf-binding",
+		"model-pack-input", "model-sinf-structure", "model-sinf-envelope", "model-sinf-selector", "model-sinf-decode", "model-sinf-resolution",
 		"temporary-output", "archive-copy", "image-read", "image-inventory", "supf",
 		"image-decryption", "archive-write", "output-sync", "report-write", "output-publish",
 		"image-geometry", "codedirectory", "page-decryption", "arm64-audit", "mutation-bounds":

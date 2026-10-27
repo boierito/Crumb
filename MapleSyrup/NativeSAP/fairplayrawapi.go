@@ -3,9 +3,11 @@
 package rawsource
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 )
@@ -25,8 +27,11 @@ type LookupCount struct {
 }
 type RecoveryDiagnostic struct {
 	Phase                  string                 `json:"phase"`
+	UnmodeledExternalSlot  string                 `json:"unmodeled_external_slot,omitempty"`
+	StateLookupsByPhase    map[string]LookupCount `json:"state_lookups_by_phase,omitempty"`
 	Failure                string                 `json:"failure"`
 	Lookups                map[string]LookupCount `json:"file_lookups,omitempty"`
+	StateFileTypes         map[string]LookupCount `json:"state_file_lookups,omitempty"`
 	LastBlock              string                 `json:"last_translated_block,omitempty"`
 	SharedBlockExecutions  int                    `json:"shared_block_executions,omitempty"`
 	UntranslatedTarget     string                 `json:"untranslated_target,omitempty"`
@@ -35,6 +40,9 @@ type RecoveryDiagnostic struct {
 	GenericInstructions    uint64                 `json:"generic_instructions,omitempty"`
 	GenericLastInstruction string                 `json:"generic_last_instruction,omitempty"`
 	GenericBlocks          int                    `json:"generic_blocks,omitempty"`
+	CheckpointCompared      bool                   `json:"checkpoint_compared_after_sinf"`
+	SourceChangedAfterSINF  bool                   `json:"source_changed_after_sinf"`
+	FrameChangedAfterSINF   bool                   `json:"frame_changed_after_sinf"`
 }
 type recoveryError struct{ diagnostic RecoveryDiagnostic }
 
@@ -49,6 +57,10 @@ func RecoveryDetails(err error) (RecoveryDiagnostic, bool) {
 	for key, count := range classified.diagnostic.Lookups {
 		result.Lookups[key] = count
 	}
+	result.StateFileTypes = make(map[string]LookupCount, len(classified.diagnostic.StateFileTypes))
+	for key, count := range classified.diagnostic.StateFileTypes {
+		result.StateFileTypes[key] = count
+	}
 	return result, true
 }
 func recoveryFailed(phase, code string, runtime *rawSourceRuntime) error {
@@ -57,6 +69,10 @@ func recoveryFailed(phase, code string, runtime *rawSourceRuntime) error {
 func runtimeDiagnostic(phase, code string, runtime *rawSourceRuntime) RecoveryDiagnostic {
 	diagnostic := RecoveryDiagnostic{Phase: phase, Failure: code, Lookups: map[string]LookupCount{}}
 	if runtime != nil {
+		if len(runtime.stateLookupsByPhase) != 0 {
+			diagnostic.StateLookupsByPhase = make(map[string]LookupCount, len(runtime.stateLookupsByPhase))
+			for k,v := range runtime.stateLookupsByPhase { diagnostic.StateLookupsByPhase[k] = v }
+		}
 		diagnostic.LastBlock = sourceBlockLabel(runtime.lastKnownBlock)
 		diagnostic.SharedBlockExecutions = runtime.additionalBlocks
 		diagnostic.ExecutionBackend = "aot"
@@ -66,12 +82,24 @@ func runtimeDiagnostic(phase, code string, runtime *rawSourceRuntime) RecoveryDi
 		diagnostic.GenericInstructions = runtime.genericInstructions
 		diagnostic.GenericLastInstruction = sourceBlockLabel(runtime.genericLastPC)
 		diagnostic.GenericBlocks = runtime.genericBlocks
+		diagnostic.CheckpointCompared = runtime.checkpointCompared
+		diagnostic.SourceChangedAfterSINF = runtime.sourceChangedAfterSINF
+		diagnostic.FrameChangedAfterSINF = runtime.frameChangedAfterSINF
+		if code == "raw_unsupported_external" {
+			diagnostic.UnmodeledExternalSlot = runtime.unmodeledExternalSlot
+		}
 		if code == "raw_unknown_control_flow" || strings.HasPrefix(code, "generic_") {
 			diagnostic.UntranslatedTarget = runtime.untranslatedTarget
 			diagnostic.TargetClass = runtime.targetClass
 		}
 		for key, count := range runtime.lookupCounts {
 			diagnostic.Lookups[key] = count
+		}
+		if len(runtime.stateFileLookupCounts) > 0 {
+			diagnostic.StateFileTypes = make(map[string]LookupCount, len(runtime.stateFileLookupCounts))
+			for key, count := range runtime.stateFileLookupCounts {
+				diagnostic.StateFileTypes[key] = count
+			}
 		}
 	}
 	return diagnostic
@@ -128,32 +156,121 @@ func (r *rawSourceRuntime) recordLookup(requested string, found bool) {
 		count.Missing++
 	}
 	r.lookupCounts[category] = count
+	if category != "state" {
+		return
+	}
+	if r.phase != "" {
+		if r.stateLookupsByPhase == nil { r.stateLookupsByPhase = make(map[string]LookupCount) }
+		phase := r.stateLookupsByPhase[r.phase]
+		if phase.Attempts < 1000000 { phase.Attempts++ }
+		if !found && phase.Missing < 1000000 { phase.Missing++ }
+		r.stateLookupsByPhase[r.phase] = phase
+	}
+	// Names are discarded immediately; persist only this finite public
+	// extension taxonomy, never account-specific file names or paths.
+	kind := "other"
+	switch {
+	case strings.HasSuffix(lower, ".sidb"):
+		kind = "sidb"
+	case strings.HasSuffix(lower, ".sidd"):
+		kind = "sidd"
+	case strings.HasSuffix(lower, ".sidf"):
+		kind = "sidf"
+	}
+	if r.stateFileLookupCounts == nil {
+		r.stateFileLookupCounts = map[string]LookupCount{}
+	}
+	detail := r.stateFileLookupCounts[kind]
+	if detail.Attempts < 1000000 {
+		detail.Attempts++
+	}
+	if !found && detail.Missing < 1000000 {
+		detail.Missing++
+	}
+	r.stateFileLookupCounts[kind] = detail
+}
+
+// The selection CFG materializes the frame during its second frame call.
+// Capture source/frame at this phase boundary, before SINF changes guest state.
+// This does not substitute any frame or relax downstream cryptographic checks.
+type enrollmentOutputCheckpoint struct {
+	source, frame []byte
+}
+
+func (c *enrollmentOutputCheckpoint) clear() {
+	clear(c.source)
+	clear(c.frame)
+	c.source, c.frame = nil, nil
+}
+
+func checkpointEnrollmentOutputs() (enrollmentOutputCheckpoint, error) {
+	var checkpoint enrollmentOutputCheckpoint
+	var err error
+	checkpoint.source, err = currentRawSourceBytes(224)
+	if err != nil {
+		return enrollmentOutputCheckpoint{}, err
+	}
+	checkpoint.frame, err = currentRawSourceFrameBytes()
+	if err != nil {
+		checkpoint.clear()
+		return enrollmentOutputCheckpoint{}, err
+	}
+	return checkpoint, nil
+}
+
+// Comparisons are local only. Unavailable comparison stays explicitly false;
+// no secret bytes, secret digests, guest addresses or paths leave the runtime.
+func observePostSINFOutputs(runtime *rawSourceRuntime, checkpoint enrollmentOutputCheckpoint) {
+	if runtime == nil {
+		return
+	}
+	postSource, sourceErr := currentRawSourceBytes(224)
+	postFrame, frameErr := currentRawSourceFrameBytes()
+	defer clear(postSource)
+	defer clear(postFrame)
+	if sourceErr != nil || frameErr != nil {
+		return
+	}
+	runtime.checkpointCompared = true
+	runtime.sourceChangedAfterSINF = !bytes.Equal(checkpoint.source, postSource)
+	runtime.frameChangedAfterSINF = !bytes.Equal(checkpoint.frame, postFrame)
 }
 
 // Preserve the upstream natural path and bounds while identifying its phases.
-func runEnrollmentSource(value *model, runtime *rawSourceRuntime) error {
+func runEnrollmentSource(value *model, runtime *rawSourceRuntime) (enrollmentOutputCheckpoint, error) {
 	if value.binaryHash != rawSourceBinaryHash {
-		return recoveryFailed("resource", "raw_binary_mismatch", runtime)
+		return enrollmentOutputCheckpoint{}, recoveryFailed("resource", "raw_binary_mismatch", runtime)
 	}
 	worker := newState(value)
 	worker.reset()
 	lastRawSourceState = worker
+	runtime.phase = "account-parser"
 	if _, _, err := runRawSourceAccountEntryCFG(worker, runtime, 1000000); err != nil {
-		return runtimeFailure("account-parser", err, runtime)
+		return enrollmentOutputCheckpoint{}, runtimeFailure("account-parser", err, runtime)
 	}
+	runtime.phase = "bootstrap"
 	if _, _, err := runRawSourceBootstrapCFG(worker, runtime, 1000000); err != nil {
-		return runtimeFailure("bootstrap", err, runtime)
+		return enrollmentOutputCheckpoint{}, runtimeFailure("bootstrap", err, runtime)
 	}
+	runtime.phase = "source"
 	if _, err := runRawSourceKernelLoop(worker, "outer"); err != nil {
-		return runtimeFailure("source", err, runtime)
+		return enrollmentOutputCheckpoint{}, runtimeFailure("source", err, runtime)
 	}
+	runtime.phase = "selection"
 	if _, _, err := runRawSourceSelectionCFG(worker, runtime, 2000000); err != nil {
-		return runtimeFailure("selection", err, runtime)
+		return enrollmentOutputCheckpoint{}, runtimeFailure("selection", err, runtime)
 	}
+	checkpoint, err := checkpointEnrollmentOutputs()
+	if err != nil {
+		return enrollmentOutputCheckpoint{}, recoveryFailed("selection-output", "raw_selection_output_unavailable", runtime)
+	}
+	runtime.phase = "sinf"
 	if _, _, err := runRawSourceSINFEntryCFG(worker, runtime, 2000000); err != nil {
-		return runtimeFailure("sinf", err, runtime)
+		checkpoint.clear()
+		return enrollmentOutputCheckpoint{}, runtimeFailure("sinf", err, runtime)
 	}
-	return nil
+	observePostSINFOutputs(runtime, checkpoint)
+	return checkpoint, nil
 }
 
 func VerifyResource() bool {
@@ -212,24 +329,28 @@ func Recover(executable string, hardware []byte, files map[string][]byte) (Resul
 		}
 		activeRawSourceRuntime.files[name] = append([]byte(nil), data...)
 	}
-	if err := runEnrollmentSource(value, activeRawSourceRuntime); err != nil {
+	checkpoint, err := runEnrollmentSource(value, activeRawSourceRuntime)
+	if err != nil {
 		return result, err
 	}
 	result.Pack, err = currentRawSourceEnrollmentPack()
 	if err != nil {
+		checkpoint.clear()
 		return Result{}, recoveryFailed("pack", "raw_pack_unavailable", activeRawSourceRuntime)
 	}
-	result.Source, err = currentRawSourceBytes(224)
-	if err != nil {
-		clear(result.Pack)
-		return Result{}, recoveryFailed("source-output", "raw_source_unavailable", activeRawSourceRuntime)
-	}
-	result.Frame, err = currentRawSourceFrameBytes()
-	if err != nil {
-		clear(result.Pack)
-		clear(result.Source)
-		return Result{}, recoveryFailed("frame-output", "raw_frame_unavailable", activeRawSourceRuntime)
-	}
+	result.Source, result.Frame = checkpoint.source, checkpoint.frame
 	result.Runtime = runtimeDiagnostic("completed", "", activeRawSourceRuntime)
 	return result, nil
+}
+
+// sourceExternalImportSlot classifies the *public, profile-defined* 26A428
+// Mach-O external stub namespace, not an arbitrary guest address. The high
+// bits and alignment are checked before deriving the bounded slot index.
+// A synthetic/invalid guest branch can never become a raw pointer in logs.
+func sourceExternalImportSlot(pc uint64) string {
+    const base uint64 = 0xf100000000000000
+    if pc < base || pc >= base+(1<<24) || (pc-base)%0x1000 != 0 {
+        return "unclassified_external"
+    }
+    return fmt.Sprintf("external-slot-%03x", (pc-base)/0x1000)
 }

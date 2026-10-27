@@ -67,8 +67,15 @@ for name in names:
         lookup = 'return bestSuffix, bestData, bestSuffix != ""'
         if text.count(field) != 1 or text.count(lookup) != 1:
             raise SystemExit('raw runtime lookup contract changed')
-        text = text.replace(field, field + '\n lookupCounts map[string]LookupCount\n lastKnownBlock uint64\n additionalBlocks int\n untranslatedTarget string\n targetClass string\n genericBlocks int\n genericInstructions uint64\n genericLastPC uint64')
+        text = text.replace(field, field + '\n lookupCounts map[string]LookupCount\n stateFileLookupCounts map[string]LookupCount\n stateLookupsByPhase map[string]LookupCount\n phase string\n unmodeledExternalSlot string\n lastKnownBlock uint64\n additionalBlocks int\n untranslatedTarget string\n targetClass string\n genericBlocks int\n genericInstructions uint64\n genericLastPC uint64\n checkpointCompared bool\n sourceChangedAfterSINF bool\n frameChangedAfterSINF bool')
         text = text.replace(lookup, 'r.recordLookup(path, bestSuffix != "")\n\t' + lookup)
+        # Record the rejected import's *static model slot*, never a pointer
+        # or private guest register. No unsupported function is stubbed.
+        rejected = 'return pc, fmt.Errorf("unsupported bootstrap external %#x", pc)'
+        if text.count(rejected) != 1:
+            raise SystemExit('pinned external dispatch changed; review required')
+        text = text.replace(rejected, 'r.unmodeledExternalSlot = sourceExternalImportSlot(pc)\n\t\t' + rejected)
+
     if name in cfg_ends:
         # Preserve the original cases. Only their unknown-target branch may
         # resume an existing translated block from the shared inventory.
@@ -100,10 +107,12 @@ text = api.read_text().replace('RAW_RESOURCE_SHA256', expected)
 (target / 'api.go').write_text(text)
 
 (target / "api_test.go").write_text((api.parent / "fairplayrawapi_test.go").read_text())
+(target / "enrollment_checkpoint_test.go").write_text((api.parent / "fairplayrawcheckpoint_test.go").read_text())
 (target / 'block_dispatch.go').write_text((api.parent / 'fairplayrawblocks.go').read_text())
 (target / 'bootstrap_supplement.go').write_text((api.parent / 'fairplayrawsupplement.go').read_text())
 (target / 'block_dispatch_test.go').write_text((api.parent / 'fairplayrawblocks_test.go').read_text())
 (target / 'bootstrap_supplement_test.go').write_text((api.parent / 'fairplayrawsupplement_test.go').read_text())
+(target / 'external_test.go').write_text((api.parent / 'fairplayrawexternal_test.go').read_text())
 
 for name, origin in [('LICENSE-IPATOOL', source.parent.parent / 'LICENSE'),
                      ('LICENSE-DARKPHOENIX.txt', source / 'LICENSE-DARKPHOENIX.txt'),

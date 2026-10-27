@@ -110,6 +110,7 @@ final class FairPlayLab: ObservableObject {
     @Published var output: URL?
     @Published var diagnostic: URL?
     @Published var captureArchive: URL?
+    @Published var importedCapture: URL?
     @Published var enrollmentStages: [String: Bool] = [:]
     @Published var nativeRecoveryVerified = false
     @Published var input: URL? {
@@ -173,6 +174,7 @@ final class FairPlayLab: ObservableObject {
         auditedTransactions = -1
         probeCompletedForCapture = false
         captureArchive = nil
+        importedCapture = nil
         diagnostic = nil
         enrollmentStages = [:]
         log("Transaction", "Validated exchange \(transactions): kbsync \(transaction.kbsync.count) bytes; keybag \(transaction.keybag?.count ?? 0) bytes; SINF count \(transaction.sinfs.count). Capture saved privately.")
@@ -224,13 +226,101 @@ final class FairPlayLab: ObservableObject {
             }
         }
     }
+    // A saved private capture and a saved original encrypted IPA are sufficient
+    // to re-run all local audits. Importing either does not authenticate DRM.
+    private func verifyImportedBinding(_ archive: URL, ipa: URL) async throws {
+        let report = try await Task.detached {
+            try FairPlayNative.run("verify-capture-ipa", source: archive, ipa: ipa)
+        }.value
+        guard let data = report.data(using: .utf8),
+              let envelope = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              envelope["ok"] as? Bool == true,
+              let result = envelope["result"] as? [String: Any],
+              result["schema"] as? String == "crumb-capture-ipa-binding-v1",
+              result["matched"] as? Bool == true,
+              result["encrypted_domain_count"] as? Int == 1,
+              result["model_validated"] as? Bool == false else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+    }
+
+    func useExistingOriginalIPA(_ selected: URL) {
+        guard input == nil else { return }
+        perform {
+            let access = selected.startAccessingSecurityScopedResource()
+            defer { if access { selected.stopAccessingSecurityScopedResource() } }
+            let info = try selected.resourceValues(forKeys: [.isSymbolicLinkKey, .isRegularFileKey, .fileSizeKey])
+            guard selected.pathExtension.lowercased() == "ipa",
+                  info.isSymbolicLink != true, info.isRegularFile == true,
+                  let size = info.fileSize, size > 0, size <= 512 << 20 else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            let destination = self.root.appendingPathComponent("Original.ipa")
+            try? FileManager.default.removeItem(at: destination)
+            try FileManager.default.copyItem(at: selected, to: destination)
+            do {
+                try FileManager.default.setAttributes([.posixPermissions: 0o600,
+                    .protectionKey: FileProtectionType.complete], ofItemAtPath: destination.path)
+                let result = try await Task.detached {
+                    try FairPlayNative.run("inspect", source: destination)
+                }.value
+                guard let bytes = result.data(using: .utf8),
+                      let envelope = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+                      envelope["ok"] as? Bool == true else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                if let archive = self.importedCapture {
+                    try await self.verifyImportedBinding(archive, ipa: destination)
+                }
+                self.input = destination
+                self.log("Transaction", "Existing encrypted IPA imported and inspected offline. No App Store download.")
+            } catch {
+                try? FileManager.default.removeItem(at: destination)
+                throw error
+            }
+        }
+    }
+
     func analyzeCapture(_ selected: URL) {
         perform {
             let access = selected.startAccessingSecurityScopedResource()
             defer { if access { selected.stopAccessingSecurityScopedResource() } }
-            self.log("Inspection", "Validating capture ZIP, manifest hashes and SINF structure. No account data will be logged.")
-            let result = try await Task.detached { try FairPlayNative.run("analyze-capture", source: selected) }.value
-            self.log("Inspection", result)
+            self.log("Inspection", "Validating imported capture ZIP and manifest hashes locally.")
+            let report = try await Task.detached { try FairPlayNative.run("analyze-capture", source: selected) }.value
+            guard let bytes = report.data(using: .utf8),
+                  let response = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+                  response["ok"] as? Bool == true,
+                  let result = response["result"] as? [String: Any],
+                  result["transaction_count"] as? Int == 1,
+                  let transactions = result["transactions"] as? [[String: Any]],
+                  transactions.count == 1,
+                  transactions[0]["integrity"] as? String == "verified" else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            let info = try selected.resourceValues(forKeys: [.isSymbolicLinkKey, .isRegularFileKey, .fileSizeKey])
+            guard info.isSymbolicLink != true, info.isRegularFile == true,
+                  let size = info.fileSize, size > 0, size <= 128 << 20 else {
+                throw CocoaError(.fileReadTooLarge)
+            }
+            let copied = self.root.appendingPathComponent("Imported-FairPlay-capture.zip")
+            try? FileManager.default.removeItem(at: copied)
+            try FileManager.default.copyItem(at: selected, to: copied)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600,
+                .protectionKey: FileProtectionType.complete], ofItemAtPath: copied.path)
+            do {
+                if let original = self.input {
+                    try await self.verifyImportedBinding(copied, ipa: original)
+                }
+            } catch {
+                try? FileManager.default.removeItem(at: copied)
+                throw error
+            }
+            self.importedCapture = copied
+            self.captureArchive = nil
+            self.auditedTransactions = -1
+            self.transactions = 1
+            self.log("Inspection", report)
+            self.log("Enrollment", "Verified private capture imported. Select its matching original encrypted IPA from Files; no download is required.")
         }
     }
     func inspect() {
@@ -325,6 +415,42 @@ final class FairPlayLab: ObservableObject {
         guard input != nil else { return }
         perform { try await self.performDeepLocalProbe() }
     }
+    // A single local differential experiment on a retained, verified capture.
+    // Does not download another IPA, extract credentials or export a model.
+    func researchCurrentCaptureCausality() {
+        guard input != nil else { return }
+        perform {
+            try await self.analyzeCurrentCaptureFiles()
+            guard self.transactions == 1, let archive = self.captureArchive, let input = self.input else {
+                self.log("Enrollment", "Causal research requires one retained transaction and its original IPA; no download attempted.")
+                return
+            }
+            self.log("Enrollment", "Studying SIDB and virtual identity causal dependencies offline. Original capture unchanged; private bytes remain on this iPhone.")
+            let response = try await Task.detached {
+                try FairPlayNative.run("research-causality", source: archive, ipa: input)
+            }.value
+            self.log("Enrollment", response)
+            self.log("Enrollment", "This research measures sensitivity only. It does not recover a valid model or prove decrypted plaintext.")
+        }
+    }
+    // Read-only producer/consumer contract audit. Reuses the existing private
+    // capture, runs the authentic interpreter, and validates the actual SINF.
+    func researchCurrentCaptureBridge() {
+        guard input != nil else { return }
+        perform {
+            try await self.analyzeCurrentCaptureFiles()
+            guard self.transactions == 1, let archive = self.captureArchive, let original = self.input else {
+                self.log("Enrollment", "Bridge audit requires one retained transaction and its original IPA.")
+                return
+            }
+            self.log("Enrollment", "Auditing StoreAgent 10.9 state against the modern fairplayd consumer. No downloads or mutations.")
+            let response = try await Task.detached {
+                try FairPlayNative.run("research-bridge", source: archive, ipa: original)
+            }.value
+            self.log("Enrollment", response)
+            self.log("Enrollment", "Only strict SINF validation can establish a usable model. This report exports no keys.")
+        }
+    }
     func recoverEnrollment(_ selected: URL) {
         nativeRecoveryVerified = false
         guard let input else { return }
@@ -391,11 +517,11 @@ final class FairPlayLab: ObservableObject {
     // The user no longer has to import their own private ZIP to analyze it.
     private func analyzeCurrentCaptureFiles() async throws {
         let captures = root.appendingPathComponent("captures")
-        guard FileManager.default.fileExists(atPath: captures.path) else {
+        guard importedCapture != nil || FileManager.default.fileExists(atPath: captures.path) else {
             log("Enrollment", "No new capture in this session. Download an app before analyzing.")
             return
         }
-        let archive = root.appendingPathComponent("Private-FairPlay-capture.zip")
+        let archive = importedCapture ?? root.appendingPathComponent("Private-FairPlay-capture.zip")
         // Once checked, the same immutable transaction does not need to be
         // zipped, inspected and logged again by Prepare exports.
         if auditedTransactions == transactions,
@@ -403,13 +529,15 @@ final class FairPlayLab: ObservableObject {
            FileManager.default.fileExists(atPath: archive.path) {
             return
         }
-        let exported = try await Task.detached {
-            try FairPlayNative.run("export", source: captures, destination: archive)
-        }.value
-        guard let exportData = exported.data(using: .utf8),
-              let exportJSON = try JSONSerialization.jsonObject(with: exportData) as? [String: Any],
-              exportJSON["ok"] as? Bool == true else {
-            throw NSError(domain: "Crumb.FairPlayLab.CaptureExport", code: 1)
+        if importedCapture == nil {
+            let exported = try await Task.detached {
+                try FairPlayNative.run("export", source: captures, destination: archive)
+            }.value
+            guard let exportData = exported.data(using: .utf8),
+                  let exportJSON = try JSONSerialization.jsonObject(with: exportData) as? [String: Any],
+                  exportJSON["ok"] as? Bool == true else {
+                throw NSError(domain: "Crumb.FairPlayLab.CaptureExport", code: 1)
+            }
         }
         // Go's exporter applies mode 0600; protect the archive on iOS as well.
         try FileManager.default.setAttributes(
@@ -465,7 +593,7 @@ final class FairPlayLab: ObservableObject {
         nativeRecoveryVerified = false
         guard !busy else { return }
         try? FileManager.default.removeItem(at: root)
-        input = nil; output = nil; diagnostic = nil; captureArchive = nil; transactions = 0
+        input = nil; output = nil; diagnostic = nil; captureArchive = nil; importedCapture = nil; transactions = 0
         auditedTransactions = -1
         probeCompletedForCapture = false
         enrollmentStages = [:]
@@ -481,6 +609,7 @@ struct FairPlayLabView: View {
     @State private var appInput = ""
     @State private var importing = false
     @State private var importingCapture = false
+    @State private var importingOriginalIPA = false
     @State private var importingEnrollment = false
     var body: some View {
         NavigationStack {
@@ -502,22 +631,20 @@ struct FairPlayLabView: View {
                     }.disabled(appData.ipaTool == nil || appInput.isEmpty || lab.input != nil)
                     Text("One-tap experimental path: download, retain the matching keybag context, audit the capture, and attempt recovery entirely on this iPhone. A failed recovery leaves the original IPA available.")
                         .font(.footnote)
-                    Button("Download + four-way diagnostic (iPhone only)") {
-                        if let account = appData.ipaTool?.account {
-                            lab.download(appInput, account: account, deepProbe: true)
-                        }
-                    }.disabled(appData.ipaTool == nil || appInput.isEmpty || lab.input != nil)
-                    Text("One download; four bounded comparisons of how the same SIDB reaches the recovery engine. Does not export private data or a model.")
-                        .font(.footnote)
                     if let record, let url = record.fileURL {
                         Button("Use selected downloaded IPA") { lab.input = url }
                     }
+                    Button("Import existing encrypted IPA from Files (no download)") {
+                        importingOriginalIPA = true
+                    }.disabled(lab.input != nil)
                 }
                 Section("3 · Inspect and identify missing material") {
                     Button("Inspect IPA") { lab.inspect() }.disabled(lab.input == nil)
                     Button("Verify current capture — no import required") { lab.analyzeCurrentCapture() }
                         .disabled(lab.input == nil)
-                    Button("Import an older capture ZIP (optional)") { importingEnrollment = false; importingCapture = true; importing = true }
+                    Button("Import an older capture ZIP for offline research") { importingEnrollment = false; importingCapture = true; importing = true }
+                    Text("Pair the ZIP with its original encrypted IPA from Files. Both are verified locally and available for all recovery/bridge tests during this session.")
+                        .font(.footnote)
                     Text("A zero StoreAgent status means keybag import was accepted. It does not produce the portable enrollment frame or raw-state source needed for decryption.")
                 }
                 if !lab.enrollmentStages.isEmpty {
@@ -540,6 +667,12 @@ struct FairPlayLabView: View {
                 }
                 Section("4 · Recover or import an enrollment") {
                     Button("Attempt recovery from current capture") { lab.recoverCurrentCapture() }.disabled(lab.input == nil)
+                    Button("Audit StoreAgent → fairplayd bridge (no download)") { lab.researchCurrentCaptureBridge() }.disabled(lab.input == nil)
+                    Text("Verifies SIDB/SIDD provenance, records only static import slots and per-phase state-file lookups, and checks the original SINF. No private material leaves this iPhone.")
+                        .font(.footnote)
+                    Button("Research SIDB causality (no download)") { lab.researchCurrentCaptureCausality() }.disabled(lab.input == nil)
+                    Text("Uses the already captured SIDB and IPA. Runs bounded one-byte changes only on private copies and compares their effect on Source, Frame and model, without exporting secrets.")
+                        .font(.footnote)
                     Button("Run four-way diagnostic (reuse current capture)") { lab.deepProbeCurrentCapture() }.disabled(lab.input == nil)
                     Text("Compares dual state paths, fpsd-only, shared-only, and SIDB-only without changing the encrypted state bytes. Results appear in Enrollment logs.")
                         .font(.footnote)
@@ -561,6 +694,11 @@ struct FairPlayLabView: View {
                     Button("Prepare exports") { lab.export() }
                     if let diagnostic = lab.diagnostic { ShareLink("Share diagnostic (no secret blobs)", item: diagnostic) }
                     if let capture = lab.captureArchive { ShareLink("Share PRIVATE capture — contains secrets", item: capture) }
+                    if let original = lab.input, original.pathExtension.lowercased() == "ipa" {
+                        ShareLink("Save original encrypted IPA for offline reuse", item: original)
+                    }
+                    Text("Keep both files together. The capture ZIP contains account-derived material. Avoid public sharing; both files are needed for offline replay.")
+                        .font(.footnote)
                     Button("Copy logs") { UIPasteboard.general.string = lab.logs.keys.sorted().map { $0 + "\n" + (lab.logs[$0] ?? "") }.joined(separator: "\n\n") }
                     Button("Erase this test", role: .destructive) { lab.erase() }
                     Text("Export before closing. This session’s temporary files are removed when you close the laboratory. Download history and your Apple session are preserved.")
@@ -571,6 +709,9 @@ struct FairPlayLabView: View {
             .navigationTitle("FairPlay Laboratory")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() }.disabled(lab.busy) } }
             .interactiveDismissDisabled(lab.busy)
+            .fileImporter(isPresented: $importingOriginalIPA, allowedContentTypes: [UTType(filenameExtension: "ipa") ?? .data]) { result in
+                if case .success(let url) = result { lab.useExistingOriginalIPA(url) }
+            }
             .fileImporter(isPresented: $importing, allowedContentTypes: importingEnrollment ? [.folder] : (importingCapture ? [.zip] : [.data, .folder])) { result in
                 if case .success(let url) = result {
                     if importingEnrollment { lab.recoverEnrollment(url) } else if importingCapture { lab.analyzeCapture(url) } else { lab.decrypt(url) }
