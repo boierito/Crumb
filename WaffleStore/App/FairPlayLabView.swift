@@ -226,6 +226,61 @@ final class FairPlayLab: ObservableObject {
             }
         }
     }
+    // A saved private capture and a saved original encrypted IPA are sufficient
+    // to re-run all local audits. Importing either does not authenticate DRM.
+    private func verifyImportedBinding(_ archive: URL, ipa: URL) async throws {
+        let report = try await Task.detached {
+            try FairPlayNative.run("research-bridge", source: archive, ipa: ipa)
+        }.value
+        guard let data = report.data(using: .utf8),
+              let envelope = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              envelope["ok"] as? Bool == true,
+              let result = envelope["result"] as? [String: Any],
+              result["schema"] as? String == "crumb-storeagent-fairplayd-bridge-v1",
+              result["sidb_observed"] as? Bool == true,
+              let status = result["status"] as? String,
+              ["sinf_rejected", "cryptographic_model_validated"].contains(status) else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+    }
+
+    func useExistingOriginalIPA(_ selected: URL) {
+        guard input == nil else { return }
+        perform {
+            let access = selected.startAccessingSecurityScopedResource()
+            defer { if access { selected.stopAccessingSecurityScopedResource() } }
+            let info = try selected.resourceValues(forKeys: [.isSymbolicLinkKey, .isRegularFileKey, .fileSizeKey])
+            guard selected.pathExtension.lowercased() == "ipa",
+                  info.isSymbolicLink != true, info.isRegularFile == true,
+                  let size = info.fileSize, size > 0, size <= 512 << 20 else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            let destination = self.root.appendingPathComponent("Original.ipa")
+            try? FileManager.default.removeItem(at: destination)
+            try FileManager.default.copyItem(at: selected, to: destination)
+            do {
+                try FileManager.default.setAttributes([.posixPermissions: 0o600,
+                    .protectionKey: FileProtectionType.complete], ofItemAtPath: destination.path)
+                let result = try await Task.detached {
+                    try FairPlayNative.run("inspect", source: destination)
+                }.value
+                guard let bytes = result.data(using: .utf8),
+                      let envelope = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+                      envelope["ok"] as? Bool == true else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                if let archive = self.importedCapture {
+                    try await self.verifyImportedBinding(archive, ipa: destination)
+                }
+                self.input = destination
+                self.log("Transaction", "Existing encrypted IPA imported and inspected offline. No App Store download.")
+            } catch {
+                try? FileManager.default.removeItem(at: destination)
+                throw error
+            }
+        }
+    }
+
     func analyzeCapture(_ selected: URL) {
         perform {
             let access = selected.startAccessingSecurityScopedResource()
@@ -252,6 +307,14 @@ final class FairPlayLab: ObservableObject {
             try FileManager.default.copyItem(at: selected, to: copied)
             try FileManager.default.setAttributes([.posixPermissions: 0o600,
                 .protectionKey: FileProtectionType.complete], ofItemAtPath: copied.path)
+            do {
+                if let original = self.input {
+                    try await self.verifyImportedBinding(copied, ipa: original)
+                }
+            } catch {
+                try? FileManager.default.removeItem(at: copied)
+                throw error
+            }
             self.importedCapture = copied
             self.captureArchive = nil
             self.auditedTransactions = -1
@@ -546,6 +609,7 @@ struct FairPlayLabView: View {
     @State private var appInput = ""
     @State private var importing = false
     @State private var importingCapture = false
+    @State private var importingOriginalIPA = false
     @State private var importingEnrollment = false
     var body: some View {
         NavigationStack {
@@ -570,12 +634,17 @@ struct FairPlayLabView: View {
                     if let record, let url = record.fileURL {
                         Button("Use selected downloaded IPA") { lab.input = url }
                     }
+                    Button("Import existing encrypted IPA from Files (no download)") {
+                        importingOriginalIPA = true
+                    }.disabled(lab.input != nil)
                 }
                 Section("3 · Inspect and identify missing material") {
                     Button("Inspect IPA") { lab.inspect() }.disabled(lab.input == nil)
                     Button("Verify current capture — no import required") { lab.analyzeCurrentCapture() }
                         .disabled(lab.input == nil)
-                    Button("Import an older capture ZIP (optional)") { importingEnrollment = false; importingCapture = true; importing = true }
+                    Button("Import an older capture ZIP for offline research") { importingEnrollment = false; importingCapture = true; importing = true }
+                    Text("Pair the ZIP with its original encrypted IPA from Files. Both are verified locally and available for all recovery/bridge tests during this session.")
+                        .font(.footnote)
                     Text("A zero StoreAgent status means keybag import was accepted. It does not produce the portable enrollment frame or raw-state source needed for decryption.")
                 }
                 if !lab.enrollmentStages.isEmpty {
@@ -635,6 +704,9 @@ struct FairPlayLabView: View {
             .navigationTitle("FairPlay Laboratory")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() }.disabled(lab.busy) } }
             .interactiveDismissDisabled(lab.busy)
+            .fileImporter(isPresented: $importingOriginalIPA, allowedContentTypes: [UTType(filenameExtension: "ipa") ?? .data]) { result in
+                if case .success(let url) = result { lab.useExistingOriginalIPA(url) }
+            }
             .fileImporter(isPresented: $importing, allowedContentTypes: importingEnrollment ? [.folder] : (importingCapture ? [.zip] : [.data, .folder])) { result in
                 if case .success(let url) = result {
                     if importingEnrollment { lab.recoverEnrollment(url) } else if importingCapture { lab.analyzeCapture(url) } else { lab.decrypt(url) }
