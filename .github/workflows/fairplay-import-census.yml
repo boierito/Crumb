@@ -136,3 +136,28 @@ jobs:
           C
           clang -Wall -Wextra -Werror "$RUNNER_TEMP/rwlock_align.c" -o "$RUNNER_TEMP/rwlock_align"
           "$RUNNER_TEMP/rwlock_align"
+      - name: Measure synthetic single-thread writer lifecycle
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/rwlock_writer.c" <<'C'
+          #include <pthread.h>
+          #include <stdint.h>
+          #include <stdio.h>
+          #include <string.h>
+          static void dump(const char *label, pthread_rwlock_t *l) {
+            unsigned char *p=(unsigned char *)l; printf("%s=",label);
+            for (int i=32;i<48;i++) printf("%02x",p[i]);puts("");
+          }
+          int main(void) {
+            pthread_rwlock_t l;memset(&l,0,sizeof(l));
+            if(pthread_rwlock_init(&l,0)) return 1;
+            for(int i=0;i<3;i++) {
+              if(pthread_rwlock_wrlock(&l)) return 2; dump("writer_locked",&l);
+              int b=pthread_rwlock_destroy(&l);printf("destroy_locked=%d\n",b);
+              if(pthread_rwlock_unlock(&l)) return 3; dump("writer_unlocked",&l);
+            }
+            return pthread_rwlock_destroy(&l);
+          }
+          C
+          clang -Wall -Wextra -Werror "$RUNNER_TEMP/rwlock_writer.c" -o "$RUNNER_TEMP/rwlock_writer"
+          "$RUNNER_TEMP/rwlock_writer"
