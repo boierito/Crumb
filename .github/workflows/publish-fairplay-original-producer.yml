@@ -1,0 +1,87 @@
+name: Publish verified original producer IPA
+on:
+  push:
+    branches: [distribution/23046-original-producer]
+    paths:
+      - '.github/workflows/publish-fairplay-original-producer.yml'
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish-tested-artifact:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require successful pinned CI and artifact provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: 1d058786741bde2ad063b374eed1060dcd051db5
+        shell: bash
+        run: |
+          set -euo pipefail
+          for RUN in 40438959845 40438959786; do
+            test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" --jq .conclusion)" = success
+            test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" --jq .head_sha)" = "$SOURCE_SHA"
+          done
+      - name: Download completed unsigned Release IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: Crumb-IPA-Release-40438959786
+          run-id: 40438959786
+          github-token: ${{ github.token }}
+          path: ipa-input
+      - name: Download corresponding sources and notices
+        uses: actions/download-artifact@v4
+        with:
+          name: Crumb-Release-40438959786
+          run-id: 40438959786
+          github-token: ${{ github.token }}
+          path: source-input
+      - name: Validate actual IPA and stage a uniquely named asset
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, plistlib, zipfile, shutil
+          ipa = Path('ipa-input/Crumb-Release.ipa')
+          expected = '393880b4cab7857cca27b523ca881991935d66dc357bc2ef3023609730bd5f91'
+          assert hashlib.sha256(ipa.read_bytes()).hexdigest() == expected, 'Pinned IPA SHA256 does not match'
+          with zipfile.ZipFile(ipa) as z:
+              assert z.testzip() is None, 'IPA ZIP corruption'
+              info = plistlib.loads(z.read('Payload/Crumb.app/Info.plist'))
+              assert info['CFBundleVersion'] == '23046', 'Unexpected build number'
+              assert info['CFBundleIdentifier'] == 'com.certlium.crumb'
+              assert not any(p.endswith('embedded.mobileprovision') for p in z.namelist())
+          shutil.copyfile(ipa, 'release/Crumb-23046-Release.ipa')
+          for filename in ['IPATOOL-LICENSE', 'UNICORN-COPYING',
+                           'ipatool-sap-corresponding-source.tar.gz',
+                           'unicorn-tci-corresponding-source.tar.gz']:
+              src = Path('source-input') / filename
+              assert src.is_file(), 'Missing corresponding source/notice: ' + filename
+              shutil.copyfile(src, Path('release') / filename)
+          print('Verified SHA256:', expected)
+          PY
+      - name: Publish a separate GitHub prerelease for the tested checkpoint
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=test-23046-original-producer
+          test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
+          gh release upload "$TAG" release/* --repo "$GITHUB_REPOSITORY" --clobber
+          cat > release-notes.txt <<'NOTES'
+          Unsigned Crumb 23046 Release, pinned to commit 1d058786741bde2ad063b374eed1060dcd051db5. Sign using your usual authorized iPhone signing method.
+
+          All six SAP protocol suites and native plus Debug/Release IPA builds passed. The published IPA is the exact tested artifact, not a rebuild.
+
+          Test: Settings → FairPlay Laboratory. Import your saved encrypted original IPA and matching private capture ZIP. Run “Test original StoreAgent state (no download)” once, keeping Crumb open. Then Prepare exports → Share diagnostic (no secret blobs).
+
+          This checks original StoreAgent state restoration and account provisioning. It does not decrypt the SINF or generate a decrypted IPA. ready_to_decrypt remains false. No new app download or keybag request is needed.
+
+          IPA SHA256: 393880b4cab7857cca27b523ca881991935d66dc357bc2ef3023609730bd5f91
+
+          Corresponding source archives and licenses are attached.
+          NOTES
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false \
+            --title 'Crumb 23046 — original StoreAgent test' --notes-file release-notes.txt
