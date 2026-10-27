@@ -68,7 +68,7 @@ jobs:
           static void dump(const char *label, pthread_rwlock_t *lock) {
             unsigned char *p=(unsigned char *)lock;
             printf("%s=",label);
-            for (int i=0;i<64;i++) printf("%02x",p[i]);
+            for (int i=0;i<200;i++) printf("%02x",(i>=64 && i<72) ? 0 : p[i]);
             puts("");
           }
           int main(void) {
