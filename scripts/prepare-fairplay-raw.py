@@ -47,6 +47,10 @@ blocks[0x1008c292c] = 'rawSourceBootstrapBlock1008c292c'
 if 0x1001005ac in blocks:
     raise SystemExit('upstream covers byte loop supplement; review before merging')
 blocks[0x1001005ac] = 'rawSourceBootstrapBlock1001005ac'
+for hot in (0x1009a1f04, 0x100b0b1d0, 0x100a1278c, 0x100a42a30, 0x100aa281c):
+    if hot in blocks:
+        raise SystemExit('upstream covers hotspot supplement; review before merging')
+    blocks[hot] = f'rawSourceBootstrapBlock{hot:x}'
 registry = ['// Generated from the pinned translated blocks; no native execution.',
             'package rawsource', 'var knownSourceBlocks = map[uint64]sourceBlock{']
 for address, function in sorted(blocks.items()):
@@ -167,6 +171,7 @@ for name, origin in [('LICENSE-IPATOOL', source.parent.parent / 'LICENSE'),
 (target / 'bootstrap_exit.go').write_text((api.parent / 'fairplayrawsupplement_exit.go').read_text())
 (target / 'bootstrap_exit_test.go').write_text((api.parent / 'fairplayrawsupplement_exit_test.go').read_text())
 (target / 'bootstrap_byteloop.go').write_text((api.parent / 'fairplayrawsupplement_byteloop.go').read_text())
+(target / 'bootstrap_hot.go').write_text((api.parent / 'fairplayrawsupplement_hot.go').read_text())
 
 # Generic instruction profile: data covering every executable-section slot.
 import subprocess, json
