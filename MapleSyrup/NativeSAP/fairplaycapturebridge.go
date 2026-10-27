@@ -187,6 +187,39 @@ func decodeLegacyEnrollment(context, consumer []byte) (result legacyEnrollmentIn
 	return result, nil
 }
 
+// Verify only the actual license-to-capture association. This deliberately
+// does NOT run a modern fairplayd interpreter, derive a model, or claim that
+// the current StoreAgent enrollment can decrypt any binary. It can be used
+// to reopen a genuine original IPA with its retained private transaction
+// even when the cross-generation emulator is unsupported.
+func capturedSINFMatchesDomains(sinfs map[string]bool, domains []fairplay.PortableEnrollmentInput) bool {
+    return len(domains) == 1 && domains[0].SINFSHA256 != "" && sinfs[domains[0].SINFSHA256]
+}
+
+func verifyCaptureIPABinding(source, ipa string) (any, error) {
+    input, err := readLegacyEnrollmentInput(source)
+    if err != nil { return nil, recoveryFailure("offline-binding", "capture_input_invalid", err) }
+    defer input.clear()
+    domains, err := fairplay.PortableEnrollmentInputs(ipa)
+    if err != nil { return nil, enrollmentInventoryFailure(err) }
+    defer func() {
+        for _, domain := range domains {
+            for _, data := range domain.Files { clear(data) }
+        }
+    }()
+    if !capturedSINFMatchesDomains(input.sinfs, domains) {
+        return nil, recoveryFailure("offline-binding", "capture_ipa_mismatch", nil)
+    }
+    return map[string]any{
+        "schema": "crumb-capture-ipa-binding-v1",
+        "matched": true,
+        "encrypted_domain_count": len(domains),
+        "model_validated": false,
+        "plaintext_authenticated": false,
+        "private_material_exported": false,
+    }, nil
+}
+
 func recoverCaptureEnrollment(source, ipa, destination string) (any, error) {
 	input, err := readLegacyEnrollmentInput(source)
 	if err != nil {
