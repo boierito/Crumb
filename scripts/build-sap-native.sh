@@ -21,6 +21,9 @@ tar -xzf "$WORK/ipatool.tar.gz" -C "$WORK"
 SOURCE="$WORK/ipatool-3411d57f451f5111ae115641c22f7ed17bbd5fbe"
 mkdir -p "$SOURCE/wafflebridge"
 cp "$ROOT/MapleSyrup/NativeSAP/main.go" "$SOURCE/wafflebridge/main.go"
+mkdir -p "$SOURCE/wafflebridge/mobilelicense"
+cp "$ROOT/MapleSyrup/NativeSAP/mobilelicense/"*.go "$SOURCE/wafflebridge/mobilelicense/"
+cp "$ROOT/MapleSyrup/NativeSAP/mobilelicense/LICENSE-UPSTREAM" "$SOURCE/wafflebridge/mobilelicense/"
 mkdir -p "$SOURCE/wafflebridge/packageipa"
 cp "$ROOT/MapleSyrup/NativeSAP/packageipa/"*.go "$SOURCE/wafflebridge/packageipa/"
 python3 - "$SOURCE" <<'PY'
@@ -74,6 +77,7 @@ cp "$ROOT/MapleSyrup/NativeSAP/kbsyncretained.go" "$SOURCE/internal/sap/machine/
 cp "$ROOT/MapleSyrup/NativeSAP/kbsyncbridge.go" "$SOURCE/wafflebridge/"
 cp "$ROOT/MapleSyrup/NativeSAP/gueststate_test.go" "$SOURCE/internal/sap/machine/"
 (cd "$SOURCE" && CGO_ENABLED=0 go test -run '^TestGuestState' ./internal/sap/machine)
+(cd "$SOURCE" && CGO_ENABLED=0 GOOS=ios GOARCH=arm64 go build ./wafflebridge/mobilelicense)
 SDK=$(xcrun --sdk iphoneos --show-sdk-path)
 CLANG=$(xcrun --sdk iphoneos --find clang)
 cd "$SOURCE"

@@ -65,6 +65,8 @@ jobs:
           go-version: '1.25.1'
       - name: Test redacted next-target coverage inspector
         run: python3 scripts/test-inspect-fairplay-next-target.py
+      - name: Verify mobile SINF and page primitives against independent reference vectors
+        run: go -C MapleSyrup/NativeSAP/mobilelicense test -race ./...
       - name: Verify streaming IPA preparation
         run: go -C MapleSyrup/NativeSAP/packageipa test -race ./...
 
