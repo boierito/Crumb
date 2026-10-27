@@ -1,0 +1,130 @@
+name: Publish verified ARM64 CAS and native license validation IPA
+on:
+  push:
+    branches: [distribution/23052-atomic-license]
+    paths:
+      - '.github/workflows/publish-fairplay-atomic-license.yml'
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish-tested-artifact:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Require successful pinned CI and artifact provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: f29f5b05d504f508a2a39ac95ecbe17a25301c45
+        shell: bash
+        run: |
+          set -euo pipefail
+          for RUN in 40536492586 40536492601; do
+            test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" --jq .head_sha)" = "$SOURCE_SHA"
+            for ATTEMPT in $(seq 1 40); do
+              STATUS=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" --jq .status)
+              if [ "$STATUS" = completed ]; then break; fi
+              sleep 15
+            done
+            test "$STATUS" = completed
+            test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" --jq .conclusion)" = success
+          done
+      - name: Download completed unsigned Release IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: Crumb-IPA-Release-40536492601
+          run-id: 40536492601
+          github-token: ${{ github.token }}
+          path: ipa-input
+      - name: Download corresponding sources and notices
+        uses: actions/download-artifact@v4
+        with:
+          name: Crumb-Release-40536492601
+          run-id: 40536492601
+          github-token: ${{ github.token }}
+          path: source-input
+      - name: Validate actual IPA and stage a uniquely named asset
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, plistlib, zipfile, shutil, tarfile, json
+          ipa = Path('ipa-input/Crumb-Release.ipa')
+          expected = 'ddd686adb7d243402510a850534b6d97018510cfb4fa63bb75629af44352818b'
+          assert hashlib.sha256(ipa.read_bytes()).hexdigest() == expected, 'Pinned IPA SHA256 does not match'
+          with zipfile.ZipFile(ipa) as z:
+              assert z.testzip() is None, 'IPA ZIP corruption'
+              info = plistlib.loads(z.read('Payload/Crumb.app/Info.plist'))
+              assert info['CFBundleVersion'] == '23052', 'Unexpected build number'
+              assert info['CFBundleIdentifier'] == 'com.certlium.crumb'
+              assert not any(p.endswith('embedded.mobileprovision') for p in z.namelist())
+          shutil.copyfile(ipa, 'release/Crumb-23052-Release.ipa')
+          for filename in ['IPATOOL-LICENSE', 'UNICORN-COPYING',
+                           'ipatool-sap-corresponding-source.tar.gz',
+                           'unicorn-tci-corresponding-source.tar.gz']:
+              src = Path('source-input') / filename
+              assert src.is_file(), 'Missing corresponding source/notice: ' + filename
+              shutil.copyfile(src, Path('release') / filename)
+          with tarfile.open('source-input/ipatool-sap-corresponding-source.tar.gz') as archive:
+              def read(suffix):
+                  matches = [m for m in archive.getmembers() if m.name.endswith(suffix)]
+                  assert len(matches) == 1, 'Source member missing or ambiguous: ' + suffix
+                  return archive.extractfile(matches[0]).read()
+              checks = {'/wafflebridge/recovery/rawsource/native_flow.go': '2847690814de7601fae9d1a7dd546e1fd8be99f3b27797bafa2e5432c6dd6352', '/wafflebridge/recovery/rawsource/native_replay.go': '43f5cdff38a9f5926381c6611e18154acfcc0ebf64eb530ece4afefdb7a14a36', '/wafflebridge/recovery/rawsource/native_fault.go': '8b3968b490d7b6a9febdc0bbb7a9a77623df3189e70e5d9e67c7019fdc5ea7ee', '/wafflebridge/recovery/rawsource/generic.go': 'aa4eabd13f9f0a64434b030b4f9a3b71ec0077fcd3820125dbd676d5a28214e2', '/wafflebridge/recovery/rawsource/generic_atomic.go': '4d2887f4ecfa65e67b7633b63e4958af54501bdce38dffcf854d9eb1d02dee66', '/wafflebridge/recovery/rawsource/candidate_validation.go': '429d0eb4dbf2c9878aec2e25996f89201feb3adc87ac0b357d8bc8f8dedf8387', '/wafflebridge/fairplayauthorizationbridge.go': '8448c243c5f85d0365afeb599a63faaa98ce37160974136734878fc1a9ab94e9', '/wafflebridge/recovery/rawsource/api.go': '5bff09361bf72223475611529b0f09ab6a1020f9ccc379ff308580e14adbb0ea'}
+              for suffix, digest in checks.items():
+                  assert hashlib.sha256(read(suffix)).hexdigest() == digest, 'Source mismatch: ' + suffix
+              assert b'attachNativeText(rawSourceBinaryHash,imageTextAddress,text)' in read('/wafflebridge/recovery/rawsource/generic_embed.go')
+              api = read('/wafflebridge/recovery/rawsource/api.go')
+              assert b'runNativeRegion(worker' in api and b'runRawSourceKernelLoop(worker' not in api
+              assert hashlib.sha256(read('/wafflebridge/recovery/rawsource/profiles/fairplay-immutable-text.bin.gz')).hexdigest() == '7038211db09dcd03828ee394e1983dd8b2747b37f95df035d83949f8a2703ee5'
+              manifest = read('/wafflebridge/recovery/rawsource/IMMUTABLE-IMAGE-PROVENANCE.json')
+              assert json.loads(manifest)['binary_sha256'] == '1e58d37e9602dd0ca5e24b14762063b6c310248b4d3a94272771d815e4ea1784'
+              Path('release/immutable-image-provenance.json').write_bytes(manifest)
+          print('Verified SHA256:', expected)
+          PY
+      - name: Publish a separate GitHub prerelease for the tested checkpoint
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=test-23052-atomic-license-validation
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft >/dev/null 2>&1; then
+            test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --prerelease \
+              --target f29f5b05d504f508a2a39ac95ecbe17a25301c45 --title 'Crumb 23052 — native license validation and ARM64 CAS' \
+              --notes 'Verified experimental build; complete provenance and test instructions follow before publication.'
+          fi
+          gh release upload "$TAG" release/* --repo "$GITHUB_REPOSITORY" --clobber
+          cat > release-notes.txt <<'NOTES'
+          Crumb 23052 — validación de modelos nativos y CAS ARM64. IPA Release sin firmar, para actualizar con tu método habitual conservando los datos y la misma identidad de firma.
+          
+          El diagnóstico 23051 no intentó validar el SINF: agotó visitas al punto nativo antes de obtener un checkpoint Source/Frame. Su repetición genérica se detuvo en CASAL, text+0x9885a0. Ninguno de esos resultados demostró una clave válida.
+          
+          Cambios generales:
+          - La validación contra el SINF original se realiza independientemente del checkpoint auxiliar. Las visitas repetidas con material idéntico no consumen el límite; se acotan 256 comprobaciones criptográficas distintas y toda la ejecución.
+          - Se conserva privadamente el modelo exacto que el SINF acepta. El motor sigue exigiendo Source/Frame coherentes antes de devolverlo; no reconstruye después un modelo diferente desde memoria transitoria.
+          - El intérprete ejecuta toda la familia escalar CAS de ARM64: byte, halfword, 32/64 bits y variantes de ordenamiento. Usa instrucciones del texto inmutable verificado, nunca código modificable del invitado. No hay JIT ni excepciones por dirección.
+          - La repetición genérica sigue siendo única, desde estado limpio, y también cubre límites de ejecución. Sus intentos de SINF se informan por separado. No repite la autorización de red.
+          
+          Verificación: seis jobs CI y compilaciones iOS Debug/Release satisfactorios; 3.610 programas completos comparados con ARM64 independiente, incluidos 256 casos CAS, sin nuevos mapeos ejecutables; ejecución del CASAL exacto y censo de los 61 sitios CAS del binario real; pruebas de fallos, aislamiento y limpieza; suite portátil y vectores móviles/páginas existentes.
+          
+          Estas pruebas no demuestran una inscripción móvil real ni una IPA descifrada. La credencial válida, la compatibilidad del productor nativo y el primer descifrado completo siguen sin verificarse en el iPhone. Se mantienen los controles del SINF original, Source/Frame, selectores, Mach-O, páginas y exportación.
+          
+          Prueba con los mismos recursos del diagnóstico anterior:
+          1. Actualizá Crumb sin desinstalarlo y comprobá que muestra 23052.
+          2. Abrí Settings → FairPlay Laboratory. Reutilizá la IPA original ya seleccionada. Si la selección no persiste, elegí Import existing encrypted IPA from Files y seleccioná el mismo archivo; conservá la captura anterior.
+          3. Pulsá Authorize account and validate this IPA una vez. Dejá Crumb abierto y el iPhone desbloqueado hasta que termine. No hace falta comprar ni descargar otra aplicación para esta comprobación.
+          4. Prepare exports → Share diagnostic. Compartí el JSON diagnóstico. El intento puede seguir siendo rechazado: no se declara éxito sin validar la licencia y el contenido completo.
+          
+          Código: https://github.com/boierito/Crumb/pull/16
+          Commit: f29f5b05d504f508a2a39ac95ecbe17a25301c45
+          Árbol verificado, idéntico al merge de prueba del PR: 50bc282021eb9345ed2e6f4aeccda7d44b951ebf
+          Tests: https://github.com/boierito/Crumb/actions/runs/40536492586
+          Build: https://github.com/boierito/Crumb/actions/runs/40536492601
+          IPA SHA256: ddd686adb7d243402510a850534b6d97018510cfb4fa63bb75629af44352818b
+          NOTES
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false \
+            --title 'Crumb 23052 — native license validation and ARM64 CAS' --notes-file release-notes.txt
