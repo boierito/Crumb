@@ -37,3 +37,11 @@ account authorization state saved in the iPhone sandbox. The SINF candidate in
 that experiment was rejected. Neither reaching a new import nor a successful
 pthread operation proves that this state can produce a mobile license. All
 original-SINF, source/frame and IPA validation gates remain mandatory.
+
+After the QoS call, the original-capture replay encountered a 64-bit SIMD
+pair load in the pinned native epilogue. The generic interpreter now supports
+64-bit SIMD pair loads and stores with signed offset, pre-index and post-index
+addressing. Sixty synthetic cases compare registers, flags, vectors and memory
+against Unicorn, including both forms of the observed epilogue. Other pair
+formats and unpredictable duplicate load destinations remain rejected. This
+adds instruction coverage, not evidence of a validated license.

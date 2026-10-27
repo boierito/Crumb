@@ -183,6 +183,15 @@ func runGenericInstructionBlock(s *state, runtime *rawSourceRuntime, start uint6
 					pc += 4
 					continue
 				}
+				handled, err = runGenericSIMDPair64(s, word)
+				if err != nil {
+					return pc, false, err
+				}
+				if handled {
+					runtime.genericInstructions++
+					pc += 4
+					continue
+				}
 			}
 			runtime.recordUnknownPC(pc)
 			return pc, false, &genericExecutionError{"generic_unsupported_instruction"}

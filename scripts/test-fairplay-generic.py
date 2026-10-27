@@ -130,6 +130,19 @@ def main():
                     word=0x08a07c00|(size<<30)|((order>>1)<<22)|((order&1)<<15)|(rs<<16)|(rn<<5)|rt
                     add(struct.pack('<I',word)+branch,registers=regs,pages={0x600000:bytes(page)},sp=address,flags=[bool(rng.getrandbits(1)) for _ in range(4)])
                     cas_cases+=1
+    # 64-bit SIMD pair load/store, including the exact epilogue forms found
+    # in the pinned daemon, negative offsets, SP and register writeback.
+    pair_cases=0
+    for operation in ('ldp','stp'):
+        for mode in ('offset','pre','post'):
+            for offset in (-128,-8,0,8,120):
+                for base in ('sp','x19'):
+                    address=f'[{base}, #{offset}]' if mode=='offset' else (f'[{base}, #{offset}]!' if mode=='pre' else f'[{base}], #{offset}')
+                    code=bytes(ks.asm(f'{operation} d9, d8, {address}')[0])+branch
+                    regs=[rng.getrandbits(64) for _ in range(31)];regs[19]=0x600800
+                    vectors=[list(rng.randbytes(16)) for _ in range(32)]
+                    add(code,registers=regs,vectors=vectors,pages={0x600000:rng.randbytes(4096)},sp=0x600800)
+                    pair_cases+=1
     # Branch from __text to a different executable section through a register.
     # A deliberate non-executable gap separates the two sections.
     add(bytes(ks.asm('br x5')[0]))
@@ -147,7 +160,7 @@ def main():
         source_hash=hashlib.sha256(binary).hexdigest();profile=work/'synthetic.ir.gz';report=work/'census.json'
         subprocess.run([str(compiler/'compiler'),'--binary',str(binary_path),'--binary-sha256',source_hash,'--output',str(profile),'--report',str(report)],check=True)
         census=json.loads(report.read_text())
-        assert census['unsupported_slots']==cas_cases,census
+        assert census['unsupported_slots']==cas_cases+pair_cases,census
         assert census['span_slots']>census['instruction_slots'] and len(census['executable_sections'])==2,census
         subprocess.run(['python3',str(ROOT/'scripts/prepare-fairplay-generic.py'),'runtime',str(runner)],check=True)
         archive=ROOT/'third_party/archives'/f'ipatool-fairplay-{REV}.tar.gz'
