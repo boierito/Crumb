@@ -230,16 +230,16 @@ final class FairPlayLab: ObservableObject {
     // to re-run all local audits. Importing either does not authenticate DRM.
     private func verifyImportedBinding(_ archive: URL, ipa: URL) async throws {
         let report = try await Task.detached {
-            try FairPlayNative.run("research-bridge", source: archive, ipa: ipa)
+            try FairPlayNative.run("verify-capture-ipa", source: archive, ipa: ipa)
         }.value
         guard let data = report.data(using: .utf8),
               let envelope = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               envelope["ok"] as? Bool == true,
               let result = envelope["result"] as? [String: Any],
-              result["schema"] as? String == "crumb-storeagent-fairplayd-bridge-v1",
-              result["sidb_observed"] as? Bool == true,
-              let status = result["status"] as? String,
-              ["sinf_rejected", "cryptographic_model_validated"].contains(status) else {
+              result["schema"] as? String == "crumb-capture-ipa-binding-v1",
+              result["matched"] as? Bool == true,
+              result["encrypted_domain_count"] as? Int == 1,
+              result["model_validated"] as? Bool == false else {
             throw CocoaError(.fileReadCorruptFile)
         }
     }
