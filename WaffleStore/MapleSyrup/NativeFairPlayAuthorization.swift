@@ -6,8 +6,9 @@ nonisolated enum NativeFairPlayAuthorization {
     enum Failure: Error { case native(String), malformedReply }
     static func stateDirectory(account: StoreAccount) throws -> URL {
         let key = SHA256.hash(data: Data((account.dsid + ":" + account.guid).utf8)).map { String(format: "%02x", $0) }.joined()
-        let documents = try FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-        let directory = documents.appendingPathComponent("FairPlayAccounts", isDirectory: true).appendingPathComponent(key, isDirectory: true)
+        // Persistent license state is internal: Documents is exposed in Files.
+        let support = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        let directory = support.appendingPathComponent("FairPlayAccounts", isDirectory: true).appendingPathComponent(key, isDirectory: true)
         try FairPlayNative.privateDirectory(directory)
         return directory
     }
