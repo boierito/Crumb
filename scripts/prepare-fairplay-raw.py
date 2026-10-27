@@ -60,6 +60,11 @@ for name in names:
     text = (source / name).read_text()
     text = re.sub(r'^//go:build[^\n]*\n', '', text)
     text = text.replace('package main', 'package rawsource', 1)
+    if name == 'oracle.go':
+        fault = 'return nil, fmt.Errorf("oracle memory address %#x is outside the model", address)'
+        if text.count(fault) != 1:
+            raise SystemExit('oracle unmapped memory contract changed')
+        text = text.replace(fault, 'return nil, &sourceMemoryError{address: address, write: write}')
     if name == 'raw_source_step.go':
         # Replace the pinned bump allocator as a unit. Its old fixed 1 MiB
         # advance aliases every larger allocation with subsequent allocations.
@@ -77,7 +82,7 @@ for name in names:
         lookup = 'return bestSuffix, bestData, bestSuffix != ""'
         if text.count(field) != 1 or text.count(lookup) != 1:
             raise SystemExit('raw runtime lookup contract changed')
-        text = text.replace(field, field + '\n lookupCounts map[string]LookupCount\n stateFileLookupCounts map[string]LookupCount\n stateLookupsByPhase map[string]LookupCount\n phase string\n currentInstruction uint64\n executionContext string\n lastExternalSlot string\n unmodeledExternalSlot string\n lastKnownBlock uint64\n additionalBlocks int\n untranslatedTarget string\n targetClass string\n genericBlocks int\n genericInstructions uint64\n genericLastPC uint64\n checkpointCompared bool\n sourceChangedAfterSINF bool\n frameChangedAfterSINF bool')
+        text = text.replace(field, field + '\n lookupCounts map[string]LookupCount\n stateFileLookupCounts map[string]LookupCount\n stateLookupsByPhase map[string]LookupCount\n phase string\n genericOnly bool\n observe func(uint64)\n boundary func() (bool,error)\n candidateChecks int\n currentInstruction uint64\n executionContext string\n lastExternalSlot string\n unmodeledExternalSlot string\n lastKnownBlock uint64\n additionalBlocks int\n untranslatedTarget string\n targetClass string\n genericBlocks int\n genericInstructions uint64\n genericLastPC uint64\n checkpointCompared bool\n sourceChangedAfterSINF bool\n frameChangedAfterSINF bool')
         entry = 'returnAddress := s.x[30]'
         if text.count(entry) != 1: raise SystemExit('external entry contract changed')
         text = text.replace(entry, entry + '\n r.lastExternalSlot = sourceExternalImportSlot(pc)\n r.executionContext = "external"')
@@ -201,3 +206,7 @@ if any(function not in function_ends for function in blocks.values()):
 (target/'engine_geometry_test.go').write_text('package rawsource\nvar auditBlockEnd=map[uint64]uint64{\n' +
     ''.join(f'0x{pc:x}:0x{function_ends[function]:x},\n' for pc, function in sorted(blocks.items())) + '}\n')
 (target/'engine_comparison_test.go').write_bytes((api.parent/'fairplayrawengines_test.go').read_bytes())
+
+for name in ('flow', 'replay', 'fault'):
+    (target/f'native_{name}.go').write_bytes((api.parent/f'fairplayraw{name}.go').read_bytes())
+    (target/f'native_{name}_test.go').write_bytes((api.parent/f'fairplayraw{name}_test.go').read_bytes())

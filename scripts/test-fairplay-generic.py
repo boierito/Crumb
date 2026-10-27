@@ -23,9 +23,10 @@ BASE=0x100001000
 REV='f7242cce58077a4af8db738ed295ee23ad8f067d'
 ARCHIVE_SHA='e89a89c4af74a8b0e6f682efdf89edc36bc093874d706d8f27f43e657bd3ec39'
 HARNESS=r'''package main
-import("encoding/json";"encoding/hex";"os")
-type rawSourceRuntime struct {stopPC uint64;genericBlocks int;genericInstructions uint64;genericLastPC,currentInstruction uint64;executionContext string;untranslatedTarget,targetClass string}
-func (r *rawSourceRuntime) recordUnknownPC(pc uint64){}
+import("encoding/json";"encoding/hex";"os";"fmt")
+type rawSourceRuntime struct {stopPC,lastKnownBlock uint64;genericOnly bool;observe func(uint64);boundary func()(bool,error);additionalBlocks int;genericBlocks int;genericInstructions uint64;genericLastPC,currentInstruction uint64;executionContext string;untranslatedTarget,targetClass string}
+var knownSourceBlocks=map[uint64]sourceBlock{}
+func (r *rawSourceRuntime) handle(s *state,pc uint64)(uint64,error){return pc,fmt.Errorf("external operation unavailable in isolated fixture")}
 type fixture struct {PC,SP uint64;Chunks int;Registers [31]uint64;Flags [4]bool;Vectors [32][16]byte;Pages map[uint64][]byte}
 type result struct {PC,SP uint64;Registers [31]uint64;Flags [4]bool;Vectors [32][16]byte;Pages map[uint64][]byte}
 func main(){
@@ -37,7 +38,7 @@ func main(){
  for _,f:=range inputs {
   m:=&model{registers:f.Registers,pages:f.Pages,sp:f.SP,n:f.Flags[0],z:f.Flags[1],c:f.Flags[2],v:f.Flags[3]}
   s:=newState(m);s.reset();s.vectors=f.Vectors
-  pc:=f.PC;runtime:=&rawSourceRuntime{};for chunk:=0;chunk<max(1,f.Chunks);chunk++ {var stop bool;pc,stop,err=runGenericInstructionBlock(s,runtime,pc);if err!=nil||stop{panic("generic execution failed")}}
+  runtime:=&rawSourceRuntime{genericOnly:true};pc,err:=runNativeRegion(s,runtime,f.PC,nativeRegion{"differential",f.PC,0x200000,1,128});if err!=nil{panic("native region execution failed: "+err.Error())}
   pages:=map[uint64][]byte{};for address:=range f.Pages {value,err:=s.outputBytes(address,4096);if err!=nil{panic(err)};pages[address]=value}
   results=append(results,result{pc,s.sp,s.x,[4]bool{s.n,s.z,s.c,s.v},s.vectors,pages})
  }
@@ -103,6 +104,13 @@ def main():
         for _ in range(8):
             vectors=[list(rng.randbytes(16)) for _ in range(32)]
             add(bytes(ks.asm(instruction)[0])+branch,vectors=vectors)
+    # Full native execution of data-dependent loops and calls/returns. The
+    # region runner must follow PCs rather than an assumed chunk count.
+    for n in range(1,33):
+        code=bytes(ks.asm(f'mov x0,#{n}; mov x1,#0; again: add x1,x1,#3; subs x0,x0,#1; b.ne again; br x28')[0])
+        add(code);cases[-1]['NativeCount']=3*n+3
+    for _ in range(32):
+        add(bytes(ks.asm('bl inner; add x4,x4,#2; br x28; inner: add x3,x3,#7; ret')[0]))
     # Branch from __text to a different executable section through a register.
     # A deliberate non-executable gap separates the two sections.
     add(bytes(ks.asm('br x5')[0]))
@@ -129,6 +137,7 @@ def main():
         upstream=work/'upstream'/f'ipatool-{REV}/tools/fairplay-recovery'
         for name in ('oracle.go','generated_26b118.go','input_size_default.go'):(runner/name).write_bytes((upstream/name).read_bytes())
         (runner/'generic.go').write_bytes((ROOT/'MapleSyrup/NativeSAP/fairplaygeneric.go').read_bytes())
+        for name in ('fairplayrawblocks.go','fairplayrawflow.go'):(runner/name).write_bytes((ROOT/'MapleSyrup/NativeSAP'/name).read_bytes())
         for name in runner.glob('*.go'):name.write_text(name.read_text().replace('package rawsource','package main',1))
         (runner/'main.go').write_text(HARNESS)
         subprocess.run(['go','build','-o',str(work/'runner'),*map(str,runner.glob('*.go'))],check=True,timeout=120)
@@ -159,7 +168,7 @@ def main():
         actual=json.loads(result.stdout);assert len(actual)==len(expected)
         for i,(observed,reference) in enumerate(zip(actual,expected)):
             assert observed==reference,(i,[key for key in observed if observed[key]!=reference[key]])
-    print(f'{len(cases)} generic-profile programs match independent ARM64 execution; no per-PC functions used.')
+    print(f'{len(cases)} native-region programs match independent ARM64 execution, including loops, calls/returns and executable-section transitions.')
     if sys.platform=='linux' and platform.machine()=='x86_64':print('Generic execution also passed with new mmap/mprotect PROT_EXEC mappings denied by seccomp.')
 
 if __name__=='__main__':main()

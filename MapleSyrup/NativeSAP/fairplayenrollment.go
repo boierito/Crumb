@@ -170,7 +170,10 @@ func recoverModernEnrollment(source, ipa, destination string) (any, error) {
 			err = mapErr
 			continue
 		}
-		recovered, err = rawsource.Recover(manifest.App.ExecutablePath, files[manifest.HardwareMAC.Path], mappings)
+		recovered, err = rawsource.RecoverValidated(manifest.App.ExecutablePath, files[manifest.HardwareMAC.Path], mappings, func(pack []byte) bool {
+			valid, _ := probeModelSINF(mappings, pack)
+			return valid
+		})
 		if err == nil {
 			break
 		}

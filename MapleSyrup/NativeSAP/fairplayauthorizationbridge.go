@@ -210,7 +210,11 @@ func finishAuthorization(r authorizationRequest) (any, error) {
 		}
 	}()
 	for _, domain := range s.domains {
-		value, e := rawsource.Recover(domain.ExecutablePath, s.hardware, causalMappings(domain, files, files["SC Info.sidb"]))
+		value, e := rawsource.RecoverValidated(domain.ExecutablePath, s.hardware, causalMappings(domain, files, files["SC Info.sidb"]), func(pack []byte) bool {
+			report["sinf_validation_attempted"] = true
+			valid, _ := probeModelSINF(domain.Files, pack)
+			return valid
+		})
 		if e != nil {
 			report["status"] = "model_recovery_rejected"
 			report["failure"] = labFailureFields("authorization-sinf", e)

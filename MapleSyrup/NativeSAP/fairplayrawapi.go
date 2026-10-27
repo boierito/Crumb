@@ -10,6 +10,9 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+
+	frameTransform "github.com/majd/ipatool/v2/wafflebridge/recovery/frame"
+	stateTransform "github.com/majd/ipatool/v2/wafflebridge/recovery/state"
 )
 
 var recoveryLock sync.Mutex
@@ -31,6 +34,9 @@ type RecoveryDiagnostic struct {
 	FaultInstruction       string                 `json:"fault_instruction,omitempty"`
 	FaultContext           string                 `json:"fault_context,omitempty"`
 	FaultExternalSlot      string                 `json:"fault_external_slot,omitempty"`
+	CandidateChecks        int                    `json:"candidate_sinf_checks,omitempty"`
+	FaultRegion            string                 `json:"fault_region,omitempty"`
+	Replay                 *replayDiagnostic      `json:"generic_replay,omitempty"`
 	UnmodeledExternalSlot  string                 `json:"unmodeled_external_slot,omitempty"`
 	StateLookupsByPhase    map[string]LookupCount `json:"state_lookups_by_phase,omitempty"`
 	Failure                string                 `json:"failure"`
@@ -57,9 +63,17 @@ func RecoveryDetails(err error) (RecoveryDiagnostic, bool) {
 		return RecoveryDiagnostic{}, false
 	}
 	result := classified.diagnostic
+	if result.Replay != nil {
+		copy := *result.Replay
+		result.Replay = &copy
+	}
 	result.Lookups = make(map[string]LookupCount, len(classified.diagnostic.Lookups))
 	for key, count := range classified.diagnostic.Lookups {
 		result.Lookups[key] = count
+	}
+	result.StateLookupsByPhase = make(map[string]LookupCount, len(classified.diagnostic.StateLookupsByPhase))
+	for key, count := range classified.diagnostic.StateLookupsByPhase {
+		result.StateLookupsByPhase[key] = count
 	}
 	result.StateFileTypes = make(map[string]LookupCount, len(classified.diagnostic.StateFileTypes))
 	for key, count := range classified.diagnostic.StateFileTypes {
@@ -95,10 +109,14 @@ func runtimeDiagnostic(phase, code string, runtime *rawSourceRuntime) RecoveryDi
 				diagnostic.FaultExternalSlot = runtime.lastExternalSlot
 			}
 		}
+		diagnostic.CandidateChecks = runtime.candidateChecks
 		diagnostic.SharedBlockExecutions = runtime.additionalBlocks
 		diagnostic.ExecutionBackend = "aot"
 		if runtime.genericBlocks > 0 {
 			diagnostic.ExecutionBackend = "generic-profile"
+		}
+		if runtime.genericOnly {
+			diagnostic.ExecutionBackend = "generic-only"
 		}
 		diagnostic.GenericInstructions = runtime.genericInstructions
 		diagnostic.GenericLastInstruction = sourceBlockLabel(runtime.genericLastPC)
@@ -144,7 +162,9 @@ func runtimeFailure(phase string, err error, runtime *rawSourceRuntime) error {
 	case strings.Contains(message, "unsupported"):
 		code = "raw_unsupported_operation"
 	}
-	return recoveryFailed(phase, code, runtime)
+	diagnostic := runtimeDiagnostic(phase, code, runtime)
+	diagnostic.FaultRegion = memoryFaultRegion(err)
+	return &recoveryError{diagnostic}
 }
 func (r *rawSourceRuntime) recordLookup(requested string, found bool) {
 	category := "other"
@@ -263,42 +283,99 @@ func observePostSINFOutputs(runtime *rawSourceRuntime, checkpoint enrollmentOutp
 	runtime.frameChangedAfterSINF = !bytes.Equal(checkpoint.frame, postFrame)
 }
 
-// Preserve the upstream natural path and bounds while identifying its phases.
-func runEnrollmentSource(value *model, runtime *rawSourceRuntime) (enrollmentOutputCheckpoint, error) {
+// Phase labels are observations of one continuous native execution, never
+// instructions to restart at a fixed PC or assume a particular visit count.
+func runEnrollmentSource(value *model, runtime *rawSourceRuntime, validate func([]byte) bool) (enrollmentOutputCheckpoint, error) {
 	if value.binaryHash != rawSourceBinaryHash {
 		return enrollmentOutputCheckpoint{}, recoveryFailed("resource", "raw_binary_mismatch", runtime)
 	}
 	worker := newState(value)
 	worker.reset()
 	lastRawSourceState = worker
+	var checkpoint enrollmentOutputCheckpoint
+	frameVisits, candidates := 0, 0
 	runtime.phase = "account-parser"
-	if _, _, err := runRawSourceAccountEntryCFG(worker, runtime, 1000000); err != nil {
-		return enrollmentOutputCheckpoint{}, runtimeFailure("account-parser", err, runtime)
+	runtime.observe = func(pc uint64) {
+		switch pc {
+		case nativeEnrollmentStart:
+			runtime.phase = "account-parser"
+		case 0x10057ae74:
+			runtime.phase = "bootstrap"
+		case 0x1005b7438:
+			runtime.phase = "source"
+		case 0x1006b10a0:
+			runtime.phase = "selection"
+		case nativeFrameLandmark:
+			frameVisits++
+			runtime.phase = "sinf"
+			candidate, err := checkpointEnrollmentOutputs()
+			if err == nil && verifyEnrollmentCheckpoint(candidate) {
+				checkpoint.clear()
+				checkpoint = candidate
+			} else {
+				candidate.clear()
+			}
+		}
 	}
-	runtime.phase = "bootstrap"
-	if _, _, err := runRawSourceBootstrapCFG(worker, runtime, 1000000); err != nil {
-		return enrollmentOutputCheckpoint{}, runtimeFailure("bootstrap", err, runtime)
+	runtime.boundary = func() (bool, error) {
+		candidates++
+		if candidates > 64 {
+			return false, &genericExecutionError{"native_candidate_limit"}
+		}
+		// First-frame/SIDB returns may reach the same native landmark. Rejecting
+		// their candidate must continue at this PC, never restart the frame body.
+		if len(checkpoint.source) == 0 {
+			candidate, err := checkpointEnrollmentOutputs()
+			if err == nil && verifyEnrollmentCheckpoint(candidate) {
+				checkpoint = candidate
+			} else {
+				candidate.clear()
+			}
+		}
+		if len(checkpoint.source) == 0 {
+			return false, nil
+		}
+		if validate == nil {
+			return frameVisits >= 2, nil
+		}
+		pack, err := currentRawSourceEnrollmentPack()
+		if err != nil {
+			return false, nil
+		}
+		defer clear(pack)
+		runtime.candidateChecks++
+		return validate(pack), nil
 	}
-	runtime.phase = "source"
-	runtime.currentInstruction, runtime.executionContext = 0, ""
-	if _, err := runRawSourceKernelLoop(worker, "outer"); err != nil {
-		return enrollmentOutputCheckpoint{}, runtimeFailure("source", err, runtime)
-	}
-	runtime.phase = "selection"
-	if _, _, err := runRawSourceSelectionCFG(worker, runtime, 2000000); err != nil {
-		return enrollmentOutputCheckpoint{}, runtimeFailure("selection", err, runtime)
-	}
-	checkpoint, err := checkpointEnrollmentOutputs()
+	defer func() { runtime.observe, runtime.boundary = nil, nil }()
+	region := nativeRegion{"enrollment", nativeEnrollmentStart, nativeEnrollmentEnd, 1, maxNativeRecoveryBlocks}
+	_, err := runNativeRegion(worker, runtime, region.start, region)
 	if err != nil {
-		return enrollmentOutputCheckpoint{}, recoveryFailed("selection-output", "raw_selection_output_unavailable", runtime)
-	}
-	runtime.phase = "sinf"
-	if _, _, err := runRawSourceSINFEntryCFG(worker, runtime, 2000000); err != nil {
 		checkpoint.clear()
-		return enrollmentOutputCheckpoint{}, runtimeFailure("sinf", err, runtime)
+		return enrollmentOutputCheckpoint{}, runtimeFailure(runtime.phase, err, runtime)
 	}
+
 	observePostSINFOutputs(runtime, checkpoint)
 	return checkpoint, nil
+}
+
+func verifyEnrollmentCheckpoint(checkpoint enrollmentOutputCheckpoint) bool {
+	if len(checkpoint.source) != 224 || len(checkpoint.frame) != 16 {
+		return false
+	}
+	transformed, err := stateTransform.Evaluate(checkpoint.source, nil)
+	if err != nil {
+		return false
+	}
+	defer clear(transformed)
+	for offset := 0; offset+16 <= len(transformed); offset += 16 {
+		candidate, err := frameTransform.Evaluate(transformed[offset:offset+16], nil)
+		matches := err == nil && bytes.Equal(candidate, checkpoint.frame)
+		clear(candidate)
+		if matches {
+			return true
+		}
+	}
+	return false
 }
 
 func VerifyResource() bool {
@@ -311,6 +388,12 @@ func VerifyResource() bool {
 // in process. The caller must validate the pack against the target IPA before
 // treating it as usable. No material is logged or returned in diagnostics.
 func Recover(executable string, hardware []byte, files map[string][]byte) (Result, error) {
+	return RecoverValidated(executable, hardware, files, nil)
+}
+
+// RecoverValidated accepts candidates only at naturally reached native
+// landmarks. The callback must check the original SINF, not return status alone.
+func RecoverValidated(executable string, hardware []byte, files map[string][]byte, validate func([]byte) bool) (Result, error) {
 	var result Result
 	if len(hardware) != 6 || executable == "" || len(files) == 0 || len(files) > 256 {
 		return result, recoveryFailed("inputs", "raw_invalid_inputs", nil)
@@ -320,6 +403,13 @@ func Recover(executable string, hardware []byte, files map[string][]byte) (Resul
 	if !VerifyResource() {
 		return result, recoveryFailed("resource", "raw_resource_invalid", nil)
 	}
+	return recoverWithReplay(func(genericOnly bool) (Result, error) {
+		return recoverAttempt(executable, hardware, files, genericOnly, validate)
+	})
+}
+
+func recoverAttempt(executable string, hardware []byte, files map[string][]byte, genericOnly bool, validate func([]byte) bool) (Result, error) {
+	var result Result
 	value, err := loadModelBytes(rawSourceModel)
 	if err != nil {
 		return result, recoveryFailed("resource", "raw_resource_invalid", nil)
@@ -353,6 +443,7 @@ func Recover(executable string, hardware []byte, files map[string][]byte) (Resul
 	if err := configureRawSourceRuntime(value, "enrollment-sinf", nil, "", executable, 0); err != nil {
 		return result, recoveryFailed("configure", "raw_setup_failed", activeRawSourceRuntime)
 	}
+	activeRawSourceRuntime.genericOnly = genericOnly
 	activeRawSourceRuntime.mac = append([]byte(nil), hardware...)
 	total := 0
 	for name, data := range files {
@@ -362,7 +453,7 @@ func Recover(executable string, hardware []byte, files map[string][]byte) (Resul
 		}
 		activeRawSourceRuntime.files[name] = append([]byte(nil), data...)
 	}
-	checkpoint, err := runEnrollmentSource(value, activeRawSourceRuntime)
+	checkpoint, err := runEnrollmentSource(value, activeRawSourceRuntime, validate)
 	if err != nil {
 		return result, err
 	}
