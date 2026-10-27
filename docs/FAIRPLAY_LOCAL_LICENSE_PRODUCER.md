@@ -145,3 +145,71 @@ native error text, state bytes, DSID, identity or paths.
 
 This is the device acceptance test for the producer restoration path, not a
 request to rerun the previous modern-fairplayd bridge or SIDB mutation probes.
+
+## Owner-device result and authorization producer investigation
+
+The owner's build-23046 diagnostic on iOS 27.0.1 completed the original-producer
+probe in 18,679 ms: exact capture/SINF binding passed, the SIDB remained unchanged
+after initialization, and the native account query completed with diversity
+required. The same transaction had 196-byte KBSync, 888-byte keybag, one 440-byte
+SINF private record, and 884 bytes across two virtual files (one nonempty).
+These sanitized observations do not identify the account, license selector or
+any private bytes. The private capture itself is not present in this workspace.
+
+This confirms the probe executed on the owner's iPhone without discarding its
+saved SIDB. It does not prove that the account is empty, that all account state
+was consumed, or that a license was decrypted. `sinf_model_verified=false` in
+this particular probe is a deliberately false pending-stage flag: the probe
+**does not attempt SINF cryptography**. It must not be described as a rejected
+candidate-key test.
+
+Following the only `needDiversityForDSID:` selector reference in the pinned
+StoreAgent identifies a separate machine-authorization flow:
+
+- `PurchaseController authorizeMachineWithInfo:clientIdentity:` resolves the
+  Bag key `authorizeMachine` at text+0x5925f. The request-body block generates
+  KBSync at text+0x5988f with arguments `(global, dsid, 0, 2, out, length)`.
+  Original purchase/download callers instead use mode 1; Crumb's existing
+  download generation matches those callers and is not changed to mode 2.
+- At text+0x59a27 the request builder queries `needDiversityForDSID:`. Only when
+  nonzero does it add the string value `"1"` under the `needDiv` key. It also
+  sends typed KBSync data, GUID and machineName in a POST plist.
+- The response handler imports `keybag` via text+0xd5ce0, then separately
+  extracts `diversitybag` at text+0x59cff and imports it via text+0xcdea0. Its
+  call at text+0x59d8f passes `(global-u32, bytes-pointer, length-u32)`.
+- The original authorization path also invokes ADI request mutation. Static
+  code in `ADIController _mutateURLRequest:onCurrentThreadWithDSID:` adds
+  X-Apple-MD-M, X-Apple-MD and, when present, X-Apple-MD-S. This is not evidence
+  that every server authorization requires those headers, but their protocol
+  semantics must be investigated before claiming a complete emulation.
+
+The public Bag for the Configurator profile currently resolves `authorizeMachine`
+to Apple's `/commerce/machine/authorize` endpoint. That discovery is read-only;
+no machine-authorization request was sent and no device slot was consumed.
+The endpoint is not copied into the ordinary ent/download request, and `needDiv`
+is not blindly added to that different protocol.
+
+Implemented internal producer primitives `AuthorizationSync` and
+`ImportDiversityBag`, using those source-identified native calls on the retained
+session. They return private protocol material/native status; neither returns
+a logical key or marks a SINF valid. The hash/ABI verifier now checks the
+mode-2 call, distinct import call and original protocol literals. A native
+host execution generated a 196-byte authorization sync and rejected a public
+invalid diversity response with status -42018. These results validate the
+entrypoints and rejection behavior only, not real enrollment.
+
+Remaining critical work: reproduce the complete authorized request/session and
+its ADI challenge semantics, obtain a genuine matching diversity reply locally,
+import it in that same producer, and test the original SINF with the resulting
+material. Diversity provisioning is a source-backed hypothesis, not a claim
+that it alone solves mobile FairPlay. Preserve the owner's current capture and
+IPA for those tests; repeating downloads or the completed restoration probe
+cannot establish the missing cryptographic step.
+
+The full non-JIT host command passed after adding these primitives: the original
+producer restoration/rejection probe took 116.22 s, the authorization primitive
+probe took 49.63 s, and the SAP/KBSync smoke suite took 51.86 s. The authorization
+probe generated a 196-byte native sync and required an actual nonzero native
+status (-42018) for invalid diversity data; an interpreter error cannot satisfy
+that test. Closed-session checks and existing VFS tests also passed with -race.
+No authorization request or real diversity import was performed by these tests.

@@ -57,3 +57,49 @@ func TestProducerNativeUnenrolledAndRejectedState(t *testing.T) {
 		t.Fatal("capture changed")
 	}
 }
+
+// Validate the newly identified authorization primitives without sending an
+// authorization request or using a real account. Native rejection is distinct
+// from an interpreter failure and can never be treated as enrollment.
+func TestProducerNativeAuthorizationPrimitives(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	bundle, err := assets.Load(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	producer, downloadSync, err := OpenRetainedKBSync(ctx, bundle, []byte{2, 0, 0, 0, 0, 1}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer producer.Close()
+	defer clear(downloadSync)
+	sync, err := producer.AuthorizationSync(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clear(sync)
+	if len(sync) == 0 {
+		t.Fatal("native authorization sync empty")
+	}
+	t.Logf("native authorization sync bytes=%d; contents withheld; no authorization request sent", len(sync))
+	status, files, _, err := producer.ImportDiversityBag([]byte("PUBLIC invalid diversity response"))
+	defer func() {
+		for _, b := range files {
+			clear(b)
+		}
+	}()
+	if err != nil {
+		t.Fatalf("interpreter failed before native rejection: %v", err)
+	}
+	if status == 0 {
+		t.Fatal("invalid diversity response accepted")
+	}
+	t.Logf("native invalid diversity response rejected with status=%d", status)
+	if err := producer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := producer.AuthorizationSync(1); err == nil || output != nil {
+		t.Fatal("closed producer generated authorization material")
+	}
+}

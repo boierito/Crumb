@@ -110,3 +110,15 @@ func TestGuestStateUnlinkIsolation(t *testing.T) {
 		t.Fatal("missing file deletion accepted")
 	}
 }
+
+func TestGuestStateClosedAuthorizationPrimitives(t *testing.T) {
+	var absent *RetainedKBSyncSession
+	for _, producer := range []*RetainedKBSyncSession{absent, {}} {
+		if output, err := producer.AuthorizationSync(1); err == nil || output != nil {
+			t.Fatal("absent producer generated authorization sync")
+		}
+		if _, _, _, err := producer.ImportDiversityBag([]byte{1}); err == nil {
+			t.Fatal("absent producer imported diversity bag")
+		}
+	}
+}

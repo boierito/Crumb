@@ -41,6 +41,17 @@ func (r *RetainedKBSyncSession) Close() error {
 
 // ImportKeybag uses the exact wrapper called by the three native keybag handlers.
 func (r *RetainedKBSyncSession) ImportKeybag(keybag []byte) (int32, map[string][]byte, map[string]any, error) {
+	return r.importLicenseBag(storeAgentBase+0xd5ce0, keybag)
+}
+
+// ImportDiversityBag uses the separate routine invoked for the authorization
+// response's diversitybag field. A purchase/download keybag is not a substitute.
+// Only a real server reply bound to this same retained session may be passed.
+func (r *RetainedKBSyncSession) ImportDiversityBag(bag []byte) (int32, map[string][]byte, map[string]any, error) {
+	return r.importLicenseBag(storeAgentBase+0xcdea0, bag)
+}
+
+func (r *RetainedKBSyncSession) importLicenseBag(entry uint64, keybag []byte) (int32, map[string][]byte, map[string]any, error) {
 	if r == nil {
 		return 0, nil, nil, fmt.Errorf("invalid consumer input")
 	}
@@ -56,7 +67,7 @@ func (r *RetainedKBSyncSession) ImportKeybag(keybag []byte) (int32, map[string][
 	if err != nil {
 		return 0, nil, nil, err
 	}
-	status, err := g.invoke(storeAgentBase+0xd5ce0, uint64(r.global), pointer, uint64(len(keybag)))
+	status, err := g.invoke(entry, uint64(r.global), pointer, uint64(len(keybag)))
 	return int32(status), g.services.guestStateSnapshot(), g.services.guestStateTrace(), err
 }
 func OpenRetainedKBSync(ctx context.Context, bundle assets.Bundle, hardware []byte, dsid uint64) (*RetainedKBSyncSession, []byte, error) {
@@ -146,4 +157,41 @@ func (r *RetainedKBSyncSession) NeedsAccountDiversity(dsid uint64) (bool, error)
 		return false, err
 	}
 	return uint32(status) != 0, nil
+}
+
+// AuthorizationSync generates mode-2 KBSync as used by the original
+// authorizeMachine request, not mode-1 download sync. It does not contact Apple
+// or claim enrollment. The returned private buffer belongs to the caller.
+func (r *RetainedKBSyncSession) AuthorizationSync(dsid uint64) ([]byte, error) {
+	if r == nil {
+		return nil, fmt.Errorf("producer_session_invalid")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.agent == nil || r.agent.closed || r.agent.guest == nil || dsid == 0 {
+		return nil, fmt.Errorf("producer_session_invalid")
+	}
+	g := r.agent.guest
+	g.beginCall()
+	defer g.clearScratch()
+	pointerField, err := g.scratch(nil, 8)
+	if err != nil {
+		return nil, err
+	}
+	lengthField, err := g.scratch(nil, 8)
+	if err != nil {
+		return nil, err
+	}
+	// Verified at text+0x59882..0x5988f in the pinned StoreAgent. The length
+	// output is uint32; zeroing its upper half preserves consumeOutput bounds.
+	status, err := g.invoke(storeAgentKBSyncEntry, uint64(r.global), dsid, 0, 2, pointerField, lengthField)
+	if err != nil {
+		return nil, err
+	}
+	output, outputErr := g.consumeOutput(pointerField, lengthField)
+	if int32(status) != 0 || outputErr != nil || len(output) == 0 {
+		clear(output)
+		return nil, fmt.Errorf("producer_authorization_sync_rejected")
+	}
+	return output, nil
 }

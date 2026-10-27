@@ -5,6 +5,7 @@ No private state, account identifiers or credential inputs are accepted.
 """
 import hashlib
 import json
+import struct
 from pathlib import Path
 import sys
 
@@ -24,11 +25,25 @@ checks = {
     0x11d4a4: '48899570fdffff',         # store 64-bit DSID
     0x11d4ab: '4889b578fdffff',         # store hardware pointer
     0x11d4b2: '89bd6cfdffff',           # store 32-bit context
+    0x59888: '31d2',                   # authorization sync reserved argument 0
+    0x5988a: 'b902000000',             # authorization KBSync mode 2
+    0x5988f: 'e82cfb0600',             # call text+0xc93c0
+    0x59d87: '4489f7',                 # diversity import context u32
+    0x59d8a: '4889de',                 # diversity bytes pointer
+    0x59d8d: '89c2',                   # diversity length u32
+    0x59d8f: 'e80c410700',             # call text+0xcdea0
+
 }
 for offset, expected in checks.items():
     value = bytes.fromhex(expected)
     if blob[offset:offset+len(value)] != value:
         raise SystemExit(f'ABI contract mismatch at public text offset {offset:#x}')
-print(json.dumps(dict(profile='storeagent-10.9', query='needs-account-diversity',
+# These literal CFStrings belong to the original authorization request and
+# response handling. They are static binary metadata, never account values.
+for offset, expected in [(0x251fe8,b'authorizeMachine'),(0x252048,b'needDiv'),(0x252068,b'1'),(0x252108,b'diversitybag')]:
+    pointer=struct.unpack_from('<Q',blob,offset+16)[0]-0x100000000
+    if blob[pointer:pointer+len(expected)+1] != expected+b'\0':
+        raise SystemExit('authorization protocol literal mismatch')
+print(json.dumps(dict(authorization_sync_mode=2, diversity_import='text+0xcdea0', profile='storeagent-10.9', query='needs-account-diversity',
     entry='text+0x11d490', arguments=['context-u32','hardware-info-pointer','dsid-u64'],
     result='native-nonzero-means-diversity', sinf_validation=False)))
