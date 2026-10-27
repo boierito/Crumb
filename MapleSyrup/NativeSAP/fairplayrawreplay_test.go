@@ -71,3 +71,20 @@ func TestReplayDoesNotRetryInvalidInputsResourcesOrUnsupportedInstructions(t *te
 		}
 	}
 }
+
+func TestReplayIncludesNativeAndInstructionBudgetRejections(t *testing.T) {
+	for _, code := range []string{"native_candidate_limit", "native_region_block_limit", "generic_instruction_limit"} {
+		calls := 0
+		result, err := recoverWithReplay(func(genericOnly bool) (Result, error) {
+			calls++
+			if !genericOnly {
+				return Result{}, recoveryFailed("sinf", code, nil)
+			}
+			return Result{}, &recoveryError{RecoveryDiagnostic{Phase: "sinf", Failure: "generic_instruction_limit", CandidateChecks: 3, CandidateSINFVerified: true}}
+		})
+		diagnostic, ok := RecoveryDetails(err)
+		if !ok || calls != 2 || diagnostic.Replay == nil || diagnostic.Replay.RuntimeCompleted || diagnostic.Replay.CandidateChecks != 3 || !diagnostic.Replay.CandidateSINFVerified || len(result.Pack) != 0 {
+			t.Fatal("budget rejection did not perform one independent, fail-closed replay")
+		}
+	}
+}

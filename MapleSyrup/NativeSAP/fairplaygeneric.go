@@ -17,11 +17,14 @@ const genericMaxProfileBytes = 128 << 20
 const genericMaxInstructions = 50_000_000
 
 type genericInstructionProfile struct {
-	base       uint64
-	count      uint32
-	executable uint32
-	supported  uint32
-	records    []byte
+	sourceBinary [32]byte
+	nativeBase   uint64
+	nativeText   []byte
+	base         uint64
+	count        uint32
+	executable   uint32
+	supported    uint32
+	records      []byte
 }
 
 var genericImage *genericInstructionProfile
@@ -56,7 +59,7 @@ func loadGenericInstructionProfile(compressed []byte, expectedBinary [32]byte, e
 	if base%4 != 0 || count == 0 || uint64(count)*genericRecordBytes+96 != uint64(len(payload)) || base+uint64(count)*4 < base || binary.LittleEndian.Uint32(payload[92:]) != 0 {
 		return nil, fmt.Errorf("generic profile geometry invalid")
 	}
-	image := &genericInstructionProfile{base: base, count: count, records: payload[96:]}
+	image := &genericInstructionProfile{sourceBinary: expectedBinary, base: base, count: count, records: payload[96:]}
 	for i := uint32(0); i < count; i++ {
 		r := image.records[int(i)*genericRecordBytes : int(i+1)*genericRecordBytes]
 		switch r[0] {
@@ -115,6 +118,9 @@ func loadGenericInstructionProfile(compressed []byte, expectedBinary [32]byte, e
 func ExecutionProfileSummary() map[string]any {
 	result := map[string]any{"backend": "generic-profile", "profile_version": 2, "ready": genericImage != nil, "jit_required": false}
 	if genericImage != nil {
+		if len(genericImage.nativeText) != 0 {
+			result["semantic_extensions"] = []string{"arm64-cas-v1"}
+		}
 		result["instruction_slots"] = genericImage.executable
 		result["span_slots"] = genericImage.count
 		result["supported_slots"] = genericImage.supported
@@ -166,6 +172,18 @@ func runGenericInstructionBlock(s *state, runtime *rawSourceRuntime, start uint6
 		observeNativePC(runtime, pc)
 		record := genericImage.record(pc)
 		if record[0] == 0 {
+			if pc >= genericImage.nativeBase && pc-genericImage.nativeBase <= uint64(len(genericImage.nativeText)) && uint64(len(genericImage.nativeText))-(pc-genericImage.nativeBase) >= 4 {
+				word := binary.LittleEndian.Uint32(genericImage.nativeText[pc-genericImage.nativeBase:])
+				handled, err := runGenericCAS(s, word)
+				if err != nil {
+					return pc, false, err
+				}
+				if handled {
+					runtime.genericInstructions++
+					pc += 4
+					continue
+				}
+			}
 			runtime.recordUnknownPC(pc)
 			return pc, false, &genericExecutionError{"generic_unsupported_instruction"}
 		}

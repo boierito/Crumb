@@ -23,7 +23,7 @@ BASE=0x100001000
 REV='f7242cce58077a4af8db738ed295ee23ad8f067d'
 ARCHIVE_SHA='e89a89c4af74a8b0e6f682efdf89edc36bc093874d706d8f27f43e657bd3ec39'
 HARNESS=r'''package main
-import("encoding/json";"encoding/hex";"os";"fmt")
+import("crypto/sha256";"encoding/json";"encoding/hex";"os";"fmt")
 type rawSourceRuntime struct {stopPC,lastKnownBlock uint64;genericOnly bool;observe func(uint64);boundary func()(bool,error);additionalBlocks int;genericBlocks int;genericInstructions uint64;genericLastPC,currentInstruction uint64;executionContext string;untranslatedTarget,targetClass string}
 var knownSourceBlocks=map[uint64]sourceBlock{}
 func (r *rawSourceRuntime) handle(s *state,pc uint64)(uint64,error){return pc,fmt.Errorf("external operation unavailable in isolated fixture")}
@@ -33,6 +33,7 @@ func main(){
  data,err:=os.ReadFile(os.Args[1]);if err!=nil{panic(err)}
  hash,err:=hex.DecodeString(os.Args[2]);if err!=nil{panic(err)};var source [32]byte;copy(source[:],hash)
  genericImage,err=loadGenericInstructionProfile(data,source,genericKernelABI);if err!=nil{panic(err)}
+ text,err:=os.ReadFile(os.Args[3]);if err!=nil{panic(err)};if sha256.Sum256(text)!=source{panic("native source mismatch")};if err=genericImage.attachNativeText(source,0x100000000,text);err!=nil{panic(err)}
  var inputs []fixture;if err=json.NewDecoder(os.Stdin).Decode(&inputs);err!=nil{panic(err)}
  results:=[]result{}
  for _,f:=range inputs {
@@ -111,6 +112,24 @@ def main():
         add(code);cases[-1]['NativeCount']=3*n+3
     for _ in range(32):
         add(bytes(ks.asm('bl inner; add x4,x4,#2; br x28; inner: add x3,x3,#7; ret')[0]))
+    # Every scalar CAS width and memory-order variant, successful and failed
+    # comparisons, SP, zero registers, and aliased operands. Independent Unicorn
+    # execution checks ALL registers, flags, vectors and the entire memory page.
+    cas_cases=0
+    for size in range(4):
+        width=1<<size;mask=(1<<(width*8))-1
+        for order in range(4):
+            for equal in (False,True):
+                for rs,rt,rn in ((11,12,19),(11,11,19),(19,12,19),(11,19,19),(31,12,19),(11,31,19),(11,12,31),(31,31,31)):
+                    regs=[rng.getrandbits(64) for _ in range(31)]
+                    address=0x600100
+                    if rn!=31:regs[rn]=address
+                    expected=0 if rs==31 else regs[rs]&mask
+                    old=expected if equal else expected^1
+                    page=bytearray(rng.randbytes(4096));page[0x100:0x100+width]=old.to_bytes(width,'little')
+                    word=0x08a07c00|(size<<30)|((order>>1)<<22)|((order&1)<<15)|(rs<<16)|(rn<<5)|rt
+                    add(struct.pack('<I',word)+branch,registers=regs,pages={0x600000:bytes(page)},sp=address,flags=[bool(rng.getrandbits(1)) for _ in range(4)])
+                    cas_cases+=1
     # Branch from __text to a different executable section through a register.
     # A deliberate non-executable gap separates the two sections.
     add(bytes(ks.asm('br x5')[0]))
@@ -128,7 +147,7 @@ def main():
         source_hash=hashlib.sha256(binary).hexdigest();profile=work/'synthetic.ir.gz';report=work/'census.json'
         subprocess.run([str(compiler/'compiler'),'--binary',str(binary_path),'--binary-sha256',source_hash,'--output',str(profile),'--report',str(report)],check=True)
         census=json.loads(report.read_text())
-        assert census['unsupported_slots']==0,census
+        assert census['unsupported_slots']==cas_cases,census
         assert census['span_slots']>census['instruction_slots'] and len(census['executable_sections'])==2,census
         subprocess.run(['python3',str(ROOT/'scripts/prepare-fairplay-generic.py'),'runtime',str(runner)],check=True)
         archive=ROOT/'third_party/archives'/f'ipatool-fairplay-{REV}.tar.gz'
@@ -137,7 +156,7 @@ def main():
         upstream=work/'upstream'/f'ipatool-{REV}/tools/fairplay-recovery'
         for name in ('oracle.go','generated_26b118.go','input_size_default.go'):(runner/name).write_bytes((upstream/name).read_bytes())
         (runner/'generic.go').write_bytes((ROOT/'MapleSyrup/NativeSAP/fairplaygeneric.go').read_bytes())
-        for name in ('fairplayrawblocks.go','fairplayrawflow.go'):(runner/name).write_bytes((ROOT/'MapleSyrup/NativeSAP'/name).read_bytes())
+        for name in ('fairplaygeneric_atomic.go','fairplayrawblocks.go','fairplayrawflow.go'):(runner/name).write_bytes((ROOT/'MapleSyrup/NativeSAP'/name).read_bytes())
         for name in runner.glob('*.go'):name.write_text(name.read_text().replace('package rawsource','package main',1))
         (runner/'main.go').write_text(HARNESS)
         subprocess.run(['go','build','-o',str(work/'runner'),*map(str,runner.glob('*.go'))],check=True,timeout=120)
@@ -145,6 +164,7 @@ def main():
         expected=[];inputs=[]
         for case in cases:
             emulator=Uc(UC_ARCH_ARM64,UC_MODE_ARM)
+            emulator.ctl_set_cpu_model(arm.UC_CPU_ARM64_MAX)
             page=case['PC']&~4095
             size=((case['PC']-page+len(case['code'])+4095)//4096)*4096
             emulator.mem_map(page,size);emulator.mem_write(case['PC'],case['code']);emulator.mem_map(0x200000,4096)
@@ -157,7 +177,7 @@ def main():
             nzcv=emulator.reg_read(arm.UC_ARM64_REG_NZCV)
             expected.append({'PC':emulator.reg_read(arm.UC_ARM64_REG_PC),'SP':emulator.reg_read(arm.UC_ARM64_REG_SP),'Registers':[emulator.reg_read(reg) for reg in registers],'Flags':[bool(nzcv&(1<<(31-j))) for j in range(4)],'Vectors':[list(emulator.reg_read(getattr(arm,'UC_ARM64_REG_Q'+str(i))).to_bytes(16,'little')) for i in range(32)],'Pages':{str(address):base64.b64encode(bytes(emulator.mem_read(address,4096))).decode() for address in case['Pages']}})
             inputs.append({key:({str(address):base64.b64encode(data).decode() for address,data in value.items()} if key=='Pages' else value) for key,value in case.items() if key not in ('code','NativeCount')})
-        command=[str(work/'runner'),str(profile),source_hash]
+        command=[str(work/'runner'),str(profile),source_hash,str(binary_path)]
         if sys.platform=='linux' and platform.machine()=='x86_64':
             launcher=work/'deny-exec-runner'
             subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-I',str(ROOT/'scripts'),str(ROOT/'scripts/fixtures/tci/generic-deny-exec-launcher.c'),'-o',str(launcher)],check=True)

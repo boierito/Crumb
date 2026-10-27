@@ -82,7 +82,7 @@ for name in names:
         lookup = 'return bestSuffix, bestData, bestSuffix != ""'
         if text.count(field) != 1 or text.count(lookup) != 1:
             raise SystemExit('raw runtime lookup contract changed')
-        text = text.replace(field, field + '\n lookupCounts map[string]LookupCount\n stateFileLookupCounts map[string]LookupCount\n stateLookupsByPhase map[string]LookupCount\n phase string\n genericOnly bool\n observe func(uint64)\n boundary func() (bool,error)\n candidateChecks int\n currentInstruction uint64\n executionContext string\n lastExternalSlot string\n unmodeledExternalSlot string\n lastKnownBlock uint64\n additionalBlocks int\n untranslatedTarget string\n targetClass string\n genericBlocks int\n genericInstructions uint64\n genericLastPC uint64\n checkpointCompared bool\n sourceChangedAfterSINF bool\n frameChangedAfterSINF bool')
+        text = text.replace(field, field + '\n lookupCounts map[string]LookupCount\n stateFileLookupCounts map[string]LookupCount\n stateLookupsByPhase map[string]LookupCount\n phase string\n genericOnly bool\n observe func(uint64)\n boundary func() (bool,error)\n candidateChecks int\n candidateSINFVerified bool\n currentInstruction uint64\n executionContext string\n lastExternalSlot string\n unmodeledExternalSlot string\n lastKnownBlock uint64\n additionalBlocks int\n untranslatedTarget string\n targetClass string\n genericBlocks int\n genericInstructions uint64\n genericLastPC uint64\n checkpointCompared bool\n sourceChangedAfterSINF bool\n frameChangedAfterSINF bool')
         entry = 'returnAddress := s.x[30]'
         if text.count(entry) != 1: raise SystemExit('external entry contract changed')
         text = text.replace(entry, entry + '\n r.lastExternalSlot = sourceExternalImportSlot(pc)\n r.executionContext = "external"')
@@ -124,6 +124,9 @@ api = pathlib.Path(__file__).resolve().parent.parent / 'MapleSyrup/NativeSAP/fai
 text = api.read_text().replace('RAW_RESOURCE_SHA256', expected)
 (target / 'api.go').write_text(text)
 
+(target/'candidate_validation.go').write_bytes((api.parent/'fairplayrawcandidates.go').read_bytes())
+(target/'candidate_validation_test.go').write_bytes((api.parent/'fairplayrawcandidates_test.go').read_bytes())
+
 (target / "api_test.go").write_text((api.parent / "fairplayrawapi_test.go").read_text())
 (target / "enrollment_checkpoint_test.go").write_text((api.parent / "fairplayrawcheckpoint_test.go").read_text())
 (target / 'block_dispatch.go').write_text((api.parent / 'fairplayrawblocks.go').read_text())
@@ -149,12 +152,12 @@ for name, origin in [('LICENSE-IPATOOL', source.parent.parent / 'LICENSE'),
 import subprocess, json
 root = api.parent.parent.parent
 subprocess.run([sys.executable, str(root/'scripts/prepare-fairplay-generic.py'), 'runtime', str(target)], check=True)
-for source_name, target_name in [('fairplaygeneric.go','generic.go'), ('fairplaygeneric_test.go','generic_test.go'), ('fairplaygeneric_real_test.go','generic_real_test.go')]:
+for source_name, target_name in [('fairplaygeneric_atomic.go','generic_atomic.go'), ('fairplaygeneric_atomic_test.go','generic_atomic_test.go'), ('fairplaygeneric.go','generic.go'), ('fairplaygeneric_test.go','generic_test.go'), ('fairplaygeneric_real_test.go','generic_real_test.go')]:
     (target/target_name).write_bytes((api.parent/source_name).read_bytes())
 from fairplay_generic_resource import read_profile
 compressed,pin=read_profile(root)
 (target/'profiles/fairplay-generic.ir.gz').write_bytes(compressed)
-(target/'generic_embed.go').write_text('package rawsource\nimport (_ "embed"; "crypto/sha256"; "encoding/hex")\n//go:embed profiles/fairplay-generic.ir.gz\nvar genericProfileCompressed []byte\nfunc init() {\n sum:=sha256.Sum256(genericProfileCompressed)\n if hex.EncodeToString(sum[:]) != "GENERIC_RESOURCE_SHA256" { return }\n image,err:=loadGenericInstructionProfile(genericProfileCompressed,rawSourceBinaryHash,genericKernelABI)\n if err==nil { genericImage=image }\n}\n'.replace('GENERIC_RESOURCE_SHA256',pin['compressed_sha256']))
+(target/'generic_embed.go').write_text('package rawsource\nimport (_ "embed"; "crypto/sha256"; "encoding/hex")\n//go:embed profiles/fairplay-generic.ir.gz\nvar genericProfileCompressed []byte\nfunc init() {\n sum:=sha256.Sum256(genericProfileCompressed)\n if hex.EncodeToString(sum[:]) != "GENERIC_RESOURCE_SHA256" { return }\n image,err:=loadGenericInstructionProfile(genericProfileCompressed,rawSourceBinaryHash,genericKernelABI)\n if err==nil { text,e:=immutableImageText(); if e==nil && image.attachNativeText(rawSourceBinaryHash,imageTextAddress,text)==nil { genericImage=image } }\n}\n'.replace('GENERIC_RESOURCE_SHA256',pin['compressed_sha256']))
 
 (target/'memory_contract.go').write_bytes((api.parent/'fairplayrawmemory.go').read_bytes())
 (target/'memory_contract_test.go').write_bytes((api.parent/'fairplayrawmemory_test.go').read_bytes())

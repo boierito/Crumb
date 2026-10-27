@@ -1,11 +1,13 @@
 package rawsource
 
 type replayDiagnostic struct {
-	Phase            string `json:"phase"`
-	Failure          string `json:"failure"`
-	FaultInstruction string `json:"fault_instruction,omitempty"`
-	FaultRegion      string `json:"fault_region,omitempty"`
-	RuntimeCompleted bool   `json:"runtime_completed"`
+	Phase                 string `json:"phase"`
+	Failure               string `json:"failure"`
+	FaultInstruction      string `json:"fault_instruction,omitempty"`
+	FaultRegion           string `json:"fault_region,omitempty"`
+	CandidateChecks       int    `json:"candidate_sinf_checks,omitempty"`
+	CandidateSINFVerified bool   `json:"candidate_sinf_verified"`
+	RuntimeCompleted      bool   `json:"runtime_completed"`
 }
 
 // A second engine always starts from fresh model/files/CPU state. It never
@@ -20,12 +22,13 @@ func recoverWithReplay(attempt func(bool) (Result, error)) (Result, error) {
 	clear(result.Frame)
 	clear(result.Pack)
 	initial, ok := RecoveryDetails(err)
-	if !ok || (initial.Failure != "raw_memory_unavailable" && initial.Failure != "raw_unknown_control_flow" && initial.Failure != "generic_execution_rejected" && initial.Failure != "native_candidate_limit") {
+	if !ok || (initial.Failure != "raw_memory_unavailable" && initial.Failure != "raw_unknown_control_flow" && initial.Failure != "generic_execution_rejected" && initial.Failure != "native_candidate_limit" && initial.Failure != "native_region_block_limit" && initial.Failure != "generic_instruction_limit") {
 		return Result{}, err
 	}
 	replayed, replayErr := attempt(true)
 	report := &replayDiagnostic{}
 	if replayErr == nil {
+		report.CandidateChecks, report.CandidateSINFVerified = replayed.Runtime.CandidateChecks, replayed.Runtime.CandidateSINFVerified
 		report.RuntimeCompleted = true
 		replayed.Runtime.Replay = report
 		return replayed, nil
@@ -35,6 +38,7 @@ func recoverWithReplay(attempt func(bool) (Result, error)) (Result, error) {
 	clear(replayed.Pack)
 	if diagnostic, ok := RecoveryDetails(replayErr); ok {
 		report.Phase, report.Failure = diagnostic.Phase, diagnostic.Failure
+		report.CandidateChecks, report.CandidateSINFVerified = diagnostic.CandidateChecks, diagnostic.CandidateSINFVerified
 		report.FaultInstruction, report.FaultRegion = diagnostic.FaultInstruction, diagnostic.FaultRegion
 	} else {
 		report.Failure = "unclassified_replay_rejection"
