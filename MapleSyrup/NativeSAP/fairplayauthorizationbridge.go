@@ -153,63 +153,52 @@ func finishAuthorization(r authorizationRequest) (any, error) {
 	if time.Since(s.created) > 10*time.Minute {
 		return nil, fmt.Errorf("authorization_session_expired")
 	}
-	var files map[string][]byte
 	if s.needs {
-		if len(r.Diversitybag) == 0 || len(r.Keybag) > 1<<20 || len(r.Diversitybag) > 1<<20 {
+		if (len(r.Keybag) == 0 && len(r.Diversitybag) == 0) || len(r.Keybag) > 1<<20 || len(r.Diversitybag) > 1<<20 {
 			return nil, fmt.Errorf("authorization_license_incomplete")
 		}
-		// Original response processing permits diversity without another
-		// keybag. Keep the previously restored keybag; never synthesize one.
+		// The original handler independently skips each absent field. Import
+		// only genuine reply bytes; provisioning and SINF gates still follow.
 		if len(r.Keybag) != 0 {
-			status, first, _, err := s.producer.ImportKeybag(r.Keybag)
-			for _, b := range first {
+			status, snapshot, _, err := s.producer.ImportKeybag(r.Keybag)
+			for _, b := range snapshot {
 				clear(b)
 			}
 			if err != nil || status != 0 {
 				return nil, fmt.Errorf("authorization_keybag_rejected")
 			}
 		}
-		status, snapshot, _, err := s.producer.ImportDiversityBag(r.Diversitybag)
-		files = snapshot
-		if err != nil || status != 0 {
-			for _, b := range files {
+		if len(r.Diversitybag) != 0 {
+			status, snapshot, _, err := s.producer.ImportDiversityBag(r.Diversitybag)
+			for _, b := range snapshot {
 				clear(b)
 			}
-			return nil, fmt.Errorf("authorization_diversity_rejected")
+			if err != nil || status != 0 {
+				return nil, fmt.Errorf("authorization_diversity_rejected")
+			}
 		}
-	} else {
-		if len(r.Keybag) != 0 || len(r.Diversitybag) != 0 {
-			return nil, fmt.Errorf("authorization_unexpected_reply")
-		}
-		var err error
-		files, err = s.producer.StateSnapshot()
-		if err != nil {
-			return nil, fmt.Errorf("authorization_snapshot_failed")
-		}
+	} else if len(r.Keybag) != 0 || len(r.Diversitybag) != 0 {
+		return nil, fmt.Errorf("authorization_unexpected_reply")
+	}
+	needs, err := s.producer.NeedsAccountDiversity(s.dsid)
+	if err != nil {
+		return nil, fmt.Errorf("authorization_query_failed")
+	}
+	files, err := s.producer.StateSnapshot()
+	if err != nil {
+		return nil, fmt.Errorf("authorization_snapshot_failed")
 	}
 	defer func() {
 		for _, b := range files {
 			clear(b)
 		}
 	}()
-	needs, err := s.producer.NeedsAccountDiversity(s.dsid)
-	if err != nil {
-		return nil, fmt.Errorf("authorization_query_failed")
-	}
-	postQuery, snapshotErr := s.producer.StateSnapshot()
-	if snapshotErr != nil {
-		return nil, fmt.Errorf("authorization_snapshot_failed")
-	}
-	for _, b := range files {
-		clear(b)
-	}
-	files = postQuery
 	// Persist account state even if model compatibility fails later; no IPA path
 	// or per-app key is used as the storage identity. Original capture is intact.
 	if err = saveAuthorizedState(s.directory, s.dsid, s.hardware, files); err != nil {
 		return nil, fmt.Errorf("authorization_state_save_failed")
 	}
-	report := map[string]any{"schema": "crumb-account-authorization-v1", "account_state_saved": true, "license_imports_performed": s.needs, "keybag_imported": s.needs && len(r.Keybag) != 0, "diversitybag_imported": s.needs, "needs_account_diversity": needs, "encrypted_domains": len(s.domains), "sinf_validation_attempted": false, "sinf_model_verified": false, "source_frame_verified": false, "completed": false, "plaintext_authenticated": false}
+	report := map[string]any{"schema": "crumb-account-authorization-v1", "account_state_saved": true, "license_imports_performed": s.needs, "keybag_imported": s.needs && len(r.Keybag) != 0, "diversitybag_imported": s.needs && len(r.Diversitybag) != 0, "needs_account_diversity": needs, "encrypted_domains": len(s.domains), "sinf_validation_attempted": false, "sinf_model_verified": false, "source_frame_verified": false, "completed": false, "plaintext_authenticated": false}
 	if needs {
 		report["status"] = "diversity_still_required"
 		return report, nil

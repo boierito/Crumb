@@ -224,8 +224,12 @@ imports of `keybag` and `diversitybag` remain distinct; each performed import mu
 without an interpreter error. The original branch at text+0x59bb2..0x59bb5
 skips an absent keybag and proceeds to diversitybag, so a genuine diversity-only
 reply preserves the already-restored download state. A malformed present field
-is rejected; a requested diversitybag remains mandatory. The ABI verifier checks
-that optional-keybag branch against the pinned binary. Ordinary download KBSync stays in mode 1.
+is rejected. The branch at text+0x59d1b..0x59d1e independently permits an
+absent diversitybag as well. At least one genuine bag is required for this
+provisioning attempt, and each present bag must import successfully. The
+post-import account query and original SINF checks decide readiness, regardless
+of which reply fields were present. The ABI verifier checks both optional-field
+branches against the pinned binary. Ordinary download KBSync stays in mode 1.
 
 Original StoreAgent `_generateOTPOnCurrentThreadForDSID:` (text+0x6bf28) has an
 explicit unprovisioned-ADI path: `ADI: Account is not provisioned, omitting OTP

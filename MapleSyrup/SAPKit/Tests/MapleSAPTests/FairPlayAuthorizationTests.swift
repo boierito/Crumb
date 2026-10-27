@@ -61,6 +61,12 @@ final class FairPlayAuthorizationTests: XCTestCase {
             catch { XCTAssertEqual((error as? FairPlayAuthorizationError)?.rawValue, "incompleteLicense") }
         }
     }
+    func testKeybagOnlyReplyStillRequiresNativeProvisioningAndSINFGates() async throws {
+        let transport = try LicenseTransport(reply: ["keybag": Data([1])])
+        let reply = try await client(transport).authorize(kbsync: Data([3]), needsDiversity: true, machineName: "Fixture", sign: { _ in "SIGN" })
+        XCTAssertEqual(reply.keybag, Data([1]))
+        XCTAssertNil(reply.diversitybag)
+    }
     func testNoDiversityFlagWhenNotRequested() async throws {
         let transport = try LicenseTransport(reply: ["keybag": Data([1])])
         _ = try await client(transport).authorize(kbsync: Data([3]), needsDiversity: false, machineName: "Fixture", sign: { _ in "SIGN" })
@@ -69,7 +75,7 @@ final class FairPlayAuthorizationTests: XCTestCase {
         XCTAssertNil(fields["needDiv"])
     }
     func testFailureAndChallengeCannotYieldLicenseOrTriggerReplay() async throws {
-        for (reply,status,headers) in [(["keybag": Data([1])] as [String: Any],200,[:]), (["failureType":"123","customerMessage":"PRIVATE"],200,[:]), (["keybag":Data([1]),"diversitybag":Data([2])],302,[:]), (["keybag":Data([1]),"diversitybag":Data([2])],200,["x-apple-md-action":"SP"])] {
+        for (reply,status,headers) in [([:] as [String: Any],200,[:]), (["failureType":"123","customerMessage":"PRIVATE"],200,[:]), (["keybag":Data([1]),"diversitybag":Data([2])],302,[:]), (["keybag":Data([1]),"diversitybag":Data([2])],200,["x-apple-md-action":"SP"])] {
             let transport = try LicenseTransport(reply: reply, status: status, headers: headers)
             do { _ = try await client(transport).authorize(kbsync: Data([3]), needsDiversity: true, machineName: "Fixture", sign: { _ in "SIGN" }); XCTFail("invalid reply yielded a license") }
             catch { XCTAssertFalse(String(describing: error).contains("PRIVATE")) }

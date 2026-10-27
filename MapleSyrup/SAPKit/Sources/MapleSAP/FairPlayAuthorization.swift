@@ -83,11 +83,11 @@ public actor FairPlayAuthorizationClient {
         let keybag = blob("keybag")
         let diversity = blob("diversitybag")
         // text+0x59bb2..0x59bb5 skips an absent keybag and proceeds to
-        // diversitybag. The already-restored download state is not replaced.
+        // diversitybag; text+0x59d1b..0x59d1e also permits no diversitybag.
+        // Native post-import provisioning and SINF checks decide readiness.
         guard root["keybag"] == nil || keybag != nil,
               root["diversitybag"] == nil || diversity != nil,
               keybag != nil || diversity != nil,
-              !needsDiversity || diversity != nil,
               (keybag?.count ?? 0) <= 1 << 20,
               (diversity?.count ?? 0) <= 1 << 20 else {
             throw FairPlayAuthorizationError.incompleteLicense

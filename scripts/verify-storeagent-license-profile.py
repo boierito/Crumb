@@ -30,6 +30,8 @@ checks = {
     0x5988f: 'e82cfb0600',             # call text+0xc93c0
     0x59bb2: '4885c0',                 # test optional keybag object
     0x59bb5: '0f843d010000',           # nil jumps to diversity field at 0x59cf8
+    0x59d1b: '4885c0',                 # test optional diversitybag object
+    0x59d1e: '0f842d010000',           # nil jumps to failureType at 0x59e51
     0x59d87: '4489f7',                 # diversity import context u32
     0x59d8a: '4889de',                 # diversity bytes pointer
     0x59d8d: '89c2',                   # diversity length u32
