@@ -195,3 +195,16 @@ func (r *RetainedKBSyncSession) AuthorizationSync(dsid uint64) ([]byte, error) {
 	}
 	return output, nil
 }
+
+// StateSnapshot returns a private deep copy. It is not a credential or a model.
+func (r *RetainedKBSyncSession) StateSnapshot() (map[string][]byte, error) {
+	if r == nil {
+		return nil, fmt.Errorf("producer_session_invalid")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.agent == nil || r.agent.closed || r.agent.guest == nil {
+		return nil, fmt.Errorf("producer_session_invalid")
+	}
+	return r.agent.guest.services.guestStateSnapshot(), nil
+}

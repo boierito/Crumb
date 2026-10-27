@@ -279,3 +279,17 @@ func recoverCaptureEnrollment(source, ipa, destination string) (any, error) {
 	}
 	return result, nil
 }
+
+// Initial enrollment may cover several license domains. Compare complete SINF
+// sets; never pick a license by ZIP order or assume one executable per IPA.
+// Capture bootstrap requires the complete license set. Once a matching account
+// state is saved, each later IPA is validated against its own original SINFs.
+func capturedSINFMatchesAllDomains(sinfs map[string]bool, domains []fairplay.PortableEnrollmentInput) bool {
+	if len(domains) == 0 || len(sinfs) == 0 { return false }
+	seen := map[string]bool{}
+	for _, domain := range domains {
+		if domain.SINFSHA256 == "" || !sinfs[domain.SINFSHA256] { return false }
+		seen[domain.SINFSHA256] = true
+	}
+	return len(seen) == len(sinfs)
+}

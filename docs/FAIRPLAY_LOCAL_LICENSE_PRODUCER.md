@@ -213,3 +213,52 @@ probe generated a 196-byte native sync and required an actual nonzero native
 status (-42018) for invalid diversity data; an interpreter error cannot satisfy
 that test. Closed-session checks and existing VFS tests also passed with -race.
 No authorization request or real diversity import was performed by these tests.
+
+## Build 23047: account authorization connected to per-IPA validation
+
+The dedicated private authorization bridge now retains the same native producer
+between generating mode-2 KBSync and consuming the response. Swift discovers
+`authorizeMachine` from the live Bag, signs the exact typed XML plist using SAP,
+and sends one authenticated request to that validated Apple endpoint. Native
+imports of `keybag` and `diversitybag` remain distinct; both must return status 0
+without an interpreter error. Ordinary download KBSync stays in mode 1.
+
+Original StoreAgent `_generateOTPOnCurrentThreadForDSID:` (text+0x6bf28) has an
+explicit unprovisioned-ADI path: `ADI: Account is not provisioned, omitting OTP
+and MD`, completing successfully with nil OTP/MD. The initial request follows
+that path, without invented MD headers. `processHTTPHeaders:` (text+0x6c89c)
+handles `x-apple-md-action`/`x-apple-md-data`, including RP/SP/SM. Crumb currently
+**stops** on an ADI challenge, without replaying authorization or claiming
+provisioning succeeded. Implementing those native challenge transitions remains
+necessary if Apple requires them. No real authorization has been tested here.
+
+State snapshots are stored atomically with private permissions, schema, source
+profile, per-file digests, account DSID and virtual hardware binding. The storage
+identity contains no app ID, app version, IPA hash or executable path. A saved
+state can be reopened for another IPA from the same account/device identity.
+The first bootstrap still requires the existing capture with an exact match to
+all original SINF domains; it never silently accepts another account's capture.
+An invalid saved state fails closed rather than replacing it with a new capture.
+
+After native imports, the account query is repeated and a post-query snapshot
+is saved. If diversity remains required, the path stops before model recovery.
+Otherwise every license domain is recovered from that state, source/frame
+cross-checked, and tested against its original SINF. Only if **all** pass does
+the existing whole-IPA processor run. No per-app constants, SIDB byte edits,
+external enrollment, manual credentials or synthetic production keys were added.
+The separate mobile consumer remains isolated until its credential input can be
+obtained with verified provenance. Legacy/modern model compatibility remains
+unproven, even if account authorization succeeds.
+
+Private KBSync and reply bags use a separate C/Swift wire path; they are never
+returned to the lab diagnostic logger. Public output explicitly separates
+account state, attempted SINF validation, completed processing and plaintext
+authenticity. It continues to report `plaintext_authenticated=false`.
+
+Local checks: the full cgo native bridge compiles into a host C archive with
+all real native dependencies. Account binding/atomic persistence and complete
+multi-domain capture matching pass deterministic Go tests. Swift protocol tests
+exercise exact plist Data typing, distinct reply bags, app-independent fields,
+rejected endpoints, failures and challenge/no-replay behavior. CI and a real
+owner-device authorization/SINF result are separate checks; compilation and
+fixtures cannot establish the first real decrypted IPA.

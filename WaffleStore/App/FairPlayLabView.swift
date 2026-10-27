@@ -440,6 +440,52 @@ final class FairPlayLab: ObservableObject {
             self.log("Enrollment", "This research measures sensitivity only. It does not recover a valid model or prove decrypted plaintext.")
         }
     }
+    func authorizeAccountAndRecover(_ account: StoreAccount) {
+        guard let original = input else { return }
+        perform {
+            self.output = nil
+            self.nativeRecoveryVerified = false
+            if !NativeFairPlayAuthorization.hasSavedState(account: account) {
+                try await self.analyzeCurrentCaptureFiles()
+                guard self.transactions == 1, self.captureArchive != nil else {
+                    self.log("Enrollment", "The first account authorization needs one saved capture and its original IPA.")
+                    return
+                }
+            }
+            let destination = self.root.appendingPathComponent("authorized-" + UUID().uuidString)
+            self.log("Enrollment", "Preparing account authorization on this iPhone. A required authorization uses one Apple request; saved account state is reused across apps. Keep Crumb open.")
+            do {
+                let result = try await NativeFairPlayAuthorization.run(account: account, source: self.captureArchive, ipa: original, destination: destination)
+                let object = try JSONSerialization.jsonObject(with: result)
+                let pretty = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+                self.log("Enrollment", String(decoding: pretty, as: UTF8.self))
+                let envelope = object as? [String: Any] ?? [:]
+                let report = envelope["result"] as? [String: Any] ?? [:]
+                let processed = destination.appendingPathComponent("processed.ipa")
+                let size = ((try? FileManager.default.attributesOfItem(atPath: processed.path))?[.size] as? NSNumber)?.int64Value ?? 0
+                if report["completed"] as? Bool == true,
+                   report["sinf_model_verified"] as? Bool == true,
+                   report["source_frame_verified"] as? Bool == true,
+                   report["plaintext_authenticated"] as? Bool == false, size > 0 {
+                    self.output = processed
+                    self.nativeRecoveryVerified = true
+                    self.log("Decryption", "All license domains and IPA processing checks passed. Processed output is available; plaintext authenticity remains unverified.")
+                } else {
+                    try? FileManager.default.removeItem(at: destination)
+                    self.log("Decryption", "Account state and per-app license validation are separate. No completed IPA was produced or exported.")
+                }
+            } catch {
+                try? FileManager.default.removeItem(at: destination)
+                let code: String
+                if let failure = error as? FairPlayAuthorizationError { code = failure.rawValue }
+                else if let failure = error as? NativeFairPlayAuthorization.Failure,
+                        case .native(let native) = failure { code = native }
+                else { code = "authorization_failed" }
+                self.log("Enrollment", "Account authorization stopped: " + code + ". No automatic replay; original IPA and capture retained.")
+            }
+        }
+    }
+
     // Reopen an isolated state copy in the original legacy producer.
     // This does not perform SINF validation.
     func probeOriginalProducer() {
@@ -691,6 +737,11 @@ struct FairPlayLabView: View {
                 }
                 Section("4 · Recover or import an enrollment") {
                     Button("Attempt recovery from current capture") { lab.recoverCurrentCapture() }.disabled(lab.input == nil)
+                    Button("Authorize account and validate this IPA") {
+                        if let account = appData.ipaTool?.account { lab.authorizeAccountAndRecover(account) }
+                    }.disabled(lab.input == nil || appData.ipaTool == nil)
+                    Text("May authorize this virtual device with Apple. Account state is saved locally for reuse with other apps; every app's licenses are validated separately. An ADI challenge stops the attempt.")
+                        .font(.footnote)
                     Button("Test original StoreAgent state (no download)") { lab.probeOriginalProducer() }.disabled(lab.input == nil)
                     Text("Reopens a private copy with the original producer and checks account provisioning. It does not decrypt the SINF or export an IPA.")
                         .font(.footnote)
