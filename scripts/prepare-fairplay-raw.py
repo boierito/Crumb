@@ -61,13 +61,22 @@ for name in names:
     text = re.sub(r'^//go:build[^\n]*\n', '', text)
     text = text.replace('package main', 'package rawsource', 1)
     if name == 'raw_source_step.go':
+        # Replace the pinned bump allocator as a unit. Its old fixed 1 MiB
+        # advance aliases every larger allocation with subsequent allocations.
+        allocation = re.compile(r'func \(r \*rawSourceRuntime\) allocate\(s \*state, size uint64\) \(uint64, error\) \{.*?\n\}', re.S)
+        text, count = allocation.subn('func (r *rawSourceRuntime) allocate(s *state, size uint64) (uint64, error) {\n return allocateSourceMemory(r, s, size)\n}', text)
+        if count != 1:
+            raise SystemExit('raw allocator contract changed')
         # Instrument the existing lookup only; preserve longest-suffix matching
         # and all guest-visible return values. Never retain requested paths.
         field = 'type rawSourceRuntime struct {'
         lookup = 'return bestSuffix, bestData, bestSuffix != ""'
         if text.count(field) != 1 or text.count(lookup) != 1:
             raise SystemExit('raw runtime lookup contract changed')
-        text = text.replace(field, field + '\n lookupCounts map[string]LookupCount\n stateFileLookupCounts map[string]LookupCount\n stateLookupsByPhase map[string]LookupCount\n phase string\n unmodeledExternalSlot string\n lastKnownBlock uint64\n additionalBlocks int\n untranslatedTarget string\n targetClass string\n genericBlocks int\n genericInstructions uint64\n genericLastPC uint64\n checkpointCompared bool\n sourceChangedAfterSINF bool\n frameChangedAfterSINF bool')
+        text = text.replace(field, field + '\n lookupCounts map[string]LookupCount\n stateFileLookupCounts map[string]LookupCount\n stateLookupsByPhase map[string]LookupCount\n phase string\n lastExternalSlot string\n unmodeledExternalSlot string\n lastKnownBlock uint64\n additionalBlocks int\n untranslatedTarget string\n targetClass string\n genericBlocks int\n genericInstructions uint64\n genericLastPC uint64\n checkpointCompared bool\n sourceChangedAfterSINF bool\n frameChangedAfterSINF bool')
+        entry = 'returnAddress := s.x[30]'
+        if text.count(entry) != 1: raise SystemExit('external entry contract changed')
+        text = text.replace(entry, entry + '\n r.lastExternalSlot = sourceExternalImportSlot(pc)')
         text = text.replace(lookup, 'r.recordLookup(path, bestSuffix != "")\n\t' + lookup)
         # Record the rejected import's *static model slot*, never a pointer
         # or private guest register. No unsupported function is stubbed.
@@ -137,3 +146,6 @@ from fairplay_generic_resource import read_profile
 compressed,pin=read_profile(root)
 (target/'profiles/fairplay-generic.ir.gz').write_bytes(compressed)
 (target/'generic_embed.go').write_text('package rawsource\nimport (_ "embed"; "crypto/sha256"; "encoding/hex")\n//go:embed profiles/fairplay-generic.ir.gz\nvar genericProfileCompressed []byte\nfunc init() {\n sum:=sha256.Sum256(genericProfileCompressed)\n if hex.EncodeToString(sum[:]) != "GENERIC_RESOURCE_SHA256" { return }\n image,err:=loadGenericInstructionProfile(genericProfileCompressed,rawSourceBinaryHash,genericKernelABI)\n if err==nil { genericImage=image }\n}\n'.replace('GENERIC_RESOURCE_SHA256',pin['compressed_sha256']))
+
+(target/'memory_contract.go').write_bytes((api.parent/'fairplayrawmemory.go').read_bytes())
+(target/'memory_contract_test.go').write_bytes((api.parent/'fairplayrawmemory_test.go').read_bytes())

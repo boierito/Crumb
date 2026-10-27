@@ -27,6 +27,7 @@ type LookupCount struct {
 }
 type RecoveryDiagnostic struct {
 	Phase                  string                 `json:"phase"`
+	LastExternalSlot       string                 `json:"last_external_slot,omitempty"`
 	UnmodeledExternalSlot  string                 `json:"unmodeled_external_slot,omitempty"`
 	StateLookupsByPhase    map[string]LookupCount `json:"state_lookups_by_phase,omitempty"`
 	Failure                string                 `json:"failure"`
@@ -40,9 +41,9 @@ type RecoveryDiagnostic struct {
 	GenericInstructions    uint64                 `json:"generic_instructions,omitempty"`
 	GenericLastInstruction string                 `json:"generic_last_instruction,omitempty"`
 	GenericBlocks          int                    `json:"generic_blocks,omitempty"`
-	CheckpointCompared      bool                   `json:"checkpoint_compared_after_sinf"`
-	SourceChangedAfterSINF  bool                   `json:"source_changed_after_sinf"`
-	FrameChangedAfterSINF   bool                   `json:"frame_changed_after_sinf"`
+	CheckpointCompared     bool                   `json:"checkpoint_compared_after_sinf"`
+	SourceChangedAfterSINF bool                   `json:"source_changed_after_sinf"`
+	FrameChangedAfterSINF  bool                   `json:"frame_changed_after_sinf"`
 }
 type recoveryError struct{ diagnostic RecoveryDiagnostic }
 
@@ -71,9 +72,14 @@ func runtimeDiagnostic(phase, code string, runtime *rawSourceRuntime) RecoveryDi
 	if runtime != nil {
 		if len(runtime.stateLookupsByPhase) != 0 {
 			diagnostic.StateLookupsByPhase = make(map[string]LookupCount, len(runtime.stateLookupsByPhase))
-			for k,v := range runtime.stateLookupsByPhase { diagnostic.StateLookupsByPhase[k] = v }
+			for k, v := range runtime.stateLookupsByPhase {
+				diagnostic.StateLookupsByPhase[k] = v
+			}
 		}
 		diagnostic.LastBlock = sourceBlockLabel(runtime.lastKnownBlock)
+		if code == "raw_memory_unavailable" {
+			diagnostic.LastExternalSlot = runtime.lastExternalSlot
+		}
 		diagnostic.SharedBlockExecutions = runtime.additionalBlocks
 		diagnostic.ExecutionBackend = "aot"
 		if runtime.genericBlocks > 0 {
@@ -160,10 +166,16 @@ func (r *rawSourceRuntime) recordLookup(requested string, found bool) {
 		return
 	}
 	if r.phase != "" {
-		if r.stateLookupsByPhase == nil { r.stateLookupsByPhase = make(map[string]LookupCount) }
+		if r.stateLookupsByPhase == nil {
+			r.stateLookupsByPhase = make(map[string]LookupCount)
+		}
 		phase := r.stateLookupsByPhase[r.phase]
-		if phase.Attempts < 1000000 { phase.Attempts++ }
-		if !found && phase.Missing < 1000000 { phase.Missing++ }
+		if phase.Attempts < 1000000 {
+			phase.Attempts++
+		}
+		if !found && phase.Missing < 1000000 {
+			phase.Missing++
+		}
 		r.stateLookupsByPhase[r.phase] = phase
 	}
 	// Names are discarded immediately; persist only this finite public
@@ -348,9 +360,9 @@ func Recover(executable string, hardware []byte, files map[string][]byte) (Resul
 // bits and alignment are checked before deriving the bounded slot index.
 // A synthetic/invalid guest branch can never become a raw pointer in logs.
 func sourceExternalImportSlot(pc uint64) string {
-    const base uint64 = 0xf100000000000000
-    if pc < base || pc >= base+(1<<24) || (pc-base)%0x1000 != 0 {
-        return "unclassified_external"
-    }
-    return fmt.Sprintf("external-slot-%03x", (pc-base)/0x1000)
+	const base uint64 = 0xf100000000000000
+	if pc < base || pc >= base+(1<<24) || (pc-base)%0x1000 != 0 {
+		return "unclassified_external"
+	}
+	return fmt.Sprintf("external-slot-%03x", (pc-base)/0x1000)
 }
