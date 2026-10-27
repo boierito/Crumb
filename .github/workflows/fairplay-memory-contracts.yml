@@ -1,0 +1,25 @@
+name: FairPlay public image memory census
+on:
+  push:
+    branches: ['feature/fairplay-engine-memory-contracts']
+    paths:
+      - 'scripts/audit-fairplay-model-memory.py'
+      - '.github/workflows/fairplay-memory-contracts.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  census:
+    runs-on: xcode-27
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compare every public snapshot page against the exact system image
+        run: python3 scripts/audit-fairplay-model-memory.py --output artifacts/model-memory-census.json --text-output artifacts/fairplay-immutable-text.bin.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FairPlay-public-memory-census
+          path: artifacts/*
+          if-no-files-found: error

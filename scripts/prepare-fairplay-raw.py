@@ -77,10 +77,10 @@ for name in names:
         lookup = 'return bestSuffix, bestData, bestSuffix != ""'
         if text.count(field) != 1 or text.count(lookup) != 1:
             raise SystemExit('raw runtime lookup contract changed')
-        text = text.replace(field, field + '\n lookupCounts map[string]LookupCount\n stateFileLookupCounts map[string]LookupCount\n stateLookupsByPhase map[string]LookupCount\n phase string\n lastExternalSlot string\n unmodeledExternalSlot string\n lastKnownBlock uint64\n additionalBlocks int\n untranslatedTarget string\n targetClass string\n genericBlocks int\n genericInstructions uint64\n genericLastPC uint64\n checkpointCompared bool\n sourceChangedAfterSINF bool\n frameChangedAfterSINF bool')
+        text = text.replace(field, field + '\n lookupCounts map[string]LookupCount\n stateFileLookupCounts map[string]LookupCount\n stateLookupsByPhase map[string]LookupCount\n phase string\n currentInstruction uint64\n executionContext string\n lastExternalSlot string\n unmodeledExternalSlot string\n lastKnownBlock uint64\n additionalBlocks int\n untranslatedTarget string\n targetClass string\n genericBlocks int\n genericInstructions uint64\n genericLastPC uint64\n checkpointCompared bool\n sourceChangedAfterSINF bool\n frameChangedAfterSINF bool')
         entry = 'returnAddress := s.x[30]'
         if text.count(entry) != 1: raise SystemExit('external entry contract changed')
-        text = text.replace(entry, entry + '\n r.lastExternalSlot = sourceExternalImportSlot(pc)')
+        text = text.replace(entry, entry + '\n r.lastExternalSlot = sourceExternalImportSlot(pc)\n r.executionContext = "external"')
         text = text.replace(lookup, 'r.recordLookup(path, bestSuffix != "")\n\t' + lookup)
         # Record the rejected import's *static model slot*, never a pointer
         # or private guest register. No unsupported function is stubbed.
@@ -153,3 +153,51 @@ compressed,pin=read_profile(root)
 
 (target/'memory_contract.go').write_bytes((api.parent/'fairplayrawmemory.go').read_bytes())
 (target/'memory_contract_test.go').write_bytes((api.parent/'fairplayrawmemory_test.go').read_bytes())
+
+# Public, immutable image data fills only missing __TEXT pages. No writable
+# state is reconstructed; account/heap/stack gaps retain fail-closed behavior.
+from fairplay_image_resource import read_image_text
+image_text, image_pin = read_image_text(root)
+(target/'IMMUTABLE-IMAGE-PROVENANCE.json').write_bytes((root/'third_party/fairplay-immutable-image/IMAGE.json').read_bytes())
+(target/'IMMUTABLE-IMAGE-README.md').write_bytes((root/'third_party/fairplay-immutable-image/README.md').read_bytes())
+(target/'profiles/fairplay-immutable-text.bin.gz').write_bytes(image_text)
+(target/'image_text.go').write_bytes((api.parent/'fairplayrawimage.go').read_bytes())
+(target/'image_text_test.go').write_bytes((api.parent/'fairplayrawimage_test.go').read_bytes())
+def go_digest(value):
+    return '[32]byte{' + ','.join('0x'+value[i:i+2] for i in range(0,64,2)) + '}'
+text_pin = image_pin['immutable_text']
+(target/'image_text_embed.go').write_text('package rawsource\nimport _ "embed"\n'
+    '//go:embed profiles/fairplay-immutable-text.bin.gz\nvar imageTextCompressed []byte\n'
+    f'const imageTextAddress uint64 = {text_pin["address"]}\n'
+    f'const imageTextSize uint64 = {text_pin["bytes"]}\n'
+    f'var imageTextCompressedSHA = {go_digest(text_pin["compressed_sha256"])}\n'
+    f'var imageTextRawSHA = {go_digest(text_pin["sha256"])}\n')
+
+(target/'instruction_trace.go').write_bytes((api.parent/'fairplayrawtrace.go').read_bytes())
+(target/'instruction_trace_test.go').write_bytes((api.parent/'fairplayrawtrace_test.go').read_bytes())
+for path in sorted(target.glob('*.go')):
+    if path.name.startswith('generated_raw_source_') or path.name.startswith('bootstrap_'):
+        text = path.read_text()
+        text = re.sub(r'if runtime != nil && runtime.stopPC == (0x[0-9a-f]+)',
+                      r'if sourceInstructionStop(runtime, \1)', text)
+        path.write_text(text)
+
+# Compare both engines over the actual instruction span of each selected AOT
+# function, including trace fragments that end before a native branch. Taking
+# the *returned* PC as a bound would incorrectly stop at an interior loop head.
+function_ends = {}
+for path in sorted(target.glob('*.go')):
+    text = path.read_text()
+    functions = list(re.finditer(r'^func (\w+)\(', text, re.M))
+    for index, function in enumerate(functions):
+        if not function[1].startswith('rawSource') or 'Block' not in function[1]:
+            continue
+        body = text[function.end():functions[index+1].start() if index+1 < len(functions) else len(text)]
+        addresses = re.findall(r'// (0x[0-9a-f]+):|sourceInstructionStop\(runtime, (0x[0-9a-f]+)\)', body)
+        if addresses:
+            function_ends[function[1]] = max(int(a or b, 16) for a, b in addresses)+4
+if any(function not in function_ends for function in blocks.values()):
+    raise SystemExit('AOT comparison instruction geometry missing')
+(target/'engine_geometry_test.go').write_text('package rawsource\nvar auditBlockEnd=map[uint64]uint64{\n' +
+    ''.join(f'0x{pc:x}:0x{function_ends[function]:x},\n' for pc, function in sorted(blocks.items())) + '}\n')
+(target/'engine_comparison_test.go').write_bytes((api.parent/'fairplayrawengines_test.go').read_bytes())

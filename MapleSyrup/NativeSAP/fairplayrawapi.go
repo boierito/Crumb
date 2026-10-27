@@ -28,6 +28,9 @@ type LookupCount struct {
 type RecoveryDiagnostic struct {
 	Phase                  string                 `json:"phase"`
 	LastExternalSlot       string                 `json:"last_external_slot,omitempty"`
+	FaultInstruction       string                 `json:"fault_instruction,omitempty"`
+	FaultContext           string                 `json:"fault_context,omitempty"`
+	FaultExternalSlot      string                 `json:"fault_external_slot,omitempty"`
 	UnmodeledExternalSlot  string                 `json:"unmodeled_external_slot,omitempty"`
 	StateLookupsByPhase    map[string]LookupCount `json:"state_lookups_by_phase,omitempty"`
 	Failure                string                 `json:"failure"`
@@ -79,6 +82,18 @@ func runtimeDiagnostic(phase, code string, runtime *rawSourceRuntime) RecoveryDi
 		diagnostic.LastBlock = sourceBlockLabel(runtime.lastKnownBlock)
 		if code == "raw_memory_unavailable" {
 			diagnostic.LastExternalSlot = runtime.lastExternalSlot
+		}
+		if code == "raw_memory_unavailable" || code == "raw_unsupported_external" ||
+			code == "raw_operation_rejected" || code == "raw_unsupported_operation" ||
+			code == "generic_execution_rejected" || code == "generic_unsupported_instruction" {
+			diagnostic.FaultInstruction = sourceBlockLabel(runtime.currentInstruction)
+			switch runtime.executionContext {
+			case "aot", "generic", "external":
+				diagnostic.FaultContext = runtime.executionContext
+			}
+			if runtime.executionContext == "external" {
+				diagnostic.FaultExternalSlot = runtime.lastExternalSlot
+			}
 		}
 		diagnostic.SharedBlockExecutions = runtime.additionalBlocks
 		diagnostic.ExecutionBackend = "aot"
@@ -265,6 +280,7 @@ func runEnrollmentSource(value *model, runtime *rawSourceRuntime) (enrollmentOut
 		return enrollmentOutputCheckpoint{}, runtimeFailure("bootstrap", err, runtime)
 	}
 	runtime.phase = "source"
+	runtime.currentInstruction, runtime.executionContext = 0, ""
 	if _, err := runRawSourceKernelLoop(worker, "outer"); err != nil {
 		return enrollmentOutputCheckpoint{}, runtimeFailure("source", err, runtime)
 	}
@@ -287,7 +303,8 @@ func runEnrollmentSource(value *model, runtime *rawSourceRuntime) (enrollmentOut
 
 func VerifyResource() bool {
 	sum := sha256.Sum256(rawSourceModel)
-	return hex.EncodeToString(sum[:]) == "RAW_RESOURCE_SHA256" && genericImage != nil
+	_, imageErr := immutableImageText()
+	return hex.EncodeToString(sum[:]) == "RAW_RESOURCE_SHA256" && genericImage != nil && imageErr == nil
 }
 
 // Recover constructs the source field, selection frame and selector-bound pack
@@ -305,6 +322,10 @@ func Recover(executable string, hardware []byte, files map[string][]byte) (Resul
 	}
 	value, err := loadModelBytes(rawSourceModel)
 	if err != nil {
+		return result, recoveryFailed("resource", "raw_resource_invalid", nil)
+	}
+	image, err := immutableImageText()
+	if err != nil || installImmutableText(value, image, imageTextAddress) != nil {
 		return result, recoveryFailed("resource", "raw_resource_invalid", nil)
 	}
 	defer func() {

@@ -27,7 +27,7 @@ with tempfile.TemporaryDirectory(prefix='crumb-generic-real-') as directory:
     definition=re.search(r'var rawSourceBinaryHash = \[32\]byte\{[^}]+\}',source).group(0)
     (work/'fixture_runtime_test.go').write_text('''package rawsource
 import (_ "embed";"testing")
-type rawSourceRuntime struct{stopPC,lastKnownBlock uint64;additionalBlocks,genericBlocks int;genericInstructions uint64;genericLastPC uint64;untranslatedTarget,targetClass string}
+type rawSourceRuntime struct{stopPC,lastKnownBlock uint64;additionalBlocks,genericBlocks int;genericInstructions uint64;genericLastPC,currentInstruction uint64;executionContext string;untranslatedTarget,targetClass string}
 var knownSourceBlocks=map[uint64]sourceBlock{}
 '''+definition+'''
 //go:embed profiles/generic.ir.gz
