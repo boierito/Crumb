@@ -108,3 +108,31 @@ jobs:
           C
           clang -Wall -Wextra -Werror "$RUNNER_TEMP/rwlock_repeat.c" -o "$RUNNER_TEMP/rwlock_repeat"
           "$RUNNER_TEMP/rwlock_repeat"
+      - name: Measure default attributes and misaligned synthetic locks
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/rwlock_align.c" <<'C'
+          #include <pthread.h>
+          #include <stdint.h>
+          #include <stdio.h>
+          #include <string.h>
+          static void dump(const char *label, pthread_rwlock_t *lock) {
+            unsigned char *p=(unsigned char *)lock; printf("%s=",label);
+            for (int i=0;i<64;i++) printf("%02x",p[i]); puts("");
+          }
+          int main(void) {
+            _Alignas(16) unsigned char storage[224]; memset(storage,0,sizeof(storage));
+            pthread_rwlock_t *l=(pthread_rwlock_t *)(void *)(storage+8);
+            pthread_rwlockattr_t attr; int shared=0;
+            if(pthread_rwlockattr_init(&attr)) return 1;
+            if(pthread_rwlockattr_getpshared(&attr,&shared)) return 2;
+            if(pthread_rwlock_init(l,&attr)) return 3; dump("misaligned_init",l);
+            if(pthread_rwlock_rdlock(l)) return 4; dump("misaligned_read",l);
+            if(pthread_rwlock_unlock(l)) return 5; dump("misaligned_unlock",l);
+            if(pthread_rwlock_destroy(l)) return 6; dump("misaligned_destroy",l);
+            if(pthread_rwlockattr_destroy(&attr)) return 7;
+            printf("default_pshared=%d\n",shared);return 0;
+          }
+          C
+          clang -Wall -Wextra -Werror "$RUNNER_TEMP/rwlock_align.c" -o "$RUNNER_TEMP/rwlock_align"
+          "$RUNNER_TEMP/rwlock_align"
