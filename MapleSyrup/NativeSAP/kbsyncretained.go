@@ -3,17 +3,28 @@ package machine
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"github.com/majd/ipatool/v2/internal/sap/assets"
+	"sync"
 )
 
 type RetainedKBSyncSession struct {
-	agent  *StoreAgent
-	global uint32
+	mu       sync.Mutex
+	hardware []byte
+	agent    *StoreAgent
+	global   uint32
 }
 
 func (r *RetainedKBSyncSession) Close() error {
-	if r == nil || r.agent == nil {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	clear(r.hardware)
+	r.hardware = nil
+	if r.agent == nil {
 		return nil
 	}
 	if r.agent.guest != nil {
@@ -23,12 +34,19 @@ func (r *RetainedKBSyncSession) Close() error {
 			}
 		}
 	}
-	return r.agent.Close()
+	err := r.agent.Close()
+	r.agent = nil
+	return err
 }
 
 // ImportKeybag uses the exact wrapper called by the three native keybag handlers.
 func (r *RetainedKBSyncSession) ImportKeybag(keybag []byte) (int32, map[string][]byte, map[string]any, error) {
-	if r == nil || r.agent == nil || r.agent.guest == nil || len(keybag) == 0 || len(keybag) > 1<<20 {
+	if r == nil {
+		return 0, nil, nil, fmt.Errorf("invalid consumer input")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.agent == nil || r.agent.guest == nil || len(keybag) == 0 || len(keybag) > 1<<20 {
 		return 0, nil, nil, fmt.Errorf("invalid consumer input")
 	}
 	g := r.agent.guest
@@ -59,5 +77,73 @@ func OpenRetainedKBSync(ctx context.Context, bundle assets.Bundle, hardware []by
 		agent.Close()
 		return nil, nil, err
 	}
-	return &RetainedKBSyncSession{agent: agent, global: global}, blob, nil
+	return &RetainedKBSyncSession{agent: agent, global: global, hardware: append([]byte(nil), hardware...)}, blob, nil
+}
+
+// OpenRetainedLicenseState restores a previously captured legacy producer
+// filesystem before the original native global initializer reads any state.
+// It does not generate KBSync, contact Apple, re-import a keybag, convert SIDB,
+// or assert that the restored account can decode a mobile SINF.
+func OpenRetainedLicenseState(ctx context.Context, bundle assets.Bundle, hardware []byte, files map[string][]byte) (*RetainedKBSyncSession, error) {
+	state, err := cloneGuestState(files)
+	if err != nil {
+		return nil, err
+	}
+	expectedSIDB := sha256.Sum256(state[storeAgentSCInfoPath+"/SC Info.sidb"])
+	owned := true
+	defer func() {
+		if owned {
+			for _, b := range state {
+				clear(b)
+			}
+		}
+	}()
+	image, err := assets.LoadStoreAgent(ctx)
+	if err != nil {
+		return nil, err
+	}
+	agent, global, err := openStoreAgentGlobalPrepared(ctx, bundle, image, hardware, func(agent *StoreAgent) error {
+		return agent.guest.services.installGuestState(state)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if sha256.Sum256(state[storeAgentSCInfoPath+"/SC Info.sidb"]) != expectedSIDB {
+		_ = agent.Close()
+		return nil, fmt.Errorf("producer_state_not_preserved")
+	}
+	owned = false
+	return &RetainedKBSyncSession{agent: agent, global: global, hardware: append([]byte(nil), hardware...)}, nil
+}
+
+// NeedsAccountDiversity invokes the exact routine called by
+// -[FairPlayHelper needDiversityForDSID:] in the pinned StoreAgent. Its native
+// boolean is a provisioning query, never SINF key confirmation. The
+// hardware identity is retained from the global initializer.
+func (r *RetainedKBSyncSession) NeedsAccountDiversity(dsid uint64) (bool, error) {
+	if r == nil {
+		return false, fmt.Errorf("producer_session_invalid")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.agent == nil || r.agent.closed || r.agent.guest == nil || dsid == 0 {
+		return false, fmt.Errorf("producer_session_invalid")
+	}
+	block, err := hardwareBlock(r.hardware)
+	if err != nil {
+		return false, err
+	}
+	defer clear(block)
+	g := r.agent.guest
+	g.beginCall()
+	defer g.clearScratch()
+	pointer, err := g.scratch(block, uint64(len(block)))
+	if err != nil {
+		return false, err
+	}
+	status, err := g.invoke(storeAgentBase+0x11d490, uint64(r.global), pointer, dsid)
+	if err != nil {
+		return false, err
+	}
+	return uint32(status) != 0, nil
 }

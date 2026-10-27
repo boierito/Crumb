@@ -68,14 +68,11 @@ cp "$ROOT/MapleSyrup/NativeSAP/captureanalysis.go" "$ROOT/MapleSyrup/NativeSAP/c
 # Compile the large raw CFG once for iOS here, rather than twice for host tests.
 (cd "$SOURCE" && go test -p=1 ./wafflebridge/recovery/state ./wafflebridge/recovery/frame ./wafflebridge/recovery/sidb)
 cp "$ROOT/MapleSyrup/NativeSAP/gueststate.go" "$SOURCE/internal/sap/machine/"
-python3 - "$SOURCE/internal/sap/machine/shims.go" <<'STATEPATCH'
-import pathlib,sys
-p=pathlib.Path(sys.argv[1]);s=p.read_text();assert s.count('type shims struct {')==1
-p.write_text(s.replace('type shims struct {','type shims struct {\n guestStateFS *guestStateFS',1))
-STATEPATCH
+python3 "$ROOT/scripts/prepare-retained-storeagent.py" "$SOURCE/internal/sap/machine"
+cp "$ROOT/MapleSyrup/NativeSAP/guestrestore.go" "$SOURCE/internal/sap/machine/"
 cp "$ROOT/MapleSyrup/NativeSAP/kbsyncretained.go" "$SOURCE/internal/sap/machine/"
 cp "$ROOT/MapleSyrup/NativeSAP/kbsyncbridge.go" "$SOURCE/wafflebridge/"
-cp "$ROOT/MapleSyrup/NativeSAP/gueststate_test.go" "$SOURCE/internal/sap/machine/"
+cp "$ROOT/MapleSyrup/NativeSAP/gueststate_test.go" "$ROOT/MapleSyrup/NativeSAP/guestrestore_test.go" "$SOURCE/internal/sap/machine/"
 (cd "$SOURCE" && CGO_ENABLED=0 go test -run '^TestGuestState' ./internal/sap/machine)
 (cd "$SOURCE" && CGO_ENABLED=0 GOOS=ios GOARCH=arm64 go build ./wafflebridge/mobilelicense)
 SDK=$(xcrun --sdk iphoneos --show-sdk-path)

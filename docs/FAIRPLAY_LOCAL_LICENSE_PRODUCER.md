@@ -67,3 +67,61 @@ Next required evidence is a source-identified StoreAgent/CoreFP license operatio
 with complete ABI and input provenance, executed on the original retained
 transaction. Adding more translated macOS blocks, random SIDB modifications or
 more app downloads does not supply that operation.
+
+## Producer continuation: native legacy state initialization
+
+Following the first consumer-only commit, investigation downloaded the exact
+public Apple 10.9 assets through the existing hash-verifying ipatool loader.
+No private capture or account material was downloaded.
+
+Static evidence in StoreAgent SHA-256
+`70ce036f9dbcbc04db9511ebd08de0dd3cbc35ccc9d44b089c90170cb5453c59`:
+
+- `-[FairPlayHelper needDiversityForDSID:]` at text+0x88e65 calls text+0x11d490.
+  Its arguments are the original uint32 global context, the same 24-byte
+  FairPlayHWInfo structure used by initialization, and the 64-bit DSID. Every
+  nonzero result becomes YES. This is a provisioning query, not key confirmation.
+- The keybag wrapper text+0xd5ce0 resolves discriminator 0x736b3779 through
+  text+0x1232a0, reaching text+0xc4810 in the unrelocated pinned image. These are
+  local native routines, not the modern fairplayd enrollment consumer.
+- `scripts/verify-storeagent-license-profile.py` rechecks the entire asset hash
+  and exact caller/callee instructions defining the new query ABI.
+
+Implemented `OpenRetainedLicenseState`: install an isolated, deep-copied legacy
+filesystem before calling the original native global initializer. The default
+constructor still initializes with its original behavior. The new path does
+not generate KBSync, replay an old keybag against a new ephemeral session,
+convert SIDB to another generation, or contact Apple for a new transaction.
+
+A successful context initialization is insufficient. Restoration additionally
+requires the original SIDB bytes to remain unchanged. A discarded, recreated or
+rewritten SIDB fails with `producer_state_not_preserved`. An input header alone
+must never be interpreted as a recovered account.
+
+Actual native execution with a public synthetic MAC/DSID confirmed that the
+unenrolled account reports diversity required. A deterministic four-byte
+truncated SIDB takes the native rejection/cleanup path: the initializer calls
+`_unlink`, which was previously unsupported. The new bounded VFS implementation
+removes only an existing closed virtual file, clears its private bytes, denies
+host paths and refuses unlink-while-open (the VFS has path-based descriptors,
+not POSIX inode objects). It never reports unsupported semantics as success.
+The restoration constructor detects the native discard and rejects it; the
+original input remains unchanged.
+
+The session retains its own hardware identity for the query and serializes
+native calls against Close. New filesystem ownership/bounds, unlink isolation,
+source-overlay drift and native rejection tests accompany this implementation.
+The host SAP test now runs the producer probes using the non-JIT TCI runtime;
+the CI `legacy-producer` job runs this same command.
+
+Not yet demonstrated: restoring the owner's real enrolled SIDB, deriving its
+mobile credential, or validating its SINF. The new constructor and query do not
+claim any of these outcomes. They are an implementation of same-generation
+state restoration and native account querying, not a crypto format bridge.
+
+Local verification of this continuation: the full `scripts/test-sap-host.sh`
+command passed with the compiled TCI shared library (producer probe 111.67 s,
+KBSync smoke 45.58 s, SAP smoke 2.75 s). VFS ownership/unlink tests also passed
+with `-race`. The ABI verifier and source-overlay contract tests passed. These
+are real native-code executions with public test inputs, not enrollment or
+SINF-decryption evidence for the owner's account.
