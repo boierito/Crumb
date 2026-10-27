@@ -34,6 +34,7 @@ type RecoveryDiagnostic struct {
 	FaultInstruction       string                 `json:"fault_instruction,omitempty"`
 	FaultContext           string                 `json:"fault_context,omitempty"`
 	FaultExternalSlot      string                 `json:"fault_external_slot,omitempty"`
+	CandidateSINFVerified  bool                   `json:"candidate_sinf_verified"`
 	CandidateChecks        int                    `json:"candidate_sinf_checks,omitempty"`
 	FaultRegion            string                 `json:"fault_region,omitempty"`
 	Replay                 *replayDiagnostic      `json:"generic_replay,omitempty"`
@@ -110,6 +111,7 @@ func runtimeDiagnostic(phase, code string, runtime *rawSourceRuntime) RecoveryDi
 			}
 		}
 		diagnostic.CandidateChecks = runtime.candidateChecks
+		diagnostic.CandidateSINFVerified = runtime.candidateSINFVerified
 		diagnostic.SharedBlockExecutions = runtime.additionalBlocks
 		diagnostic.ExecutionBackend = "aot"
 		if runtime.genericBlocks > 0 {
@@ -241,13 +243,14 @@ func (r *rawSourceRuntime) recordLookup(requested string, found bool) {
 // Capture source/frame at this phase boundary, before SINF changes guest state.
 // This does not substitute any frame or relax downstream cryptographic checks.
 type enrollmentOutputCheckpoint struct {
-	source, frame []byte
+	source, frame, pack []byte
 }
 
 func (c *enrollmentOutputCheckpoint) clear() {
 	clear(c.source)
 	clear(c.frame)
-	c.source, c.frame = nil, nil
+	clear(c.pack)
+	c.source, c.frame, c.pack = nil, nil, nil
 }
 
 func checkpointEnrollmentOutputs() (enrollmentOutputCheckpoint, error) {
@@ -293,7 +296,9 @@ func runEnrollmentSource(value *model, runtime *rawSourceRuntime, validate func(
 	worker.reset()
 	lastRawSourceState = worker
 	var checkpoint enrollmentOutputCheckpoint
-	frameVisits, candidates := 0, 0
+	frameVisits := 0
+	validation := nativeCandidateValidation{}
+	defer validation.clear()
 	runtime.phase = "account-parser"
 	runtime.observe = func(pc uint64) {
 		switch pc {
@@ -318,9 +323,19 @@ func runEnrollmentSource(value *model, runtime *rawSourceRuntime, validate func(
 		}
 	}
 	runtime.boundary = func() (bool, error) {
-		candidates++
-		if candidates > 64 {
-			return false, &genericExecutionError{"native_candidate_limit"}
+		// A native landmark can recur within an inner loop. Validate distinct
+		// material independently of the auxiliary source/frame checkpoint.
+		if validate != nil && len(validation.accepted) == 0 {
+			pack, err := currentRawSourceEnrollmentPack()
+			if err == nil {
+				_, err = validation.observe(pack, validate)
+				clear(pack)
+				runtime.candidateChecks = validation.checks
+				runtime.candidateSINFVerified = len(validation.accepted) != 0
+				if err != nil {
+					return false, err
+				}
+			}
 		}
 		// First-frame/SIDB returns may reach the same native landmark. Rejecting
 		// their candidate must continue at this PC, never restart the frame body.
@@ -338,13 +353,13 @@ func runEnrollmentSource(value *model, runtime *rawSourceRuntime, validate func(
 		if validate == nil {
 			return frameVisits >= 2, nil
 		}
-		pack, err := currentRawSourceEnrollmentPack()
-		if err != nil {
+		if len(validation.accepted) == 0 {
 			return false, nil
 		}
-		defer clear(pack)
-		runtime.candidateChecks++
-		return validate(pack), nil
+		// Return exactly the material accepted by the SINF callback, even if
+		// native execution subsequently overwrote the guest scratch buffer.
+		checkpoint.pack = bytes.Clone(validation.accepted)
+		return true, nil
 	}
 	defer func() { runtime.observe, runtime.boundary = nil, nil }()
 	region := nativeRegion{"enrollment", nativeEnrollmentStart, nativeEnrollmentEnd, 1, maxNativeRecoveryBlocks}
@@ -381,7 +396,7 @@ func verifyEnrollmentCheckpoint(checkpoint enrollmentOutputCheckpoint) bool {
 func VerifyResource() bool {
 	sum := sha256.Sum256(rawSourceModel)
 	_, imageErr := immutableImageText()
-	return hex.EncodeToString(sum[:]) == "RAW_RESOURCE_SHA256" && genericImage != nil && imageErr == nil
+	return hex.EncodeToString(sum[:]) == "RAW_RESOURCE_SHA256" && genericImage != nil && len(genericImage.nativeText) != 0 && genericImage.sourceBinary == rawSourceBinaryHash && imageErr == nil
 }
 
 // Recover constructs the source field, selection frame and selector-bound pack
@@ -457,8 +472,11 @@ func recoverAttempt(executable string, hardware []byte, files map[string][]byte,
 	if err != nil {
 		return result, err
 	}
-	result.Pack, err = currentRawSourceEnrollmentPack()
-	if err != nil {
+	result.Pack = checkpoint.pack
+	if validate == nil {
+		result.Pack, err = currentRawSourceEnrollmentPack()
+	}
+	if err != nil || len(result.Pack) == 0 {
 		checkpoint.clear()
 		return Result{}, recoveryFailed("pack", "raw_pack_unavailable", activeRawSourceRuntime)
 	}

@@ -3,8 +3,9 @@
 
 The machine state and memory in the tests are synthetic; no capture is read.
 """
-import hashlib,json,pathlib,re,subprocess,tarfile,tempfile
+import gzip,hashlib,json,pathlib,re,subprocess,tarfile,tempfile
 from fairplay_generic_resource import read_profile
+from fairplay_image_resource import read_image_text
 ROOT=pathlib.Path(__file__).resolve().parent.parent
 REV='f7242cce58077a4af8db738ed295ee23ad8f067d'
 ARCHIVE_SHA='e89a89c4af74a8b0e6f682efdf89edc36bc093874d706d8f27f43e657bd3ec39'
@@ -20,9 +21,13 @@ with tempfile.TemporaryDirectory(prefix='crumb-generic-real-') as directory:
         source=(upstream/name).read_text().replace('package main','package rawsource',1)
         source=re.sub(r'^//go:build[^\n]*\n','',source)
         (work/name).write_text(source)
-    for name in ('fairplaygeneric.go','fairplaygeneric_test.go','fairplaygeneric_real_test.go','fairplayrawblocks.go','fairplayrawflow.go','fairplayrawflow_test.go'):
+    for name in ('fairplaygeneric.go','fairplaygeneric_atomic.go','fairplaygeneric_atomic_test.go','fairplaygeneric_test.go','fairplaygeneric_real_test.go','fairplayrawblocks.go','fairplayrawflow.go','fairplayrawflow_test.go'):
         (work/name).write_bytes((ROOT/'MapleSyrup/NativeSAP'/name).read_bytes())
     (work/'profiles').mkdir();(work/'profiles/generic.ir.gz').write_bytes(compressed)
+    encoded_image,image_pin=read_image_text(ROOT)
+    native_text=gzip.decompress(encoded_image)
+    assert hashlib.sha256(native_text).hexdigest()==image_pin['immutable_text']['sha256']
+    (work/'profiles/native-text.bin').write_bytes(native_text)
     source=(upstream/'raw_source_step.go').read_text()
     definition=re.search(r'var rawSourceBinaryHash = \[32\]byte\{[^}]+\}',source).group(0)
     (work/'fixture_runtime_test.go').write_text('''package rawsource
@@ -33,7 +38,9 @@ func (r *rawSourceRuntime) handle(s *state,pc uint64)(uint64,error){return pc,fm
 '''+definition+'''
 //go:embed profiles/generic.ir.gz
 var encoded []byte
-func init(){var err error;genericImage,err=loadGenericInstructionProfile(encoded,rawSourceBinaryHash,genericKernelABI);if err!=nil{panic(err)}}
+//go:embed profiles/native-text.bin
+var nativeText []byte
+func init(){var err error;genericImage,err=loadGenericInstructionProfile(encoded,rawSourceBinaryHash,genericKernelABI);if err!=nil{panic(err)};if err=genericImage.attachNativeText(rawSourceBinaryHash,0x100000000,nativeText);err!=nil{panic(err)}}
 func TestRealGenericResourceLoaded(t *testing.T){if genericImage==nil{t.Fatal("profile absent")}}
 ''')
     (work/'go.mod').write_text('module genericreal\n\ngo 1.26.0\n')
