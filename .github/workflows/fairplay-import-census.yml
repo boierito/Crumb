@@ -52,7 +52,7 @@ jobs:
             unsigned long before = l.__sig;
             int d = pthread_rwlock_destroy(&l);
             printf("mode=%d destroy=%d size=%zu before=%08lx after=%08lx\n", mode, d, sizeof(l), before, (unsigned long)l.__sig);
-            if (mode == 2) { printf("unlock=%d destroy_after_unlock=%d\n", pthread_rwlock_unlock(&l), pthread_rwlock_destroy(&l)); }
+            if (mode == 2) { int u = pthread_rwlock_unlock(&l); int e = pthread_rwlock_destroy(&l); printf("unlock=%d destroy_after_unlock=%d\n", u, e); }
           }
           int main(void) { run(0); run(1); run(2); return 0; }
           C
