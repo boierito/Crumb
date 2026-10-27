@@ -1,0 +1,102 @@
+name: Publish verified authorization routing IPA
+on:
+  push:
+    branches: [distribution/23048-authorization-routing]
+    paths:
+      - '.github/workflows/publish-fairplay-authorization-routing.yml'
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish-tested-artifact:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require successful pinned CI and artifact provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: 7b6e72117fff5943f58ff5437aa86fc8d7211ca4
+        shell: bash
+        run: |
+          set -euo pipefail
+          for RUN in 40472513566 40472513556; do
+            test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" --jq .conclusion)" = success
+            test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" --jq .head_sha)" = "$SOURCE_SHA"
+          done
+      - name: Download completed unsigned Release IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: Crumb-IPA-Release-40472513556
+          run-id: 40472513556
+          github-token: ${{ github.token }}
+          path: ipa-input
+      - name: Download corresponding sources and notices
+        uses: actions/download-artifact@v4
+        with:
+          name: Crumb-Release-40472513556
+          run-id: 40472513556
+          github-token: ${{ github.token }}
+          path: source-input
+      - name: Validate actual IPA and stage a uniquely named asset
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, plistlib, zipfile, shutil
+          ipa = Path('ipa-input/Crumb-Release.ipa')
+          expected = 'bdcb12021ee807bf9138cfd01bc4276e340df06176133a699d6fa79b255bf70b'
+          assert hashlib.sha256(ipa.read_bytes()).hexdigest() == expected, 'Pinned IPA SHA256 does not match'
+          with zipfile.ZipFile(ipa) as z:
+              assert z.testzip() is None, 'IPA ZIP corruption'
+              info = plistlib.loads(z.read('Payload/Crumb.app/Info.plist'))
+              assert info['CFBundleVersion'] == '23048', 'Unexpected build number'
+              assert info['CFBundleIdentifier'] == 'com.certlium.crumb'
+              assert not any(p.endswith('embedded.mobileprovision') for p in z.namelist())
+          shutil.copyfile(ipa, 'release/Crumb-23048-Release.ipa')
+          for filename in ['IPATOOL-LICENSE', 'UNICORN-COPYING',
+                           'ipatool-sap-corresponding-source.tar.gz',
+                           'unicorn-tci-corresponding-source.tar.gz']:
+              src = Path('source-input') / filename
+              assert src.is_file(), 'Missing corresponding source/notice: ' + filename
+              shutil.copyfile(src, Path('release') / filename)
+          print('Verified SHA256:', expected)
+          PY
+      - name: Publish a separate GitHub prerelease for the tested checkpoint
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=test-23048-authorization-routing
+          test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
+          gh release upload "$TAG" release/* --repo "$GITHUB_REPOSITORY" --clobber
+          cat > release-notes.txt <<'NOTES'
+          Crumb 23048 — experimental authorization routing correction. Unsigned Release IPA; install using your usual authorized iPhone signing method while preserving Crumb's app data.
+
+          The 23047 device attempt stopped before reply-bag import/SINF validation with a generic serverRejected error. This update corrects source-verified protocol discrepancies; the exact cause of that previous attempt remains unknown.
+
+          Changes:
+          - Honor Apple's live Bag guid-urls policy in the authorization URL, using the same virtual identity as the signed plist and retained producer. Preserve encoded routing parameters.
+          - Follow bounded, explicitly validated Apple authorization redirects while preserving the exact POST and SAP signature. No automatic HTTP-error or ADI-challenge retry.
+          - Do not reject valid reply bags merely because customerMessage is present or empty. Native import, account query, source/frame, all original SINFs and whole-IPA validation remain required.
+          - Record only HTTP status, response format and a bounded/redacted Apple failure code. No tokens, identities, URLs, messages or private reply bytes enter the diagnostic.
+
+          Test using the existing saved original IPA and its matching capture:
+          1. Open Crumb and sign in with the same Apple Account.
+          2. Settings → FairPlay Laboratory.
+          3. Section 2 → Import existing encrypted IPA from Files (no download).
+          4. Section 3 → Import an older capture ZIP for offline research.
+          5. Section 4 → Authorize account and validate this IPA. Tap once, keep Crumb open and the iPhone unlocked.
+          6. Section 5 → Prepare exports → Share diagnostic (no secret blobs). Share only the new diagnostic JSON.
+
+          No new app download is required. Do not run SIDB mutation experiments. The capture and original IPA stay on the phone. If you do not have saved files, Download and capture transaction creates both locally; continue at step 5 in the same session and save the originals before closing.
+
+          No real SINF/IPA decryption is yet established. An ADI challenge still stops the attempt; native challenge completion and legacy/modern enrollment compatibility remain unresolved. plaintext_authenticated remains false.
+
+          This installer is published from the exact successful CI artifact with pinned provenance, SHA256, corresponding native sources and license notices.
+
+          Source commit: 7b6e72117fff5943f58ff5437aa86fc8d7211ca4
+          IPA SHA256: bdcb12021ee807bf9138cfd01bc4276e340df06176133a699d6fa79b255bf70b
+          NOTES
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false \
+            --title 'Crumb 23048 — authorization routing correction' --notes-file release-notes.txt
