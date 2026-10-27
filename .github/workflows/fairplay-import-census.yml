@@ -83,3 +83,28 @@ jobs:
           C
           clang -Wall -Wextra -Werror "$RUNNER_TEMP/rwlock_bytes.c" -o "$RUNNER_TEMP/rwlock_bytes"
           "$RUNNER_TEMP/rwlock_bytes"
+      - name: Measure repeated synthetic reader transitions
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/rwlock_repeat.c" <<'C'
+          #include <pthread.h>
+          #include <stdio.h>
+          #include <string.h>
+          static void dump(const char *label, pthread_rwlock_t *lock) {
+            unsigned char *p=(unsigned char *)lock; printf("%s=",label);
+            for (int i=32;i<48;i++) printf("%02x",p[i]); puts("");
+          }
+          int main(void) {
+            pthread_rwlock_t l; memset(&l,0,sizeof(l));
+            if (pthread_rwlock_init(&l,0)) return 1;
+            if (pthread_rwlock_rdlock(&l)) return 2; dump("read1",&l);
+            if (pthread_rwlock_rdlock(&l)) return 3; dump("read2",&l);
+            if (pthread_rwlock_unlock(&l)) return 4; dump("unlock1",&l);
+            if (pthread_rwlock_unlock(&l)) return 5; dump("unlock2",&l);
+            if (pthread_rwlock_rdlock(&l)) return 6; dump("read3",&l);
+            if (pthread_rwlock_unlock(&l)) return 7; dump("unlock3",&l);
+            return pthread_rwlock_destroy(&l);
+          }
+          C
+          clang -Wall -Wextra -Werror "$RUNNER_TEMP/rwlock_repeat.c" -o "$RUNNER_TEMP/rwlock_repeat"
+          "$RUNNER_TEMP/rwlock_repeat"
