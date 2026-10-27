@@ -1,0 +1,115 @@
+name: Publish verified complete immutable text IPA
+on:
+  push:
+    branches: [distribution/23050-complete-immutable-text]
+    paths:
+      - '.github/workflows/publish-fairplay-complete-image.yml'
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish-tested-artifact:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require successful pinned CI and artifact provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: 880cb3438804917bd90fc37709645cb3bf76f16d
+        shell: bash
+        run: |
+          set -euo pipefail
+          for RUN in 40507144695 40507144690; do
+            test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" --jq .conclusion)" = success
+            test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" --jq .head_sha)" = "$SOURCE_SHA"
+          done
+      - name: Download completed unsigned Release IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: Crumb-IPA-Release-40507144690
+          run-id: 40507144690
+          github-token: ${{ github.token }}
+          path: ipa-input
+      - name: Download corresponding sources and notices
+        uses: actions/download-artifact@v4
+        with:
+          name: Crumb-Release-40507144690
+          run-id: 40507144690
+          github-token: ${{ github.token }}
+          path: source-input
+      - name: Validate actual IPA and stage a uniquely named asset
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, plistlib, zipfile, shutil, tarfile, json
+          ipa = Path('ipa-input/Crumb-Release.ipa')
+          expected = 'eeb8994d42a6f81ef40e56d3398771061cc17037a05dc66dd46d81b408fddd5c'
+          assert hashlib.sha256(ipa.read_bytes()).hexdigest() == expected, 'Pinned IPA SHA256 does not match'
+          with zipfile.ZipFile(ipa) as z:
+              assert z.testzip() is None, 'IPA ZIP corruption'
+              info = plistlib.loads(z.read('Payload/Crumb.app/Info.plist'))
+              assert info['CFBundleVersion'] == '23050', 'Unexpected build number'
+              assert info['CFBundleIdentifier'] == 'com.certlium.crumb'
+              assert not any(p.endswith('embedded.mobileprovision') for p in z.namelist())
+          shutil.copyfile(ipa, 'release/Crumb-23050-Release.ipa')
+          for filename in ['IPATOOL-LICENSE', 'UNICORN-COPYING',
+                           'ipatool-sap-corresponding-source.tar.gz',
+                           'unicorn-tci-corresponding-source.tar.gz']:
+              src = Path('source-input') / filename
+              assert src.is_file(), 'Missing corresponding source/notice: ' + filename
+              shutil.copyfile(src, Path('release') / filename)
+          with tarfile.open('source-input/ipatool-sap-corresponding-source.tar.gz') as archive:
+              def read(suffix):
+                  matches = [m for m in archive.getmembers() if m.name.endswith(suffix)]
+                  assert len(matches) == 1, 'Source member missing or ambiguous: ' + suffix
+                  return archive.extractfile(matches[0]).read()
+              assert hashlib.sha256(read('/wafflebridge/recovery/rawsource/image_text.go')).hexdigest() == 'cd2bca971606fab0b7166ad4d3feef4da6ee99b31de71e902f69f2624af4fd24'
+              assert hashlib.sha256(read('/wafflebridge/recovery/rawsource/instruction_trace.go')).hexdigest() == '3281b502628ef04ed878683cca3dc706c612fb8cc5b0eeccd493ca51ad6bc0fa'
+              assert hashlib.sha256(read('/wafflebridge/recovery/rawsource/profiles/fairplay-immutable-text.bin.gz')).hexdigest() == '7038211db09dcd03828ee394e1983dd8b2747b37f95df035d83949f8a2703ee5'
+              manifest = read('/wafflebridge/recovery/rawsource/IMMUTABLE-IMAGE-PROVENANCE.json')
+              assert json.loads(manifest)['binary_sha256'] == '1e58d37e9602dd0ca5e24b14762063b6c310248b4d3a94272771d815e4ea1784'
+              Path('release/immutable-image-provenance.json').write_bytes(manifest)
+          print('Verified SHA256:', expected)
+          PY
+      - name: Publish a separate GitHub prerelease for the tested checkpoint
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=test-23050-complete-immutable-text
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft >/dev/null 2>&1; then
+            test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --prerelease \
+              --target 880cb3438804917bd90fc37709645cb3bf76f16d --title 'Crumb 23050 — complete immutable text recovery' \
+              --notes 'Verified experimental build; complete provenance and test instructions follow before publication.'
+          fi
+          gh release upload "$TAG" release/* --repo "$GITHUB_REPOSITORY" --clobber
+          cat > release-notes.txt <<'NOTES'
+          Crumb 23050 — recuperación local con __TEXT completo. IPA Release sin firmar; instalala mediante tu método habitual autorizado, conservando los datos de Crumb.
+          
+          Esta versión incorpora las 3.853 páginas de __TEXT que faltaban en el modelo público, incluidas 490 páginas ausentes de __const. Los bytes proceden exclusivamente del binario público exacto cuyo SHA-256 coincide con el perfil. El extractor verificó permisos y ausencia de chained fixups. Se conservan las 472 páginas originales, incluidas las seis páginas de __TEXT que difieren del archivo. Los huecos de estado mutable, heap y stack siguen rechazándose.
+          
+          El motor registra la instrucción AOT/genérica que falla y distingue un fallo real de una llamada externa de los imports históricos. Las huellas del caché nativo y los fuentes correspondientes incluyen el recurso nuevo. Todo lo necesario para este cambio va dentro de Crumb; no agrega una dependencia de PC, JIT, jailbreak ni servidor de descifrado durante su uso.
+          
+          Validación de publicación: suite completa SAP/portátil/productor nativo, compilaciones iOS Debug y Release, comparación AOT/genérico sobre el inventario real, memoria de imagen completa, reentrada y rechazo de memoria desconocida. La auditoría preliminar comparó 17.028 ejecuciones válidas sin divergencias, con otras 32 pruebas rechazadas. 3.290 programas genéricos coincidieron con ejecución ARM64 independiente, incluso con nuevos mapeos ejecutables prohibidos.
+          
+          El último resultado real del iPhone (23049) autorizó la cuenta pero falló en selección antes de validar el SINF. No está probado que su acceso fallido correspondiera a una página de __TEXT ausente. La compatibilidad de inscripción y el primer descifrado real siguen pendientes; esta publicación no afirma que el SINF ni una IPA de App Store ya se hayan descifrado. Se mantienen todos los controles originales.
+          
+          Una prueba con tus archivos existentes:
+          1. Actualizá Crumb sin desinstalarlo, conservando datos e identidad de firma.
+          2. Settings → FairPlay Laboratory → Import existing encrypted IPA from Files. Seleccioná la IPA original guardada; no descargues otra.
+          3. Pulsá Authorize account and validate this IPA una vez. Dejá Crumb abierto y el iPhone desbloqueado. Si conserva estado autorizado válido, el flujo lo reutiliza. La captura anterior sólo hace falta si Crumb no encuentra ese estado.
+          4. Prepare exports → Share diagnostic. Compartí únicamente el JSON diagnóstico, sin archivos de licencia privados.
+          
+          Código: https://github.com/boierito/Crumb/pull/14
+          Commit: 880cb3438804917bd90fc37709645cb3bf76f16d
+          Árbol verificado (también usado por el merge de prueba del PR): e92da87683613a57ff205b6b5db7915210c57818
+          Tests: https://github.com/boierito/Crumb/actions/runs/40507144695
+          Build: https://github.com/boierito/Crumb/actions/runs/40507144690
+          IPA SHA256: eeb8994d42a6f81ef40e56d3398771061cc17037a05dc66dd46d81b408fddd5c
+          NOTES
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false \
+            --title 'Crumb 23050 — complete immutable text recovery' --notes-file release-notes.txt
