@@ -184,7 +184,7 @@ jobs:
           #include <stdio.h>
           #include <sys/qos.h>
           int main(void) {
-            int qs[]={0,9,17,21,25,33,127};int priorities[]={0,-1,-15,-16,1};
+            int qs[]={0,5,9,17,21,25,33,127};int priorities[]={0,-1,-15,-16,1};
             for(unsigned i=0;i<sizeof(qs)/sizeof(qs[0]);i++) for(unsigned k=0;k<sizeof(priorities)/sizeof(priorities[0]);k++) {
               int r=pthread_set_qos_class_self_np((qos_class_t)qs[i],priorities[k]);
               printf("qos=%d relative=%d status=%d\n",qs[i],priorities[k],r);
