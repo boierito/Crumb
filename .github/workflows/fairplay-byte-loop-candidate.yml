@@ -1,0 +1,22 @@
+name: Generate pinned byte loop candidate
+on:
+  push:
+    branches: ['distribution/fairplay-import-census']
+    paths: ['.github/workflows/fairplay-byte-loop-candidate.yml']
+permissions:
+  contents: read
+jobs:
+  candidate:
+    runs-on: xcode-27
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install capstone==5.0.6
+      - run: python3 scripts/generate-fairplay-next-block.py --target 0x1001005ac --output artifacts/loop.go --reference-output artifacts/loop.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pinned-byte-loop-candidate
+          path: artifacts/*
+          if-no-files-found: error
