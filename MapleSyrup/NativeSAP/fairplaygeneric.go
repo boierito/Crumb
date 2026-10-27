@@ -119,7 +119,7 @@ func ExecutionProfileSummary() map[string]any {
 	result := map[string]any{"backend": "generic-profile", "profile_version": 2, "ready": genericImage != nil, "jit_required": false}
 	if genericImage != nil {
 		if len(genericImage.nativeText) != 0 {
-			result["semantic_extensions"] = []string{"arm64-cas-v1"}
+			result["semantic_extensions"] = []string{"arm64-cas-v1", "arm64-simd-pair64-v1"}
 		}
 		result["instruction_slots"] = genericImage.executable
 		result["span_slots"] = genericImage.count

@@ -216,7 +216,7 @@ func finishAuthorization(r authorizationRequest) (any, error) {
 			return valid
 		})
 		if e != nil {
-			report["status"] = "model_recovery_rejected"
+			report["status"] = authorizationRecoveryStatus(e)
 			report["failure"] = labFailureFields("authorization-sinf", e)
 			return report, nil
 		}
