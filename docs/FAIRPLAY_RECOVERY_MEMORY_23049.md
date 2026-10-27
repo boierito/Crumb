@@ -25,10 +25,13 @@ The minimum extent for small requests is retained to avoid unrelated reference
 layout changes. Only explicit supported allocation calls create memory. Unknown
 pointers still fail; no license bytes, missing state files or pages are invented.
 Free/munmap retain the reference lifetime behavior; allocator reuse is not claimed.
-The file ABI's bounded read/mmap ranges and longest-suffix lookup remain unchanged.
+The mmap path also rounded copied bytes to a Darwin 16 KiB extent while
+allocating only a model-page-rounded (4 KiB) requested length. Partial mappings
+of larger files could write past their own reservation. The mmap allocation now
+reserves the same accessible extent it copies. Longest-suffix lookup is unchanged.
 
 An ABI transaction test allocates a live 3 MiB buffer, then opens, stats, maps,
-reads and closes three distinct files larger than 2 MiB, and verifies every byte
+partially maps, reads and closes three distinct files larger than 2 MiB, and verifies every byte
 of all live buffers after later operations. This sequence exposes the old overlap
 without account keys. Invalid extent/collision tests require atomic rejection.
 The normal complete portable and native/IPA CI pipelines are retained; these

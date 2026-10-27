@@ -67,6 +67,10 @@ for name in names:
         text, count = allocation.subn('func (r *rawSourceRuntime) allocate(s *state, size uint64) (uint64, error) {\n return allocateSourceMemory(r, s, size)\n}', text)
         if count != 1:
             raise SystemExit('raw allocator contract changed')
+        mmap_extent = 'accessibleLength := (length + 0x3FFF) &^ 0x3FFF\n\t\taddress, err := r.allocate(s, length)'
+        if text.count(mmap_extent) != 1:
+            raise SystemExit('raw mmap extent contract changed')
+        text = text.replace(mmap_extent, 'if length == 0 || length > 0x10000000 { return pc, fmt.Errorf("invalid bootstrap mapping size") }\n\t\t' + mmap_extent.replace('r.allocate(s, length)', 'r.allocate(s, accessibleLength)'))
         # Instrument the existing lookup only; preserve longest-suffix matching
         # and all guest-visible return values. Never retain requested paths.
         field = 'type rawSourceRuntime struct {'

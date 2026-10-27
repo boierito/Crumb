@@ -50,8 +50,12 @@ func TestSourceMemoryFileTransactionPreservesAllLiveAllocations(t *testing.T) {
 		if err != nil || length != uint64(len(data)) {
 			t.Fatal("stat length")
 		}
-		mapped := call(0xF100000000023000, 0, length, 1, 2, fd, 0)
-		mappings = append(mappings, mapping{mapped, data})
+		// Model uses 4 KiB pages, while Darwin mmap copies the accessible
+		// 16 KiB extent. A partial mapping of a larger file must reserve it.
+		requested := uint64(1<<20) + 1
+		accessible := (requested + 0x3fff) &^ uint64(0x3fff)
+		mapped := call(0xF100000000023000, 0, requested, 1, 2, fd, 0)
+		mappings = append(mappings, mapping{mapped, data[:accessible]})
 		buffer := call(0xF100000000007000, length)
 		if count := call(0xF100000000008000, fd, buffer, length); count != length {
 			t.Fatal("read length")
@@ -77,6 +81,20 @@ func TestSourceMemoryCollisionAndOverflowLeaveStateUnchanged(t *testing.T) {
 		}
 		if r.nextAllocation != address || len(s.model.pages) != before {
 			t.Fatal("failed allocation mutated state")
+		}
+	}
+}
+
+func TestSourceMemoryInvalidMappingCannotWrapIntoValidAllocation(t *testing.T) {
+	for _, size := range []uint64{0, 0x10000001, ^uint64(0)} {
+		s := newState(&model{pages: map[uint64][]byte{}})
+		r := &rawSourceRuntime{nextAllocation: 0x710100000000, openFiles: map[uint64]*rawSourceOpenFile{1: {data: []byte{1}}}}
+		s.x[1], s.x[4] = size, 1
+		if _, err := r.handle(s, 0xF100000000023000); err == nil {
+			t.Fatal("invalid mapping accepted")
+		}
+		if r.nextAllocation != 0x710100000000 || len(s.model.pages) != 0 {
+			t.Fatal("invalid mapping changed memory")
 		}
 	}
 }
