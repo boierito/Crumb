@@ -231,7 +231,7 @@ func TestBindingMismatchUsesFixedErrorWithoutPrivateMaterial(t *testing.T) {
     _, err := verifyCaptureIPABinding("", "PRIVATE-ORIGINAL-IPA-PATH")
     if err == nil { t.Fatal("missing private capture erroneously accepted") }
     stage, code := labErrorDetails("verify-capture-ipa",err)
-    if stage != "verify-capture-ipa/offline-binding/capture-input" || code != "capture_input_invalid" {
+    if stage != "verify-capture-ipa/capture-input" || code != "capture_input_invalid" {
         t.Fatalf("unexpected binding rejection: %s / %s",stage,code)
     }
     encoded,_:=json.Marshal(map[string]string{"stage":stage,"code":code})
