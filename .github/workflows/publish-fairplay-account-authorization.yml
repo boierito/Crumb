@@ -1,0 +1,94 @@
+name: Publish verified account authorization IPA
+on:
+  push:
+    branches: [distribution/23047-account-authorization]
+    paths:
+      - '.github/workflows/publish-fairplay-account-authorization.yml'
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish-tested-artifact:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require successful pinned CI and artifact provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ec52c0e863cac7337c07362a60ee9b74813b4d40
+        shell: bash
+        run: |
+          set -euo pipefail
+          for RUN in 40469412069 40469412073; do
+            test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" --jq .conclusion)" = success
+            test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" --jq .head_sha)" = "$SOURCE_SHA"
+          done
+      - name: Download completed unsigned Release IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: Crumb-IPA-Release-40469412073
+          run-id: 40469412073
+          github-token: ${{ github.token }}
+          path: ipa-input
+      - name: Download corresponding sources and notices
+        uses: actions/download-artifact@v4
+        with:
+          name: Crumb-Release-40469412073
+          run-id: 40469412073
+          github-token: ${{ github.token }}
+          path: source-input
+      - name: Validate actual IPA and stage a uniquely named asset
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, plistlib, zipfile, shutil
+          ipa = Path('ipa-input/Crumb-Release.ipa')
+          expected = 'd84c474891628210a8543745d5cabc2db72a2a660e494ed63fe31a340a9273e2'
+          assert hashlib.sha256(ipa.read_bytes()).hexdigest() == expected, 'Pinned IPA SHA256 does not match'
+          with zipfile.ZipFile(ipa) as z:
+              assert z.testzip() is None, 'IPA ZIP corruption'
+              info = plistlib.loads(z.read('Payload/Crumb.app/Info.plist'))
+              assert info['CFBundleVersion'] == '23047', 'Unexpected build number'
+              assert info['CFBundleIdentifier'] == 'com.certlium.crumb'
+              assert not any(p.endswith('embedded.mobileprovision') for p in z.namelist())
+          shutil.copyfile(ipa, 'release/Crumb-23047-Release.ipa')
+          for filename in ['IPATOOL-LICENSE', 'UNICORN-COPYING',
+                           'ipatool-sap-corresponding-source.tar.gz',
+                           'unicorn-tci-corresponding-source.tar.gz']:
+              src = Path('source-input') / filename
+              assert src.is_file(), 'Missing corresponding source/notice: ' + filename
+              shutil.copyfile(src, Path('release') / filename)
+          print('Verified SHA256:', expected)
+          PY
+      - name: Publish a separate GitHub prerelease for the tested checkpoint
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=test-23047-account-authorization
+          test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
+          gh release upload "$TAG" release/* --repo "$GITHUB_REPOSITORY" --clobber
+          cat > release-notes.txt <<'NOTES'
+          Unsigned Crumb 23047 Release. Install with your usual authorized iPhone signing method, preserving Crumb's application data. This checkpoint connects native account authorization to strict SINF validation; it has not yet decrypted a real IPA.
+
+          Test using the files already saved on your iPhone:
+          1. Open Crumb and sign in to the same Apple Account used for your saved transaction.
+          2. Open Settings → FairPlay Laboratory.
+          3. In section 2, choose “Import existing encrypted IPA from Files (no download)” and select the original encrypted IPA you saved. This file is separate from the Crumb installer attached here.
+          4. In section 3, choose “Import an older capture ZIP for offline research” and select the matching saved capture. The ZIP remains private on the phone.
+          5. In section 4, tap “Authorize account and validate this IPA” once. Keep Crumb open and the phone unlocked. This may authorize the virtual device with Apple. There is no automatic replay; an ADI challenge stops the attempt.
+          6. In section 5, tap “Prepare exports”, then “Share diagnostic (no secret blobs)”. Share only that JSON diagnostic, not the private capture, saved account state, or original IPA.
+
+          If there are no saved files: sign in, then in section 2 enter a small app already available to your account and tap “Download and capture transaction”. Stay in that laboratory session and continue at step 5. You do not need a PC or an external capture. Save the original encrypted IPA and private capture using section 5 before closing the laboratory. Do not redownload if you already have both files.
+
+          The new path separates account provisioning from each app's license. It saves private account state for later use with the same account/device identity; every target IPA still has to pass all original SINF domains and whole-IPA processing checks. No app-specific keys or identifiers are built in. Legacy/modern enrollment compatibility and native ADI challenge transitions remain unresolved. A successful compilation or account import is not proof of real plaintext, and plaintext_authenticated remains false.
+
+          The installer is the exact successful CI artifact. Corresponding native sources and license notices are attached.
+
+          Source commit: ec52c0e863cac7337c07362a60ee9b74813b4d40
+          IPA SHA256: d84c474891628210a8543745d5cabc2db72a2a660e494ed63fe31a340a9273e2
+          NOTES
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false \
+            --title 'Crumb 23047 — account authorization and SINF validation' --notes-file release-notes.txt
