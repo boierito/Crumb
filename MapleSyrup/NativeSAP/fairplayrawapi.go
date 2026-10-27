@@ -435,6 +435,7 @@ func recoverAttempt(executable string, hardware []byte, files map[string][]byte,
 	}
 	defer func() {
 		if activeRawSourceRuntime != nil {
+			clear(activeRawSourceRuntime.rwlocks)
 			for _, data := range activeRawSourceRuntime.files {
 				clear(data)
 			}

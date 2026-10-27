@@ -82,7 +82,16 @@ for name in names:
         lookup = 'return bestSuffix, bestData, bestSuffix != ""'
         if text.count(field) != 1 or text.count(lookup) != 1:
             raise SystemExit('raw runtime lookup contract changed')
-        text = text.replace(field, field + '\n lookupCounts map[string]LookupCount\n stateFileLookupCounts map[string]LookupCount\n stateLookupsByPhase map[string]LookupCount\n phase string\n genericOnly bool\n observe func(uint64)\n boundary func() (bool,error)\n candidateChecks int\n candidateSINFVerified bool\n currentInstruction uint64\n executionContext string\n lastExternalSlot string\n unmodeledExternalSlot string\n lastKnownBlock uint64\n additionalBlocks int\n untranslatedTarget string\n targetClass string\n genericBlocks int\n genericInstructions uint64\n genericLastPC uint64\n checkpointCompared bool\n sourceChangedAfterSINF bool\n frameChangedAfterSINF bool')
+        text = text.replace(field, field + '\n lookupCounts map[string]LookupCount\n stateFileLookupCounts map[string]LookupCount\n stateLookupsByPhase map[string]LookupCount\n phase string\n genericOnly bool\n observe func(uint64)\n boundary func() (bool,error)\n candidateChecks int\n candidateSINFVerified bool\n rwlocks map[uint64]int\n qosClass uint32\n qosRelative int32\n qosSet bool\n currentInstruction uint64\n executionContext string\n lastExternalSlot string\n unmodeledExternalSlot string\n lastKnownBlock uint64\n additionalBlocks int\n untranslatedTarget string\n targetClass string\n genericBlocks int\n genericInstructions uint64\n genericLastPC uint64\n checkpointCompared bool\n sourceChangedAfterSINF bool\n frameChangedAfterSINF bool')
+        # Replace legacy no-op pthread operations as a group. The new model
+        # accepts only lifecycle states supported by native reference tests.
+        legacy = "\tcase 0xF10000000000E000, // pthread_rwlock_unlock\n\t\t0xF100000000040000, // pthread_rwlock_rdlock\n\t\t0xF10000000005C000, // pthread_rwlock_init\n\t\t0xF100000000065000: // pthread_rwlock_wrlock\n\t\ts.x[0] = 0"
+        replacement = "\tcase 0xF10000000004C000, 0xF10000000000E000, 0xF100000000040000, 0xF10000000005C000, 0xF100000000065000:\n\t\tstatus, err := r.handleSourceRWLock(s, pc)\n\t\tif err != nil { r.unmodeledExternalSlot = sourceExternalImportSlot(pc); return pc, err }\n\t\ts.x[0] = status"
+        if text.count(legacy) != 1: raise SystemExit('pthread ABI contract changed')
+        text = text.replace(legacy, replacement)
+        qos_anchor = "\tcase 0xF10000000004C000, 0xF10000000000E000, 0xF100000000040000, 0xF10000000005C000, 0xF100000000065000:"
+        if text.count(qos_anchor) != 1: raise SystemExit('pthread QoS ABI anchor changed')
+        text = text.replace(qos_anchor, "\tcase 0xF100000000057000: // pthread_set_qos_class_self_np\n\t\ts.x[0] = r.handleSourceQoS(s)\n" + qos_anchor)
         entry = 'returnAddress := s.x[30]'
         if text.count(entry) != 1: raise SystemExit('external entry contract changed')
         text = text.replace(entry, entry + '\n r.lastExternalSlot = sourceExternalImportSlot(pc)\n r.executionContext = "external"')
@@ -123,6 +132,12 @@ expected = hashlib.sha256(resource).hexdigest()
 api = pathlib.Path(__file__).resolve().parent.parent / 'MapleSyrup/NativeSAP/fairplayrawapi.go'
 text = api.read_text().replace('RAW_RESOURCE_SHA256', expected)
 (target / 'api.go').write_text(text)
+
+(target/'source_qos.go').write_bytes((api.parent/'fairplayrawqos.go').read_bytes())
+(target/'source_qos_test.go').write_bytes((api.parent/'fairplayrawqos_test.go').read_bytes())
+
+(target/'source_rwlock.go').write_bytes((api.parent/'fairplayrawrwlock.go').read_bytes())
+(target/'source_rwlock_test.go').write_bytes((api.parent/'fairplayrawrwlock_test.go').read_bytes())
 
 (target/'candidate_validation.go').write_bytes((api.parent/'fairplayrawcandidates.go').read_bytes())
 (target/'candidate_validation_test.go').write_bytes((api.parent/'fairplayrawcandidates_test.go').read_bytes())
