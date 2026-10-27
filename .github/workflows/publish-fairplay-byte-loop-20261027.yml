@@ -1,0 +1,69 @@
+name: Publish verified byte loop test IPA
+on:
+  push:
+    branches: [distribution/fairplay-byte-loop-20261027-2235]
+    paths: ['.github/workflows/publish-fairplay-byte-loop-20261027.yml']
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify tested source and successful workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for run in 40594740239 40594740228; do
+            test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run" --jq .conclusion)" = success
+            test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run" --jq .head_sha)" = 5aa35a6ff4417a089ae11f6baf7e5a7dec854e32
+          done
+      - uses: actions/download-artifact@v4
+        with:
+          name: Crumb-IPA-Release-40594740228
+          run-id: 40594740228
+          github-token: ${{ github.token }}
+          path: ipa-input
+      - uses: actions/download-artifact@v4
+        with:
+          name: Crumb-Release-40594740228
+          run-id: 40594740228
+          github-token: ${{ github.token }}
+          path: source-input
+      - name: Verify IPA and stage corresponding sources
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, plistlib, zipfile, shutil, struct
+          ipa = Path('ipa-input/Crumb-Release.ipa')
+          expected = '96762669f74ca1773e96a8128b750172970a190465c0624687e5d7db0c1a6a50'
+          assert hashlib.sha256(ipa.read_bytes()).hexdigest() == expected
+          with zipfile.ZipFile(ipa) as z:
+              assert z.testzip() is None
+              info = plistlib.loads(z.read('Payload/Crumb.app/Info.plist'))
+              assert info['CFBundleVersion'] == '23052'
+              assert info['CFBundleIdentifier'] == 'com.certlium.crumb'
+              exe = z.read('Payload/Crumb.app/' + info['CFBundleExecutable'])
+              assert struct.unpack_from('<II', exe) == (0xfeedfacf, 0x100000c)
+              assert not any(p.endswith('embedded.mobileprovision') for p in z.namelist())
+          out = Path('release'); out.mkdir()
+          shutil.copyfile(ipa, out/'Crumb-2026-10-27-2235-UTC.ipa')
+          for name in ['IPATOOL-LICENSE', 'UNICORN-COPYING', 'ipatool-sap-corresponding-source.tar.gz', 'unicorn-tci-corresponding-source.tar.gz']:
+              assert (Path('source-input')/name).is_file()
+              shutil.copyfile(Path('source-input')/name, out/name)
+          PY
+      - name: Publish direct IPA download as an experimental prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag=test-byte-loop-20261027-2235-utc
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'Release already exists; refusing to overwrite' >&2
+            exit 1
+          fi
+          gh release create "$tag" release/* --repo "$GITHUB_REPOSITORY" \
+            --target 5aa35a6ff4417a089ae11f6baf7e5a7dec854e32 \
+            --title 'Crumb experimental · 2026-10-27 22:35 UTC' --prerelease \
+            --notes 'Unsigned IPA compiled from commit 5aa35a6, build 23052. This experimental build does not establish SINF validation or successful decryption. CI passed, including native loop comparison and portable tests. Re-sign using your usual method. SHA-256: 96762669f74ca1773e96a8128b750172970a190465c0624687e5d7db0c1a6a50.'
