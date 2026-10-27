@@ -161,3 +161,18 @@ jobs:
           C
           clang -Wall -Wextra -Werror "$RUNNER_TEMP/rwlock_writer.c" -o "$RUNNER_TEMP/rwlock_writer"
           "$RUNNER_TEMP/rwlock_writer"
+      - name: Measure synthetic zero-signature lock errors
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/rwlock_zero.c" <<'C'
+          #include <pthread.h>
+          #include <stdio.h>
+          #include <string.h>
+          int main(void) {
+            pthread_rwlock_t a,b,c,d;memset(&a,0,sizeof(a));memset(&b,0,sizeof(b));memset(&c,0,sizeof(c));memset(&d,0,sizeof(d));
+            int w=pthread_rwlock_wrlock(&a);int r=pthread_rwlock_rdlock(&b);int u=pthread_rwlock_unlock(&c);int x=pthread_rwlock_destroy(&d);
+            printf("zero_signatures: writer=%d reader=%d unlock=%d destroy=%d\n",w,r,u,x);return 0;
+          }
+          C
+          clang -Wall -Wextra -Werror "$RUNNER_TEMP/rwlock_zero.c" -o "$RUNNER_TEMP/rwlock_zero"
+          "$RUNNER_TEMP/rwlock_zero"
