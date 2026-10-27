@@ -220,8 +220,12 @@ The dedicated private authorization bridge now retains the same native producer
 between generating mode-2 KBSync and consuming the response. Swift discovers
 `authorizeMachine` from the live Bag, signs the exact typed XML plist using SAP,
 and sends one authenticated request to that validated Apple endpoint. Native
-imports of `keybag` and `diversitybag` remain distinct; both must return status 0
-without an interpreter error. Ordinary download KBSync stays in mode 1.
+imports of `keybag` and `diversitybag` remain distinct; each performed import must return status 0
+without an interpreter error. The original branch at text+0x59bb2..0x59bb5
+skips an absent keybag and proceeds to diversitybag, so a genuine diversity-only
+reply preserves the already-restored download state. A malformed present field
+is rejected; a requested diversitybag remains mandatory. The ABI verifier checks
+that optional-keybag branch against the pinned binary. Ordinary download KBSync stays in mode 1.
 
 Original StoreAgent `_generateOTPOnCurrentThreadForDSID:` (text+0x6bf28) has an
 explicit unprovisioned-ADI path: `ADI: Account is not provisioned, omitting OTP

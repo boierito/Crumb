@@ -155,17 +155,22 @@ func finishAuthorization(r authorizationRequest) (any, error) {
 	}
 	var files map[string][]byte
 	if s.needs {
-		if len(r.Keybag) == 0 || len(r.Diversitybag) == 0 || len(r.Keybag) > 1<<20 || len(r.Diversitybag) > 1<<20 {
+		if len(r.Diversitybag) == 0 || len(r.Keybag) > 1<<20 || len(r.Diversitybag) > 1<<20 {
 			return nil, fmt.Errorf("authorization_license_incomplete")
 		}
-		status, first, _, err := s.producer.ImportKeybag(r.Keybag)
-		for _, b := range first {
-			clear(b)
+		// Original response processing permits diversity without another
+		// keybag. Keep the previously restored keybag; never synthesize one.
+		if len(r.Keybag) != 0 {
+			status, first, _, err := s.producer.ImportKeybag(r.Keybag)
+			for _, b := range first {
+				clear(b)
+			}
+			if err != nil || status != 0 {
+				return nil, fmt.Errorf("authorization_keybag_rejected")
+			}
 		}
-		if err != nil || status != 0 {
-			return nil, fmt.Errorf("authorization_keybag_rejected")
-		}
-		status, files, _, err = s.producer.ImportDiversityBag(r.Diversitybag)
+		status, snapshot, _, err := s.producer.ImportDiversityBag(r.Diversitybag)
+		files = snapshot
 		if err != nil || status != 0 {
 			for _, b := range files {
 				clear(b)
@@ -204,7 +209,7 @@ func finishAuthorization(r authorizationRequest) (any, error) {
 	if err = saveAuthorizedState(s.directory, s.dsid, s.hardware, files); err != nil {
 		return nil, fmt.Errorf("authorization_state_save_failed")
 	}
-	report := map[string]any{"schema": "crumb-account-authorization-v1", "account_state_saved": true, "license_imports_performed": s.needs, "needs_account_diversity": needs, "encrypted_domains": len(s.domains), "sinf_validation_attempted": false, "sinf_model_verified": false, "source_frame_verified": false, "completed": false, "plaintext_authenticated": false}
+	report := map[string]any{"schema": "crumb-account-authorization-v1", "account_state_saved": true, "license_imports_performed": s.needs, "keybag_imported": s.needs && len(r.Keybag) != 0, "diversitybag_imported": s.needs, "needs_account_diversity": needs, "encrypted_domains": len(s.domains), "sinf_validation_attempted": false, "sinf_model_verified": false, "source_frame_verified": false, "completed": false, "plaintext_authenticated": false}
 	if needs {
 		report["status"] = "diversity_still_required"
 		return report, nil

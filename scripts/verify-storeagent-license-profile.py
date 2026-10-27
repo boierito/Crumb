@@ -28,6 +28,8 @@ checks = {
     0x59888: '31d2',                   # authorization sync reserved argument 0
     0x5988a: 'b902000000',             # authorization KBSync mode 2
     0x5988f: 'e82cfb0600',             # call text+0xc93c0
+    0x59bb2: '4885c0',                 # test optional keybag object
+    0x59bb5: '0f843d010000',           # nil jumps to diversity field at 0x59cf8
     0x59d87: '4489f7',                 # diversity import context u32
     0x59d8a: '4889de',                 # diversity bytes pointer
     0x59d8d: '89c2',                   # diversity length u32

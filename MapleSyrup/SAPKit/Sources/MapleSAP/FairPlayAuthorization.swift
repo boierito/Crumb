@@ -9,7 +9,7 @@ public enum FairPlayAuthorizationError: String, Error, Sendable {
 }
 
 public struct FairPlayAuthorizationReply: Sendable {
-    public let keybag: Data
+    public let keybag: Data?
     public let diversitybag: Data?
 }
 
@@ -80,11 +80,16 @@ public actor FairPlayAuthorizationClient {
             if let text = root[key] as? String, let bytes = Data(base64Encoded: text), !bytes.isEmpty { return bytes }
             return nil
         }
-        guard let keybag = blob("keybag"), keybag.count <= 1 << 20 else {
-            throw FairPlayAuthorizationError.incompleteLicense
-        }
+        let keybag = blob("keybag")
         let diversity = blob("diversitybag")
-        guard !needsDiversity || diversity != nil, (diversity?.count ?? 0) <= 1 << 20 else {
+        // text+0x59bb2..0x59bb5 skips an absent keybag and proceeds to
+        // diversitybag. The already-restored download state is not replaced.
+        guard root["keybag"] == nil || keybag != nil,
+              root["diversitybag"] == nil || diversity != nil,
+              keybag != nil || diversity != nil,
+              !needsDiversity || diversity != nil,
+              (keybag?.count ?? 0) <= 1 << 20,
+              (diversity?.count ?? 0) <= 1 << 20 else {
             throw FairPlayAuthorizationError.incompleteLicense
         }
         return FairPlayAuthorizationReply(keybag: keybag, diversitybag: diversity)

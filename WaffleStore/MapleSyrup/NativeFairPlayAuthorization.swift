@@ -79,7 +79,7 @@ nonisolated enum NativeFairPlayAuthorization {
                     let license = try await client.authorize(kbsync: sync, needsDiversity: true, machineName: "Crumb iPhone", sign: { body in
                         try await sap.actionSignature(body: body)
                     })
-                    finish["Keybag"] = license.keybag.base64EncodedString()
+                    finish["Keybag"] = license.keybag?.base64EncodedString()
                     finish["Diversitybag"] = license.diversitybag?.base64EncodedString()
                     await sap.close(); sapTransport.close(); transport.close()
                 } catch {

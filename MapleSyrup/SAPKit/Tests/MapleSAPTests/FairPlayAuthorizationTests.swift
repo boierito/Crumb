@@ -47,6 +47,20 @@ final class FairPlayAuthorizationTests: XCTestCase {
         XCTAssertNil(request.value(forHTTPHeaderField: "X-Apple-MD"))
         XCTAssertNil(request.value(forHTTPHeaderField: "X-Apple-MD-M"))
     }
+    func testDiversityOnlyReplyMatchesNativeOptionalKeybagBranch() async throws {
+        let transport = try LicenseTransport(reply: ["diversitybag": Data([2])])
+        let reply = try await client(transport).authorize(kbsync: Data([3]), needsDiversity: true, machineName: "Fixture", sign: { _ in "SIGN" })
+        XCTAssertNil(reply.keybag)
+        XCTAssertEqual(reply.diversitybag, Data([2]))
+    }
+    func testMalformedPresentBagCannotBeIgnored() async throws {
+        let replies: [[String: Any]] = [["keybag": "invalid!", "diversitybag": Data([2])], ["keybag": Data(), "diversitybag": Data([2])], [:]]
+        for reply in replies {
+            let transport = try LicenseTransport(reply: reply)
+            do { _ = try await client(transport).authorize(kbsync: Data([3]), needsDiversity: true, machineName: "Fixture", sign: { _ in "SIGN" }); XCTFail("malformed bag accepted") }
+            catch { XCTAssertEqual((error as? FairPlayAuthorizationError)?.rawValue, "incompleteLicense") }
+        }
+    }
     func testNoDiversityFlagWhenNotRequested() async throws {
         let transport = try LicenseTransport(reply: ["keybag": Data([1])])
         _ = try await client(transport).authorize(kbsync: Data([3]), needsDiversity: false, machineName: "Fixture", sign: { _ in "SIGN" })
