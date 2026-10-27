@@ -162,6 +162,7 @@ func runGenericInstructionBlock(s *state, runtime *rawSourceRuntime, start uint6
 			return pc, false, &genericExecutionError{"generic_pc_outside_profile"}
 		}
 		runtime.genericLastPC = pc
+		runtime.currentInstruction, runtime.executionContext = pc, "generic"
 		record := genericImage.record(pc)
 		if record[0] == 0 {
 			runtime.recordUnknownPC(pc)
