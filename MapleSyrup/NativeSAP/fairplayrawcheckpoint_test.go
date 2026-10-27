@@ -65,6 +65,15 @@ func TestEnrollmentCheckpointPreservesSelectionPairAfterSINFMutation(t *testing.
 	if !bytes.Equal(checkpoint.source, selectionSource) || !bytes.Equal(checkpoint.frame, selectionFrame) {
 		t.Fatal("selection checkpoint returned different bytes")
 	}
+	if !verifyEnrollmentCheckpoint(checkpoint) {
+		t.Fatal("native-flow observer rejected an independently constructed valid checkpoint")
+	}
+	invalid := enrollmentOutputCheckpoint{source: bytes.Clone(checkpoint.source), frame: bytes.Clone(checkpoint.frame)}
+	invalid.frame[0] ^= 1
+	if verifyEnrollmentCheckpoint(invalid) {
+		t.Fatal("native-flow observer accepted an invalid checkpoint")
+	}
+	invalid.clear()
 
 	// Model an SINF phase that overwrites both guest output locations. The
 	// checkpoint must retain the earlier, independently valid source/frame.
@@ -116,7 +125,6 @@ func TestPostSINFComparisonUnavailableIsNotReportedAsStable(t *testing.T) {
 		t.Fatal("an unavailable memory comparison was reported as valid")
 	}
 }
-
 
 // Real file routing is private. Assert diagnostic counters retain only
 // public file-type labels and keep the aggregate state counts unchanged.

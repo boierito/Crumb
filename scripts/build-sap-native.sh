@@ -55,6 +55,11 @@ python3 "$ROOT/scripts/prepare-fairplay-package.py" "$SOURCE/internal/fairplay/f
 cp "$ROOT/MapleSyrup/NativeSAP/fairplayinspect.go" "$SOURCE/internal/fairplay/"
 cp "$ROOT/MapleSyrup/NativeSAP/fairplaymulti.go" "$SOURCE/internal/fairplay/"
 cp "$ROOT/MapleSyrup/NativeSAP/fairplaymulti_test.go" "$SOURCE/internal/fairplay/"
+cp "$ROOT/MapleSyrup/NativeSAP/fairplaymobilecompat_test.go" "$SOURCE/internal/fairplay/"
+mkdir -p "$SOURCE/internal/fairplay/testdata" "$SOURCE/wafflebridge/mobilelicense"
+cp "$ROOT/MapleSyrup/NativeSAP/mobilelicense/testdata/reference.json" "$SOURCE/internal/fairplay/testdata/mobile-reference.json"
+cp "$ROOT/MapleSyrup/NativeSAP/mobilelicense/core.go" "$ROOT/MapleSyrup/NativeSAP/mobilelicense/license.go" "$SOURCE/wafflebridge/mobilelicense/"
+
 (cd "$SOURCE" && go get golang.org/x/arch@v0.32.0 && go test ./internal/fairplay)
 python3 "$ROOT/scripts/prepare-fairplay-portable.py" "$WORK/ipatool-$FAIRPLAY_REV/tools/fairplay-recovery" "$SOURCE/wafflebridge/recovery"
 bash "$ROOT/scripts/fetch-fairplay-raw.sh" "$SOURCE/wafflebridge/recovery/rawsource"

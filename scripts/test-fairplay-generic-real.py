@@ -20,15 +20,16 @@ with tempfile.TemporaryDirectory(prefix='crumb-generic-real-') as directory:
         source=(upstream/name).read_text().replace('package main','package rawsource',1)
         source=re.sub(r'^//go:build[^\n]*\n','',source)
         (work/name).write_text(source)
-    for name in ('fairplaygeneric.go','fairplaygeneric_test.go','fairplaygeneric_real_test.go','fairplayrawblocks.go'):
+    for name in ('fairplaygeneric.go','fairplaygeneric_test.go','fairplaygeneric_real_test.go','fairplayrawblocks.go','fairplayrawflow.go','fairplayrawflow_test.go'):
         (work/name).write_bytes((ROOT/'MapleSyrup/NativeSAP'/name).read_bytes())
     (work/'profiles').mkdir();(work/'profiles/generic.ir.gz').write_bytes(compressed)
     source=(upstream/'raw_source_step.go').read_text()
     definition=re.search(r'var rawSourceBinaryHash = \[32\]byte\{[^}]+\}',source).group(0)
     (work/'fixture_runtime_test.go').write_text('''package rawsource
-import (_ "embed";"testing")
-type rawSourceRuntime struct{stopPC,lastKnownBlock uint64;additionalBlocks,genericBlocks int;genericInstructions uint64;genericLastPC,currentInstruction uint64;executionContext string;untranslatedTarget,targetClass string}
+import (_ "embed";"testing";"fmt")
+type rawSourceRuntime struct{stopPC,lastKnownBlock uint64;genericOnly bool;observe func(uint64);boundary func()(bool,error);additionalBlocks,genericBlocks int;genericInstructions uint64;genericLastPC,currentInstruction uint64;executionContext string;untranslatedTarget,targetClass string}
 var knownSourceBlocks=map[uint64]sourceBlock{}
+func (r *rawSourceRuntime) handle(s *state,pc uint64)(uint64,error){return pc,fmt.Errorf("external operation unavailable in isolated fixture")}
 '''+definition+'''
 //go:embed profiles/generic.ir.gz
 var encoded []byte

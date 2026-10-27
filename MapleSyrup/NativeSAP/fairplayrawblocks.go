@@ -49,6 +49,9 @@ func sourceBlockLabel(pc uint64) string {
 // Returning to the outer loop preserves its block budget and boundary hit count.
 func resumeSourceBlock(s *state, runtime *rawSourceRuntime, pc, phaseEnd uint64) (uint64, bool, bool, error) {
 	block, covered := knownSourceBlocks[pc]
+	if runtime != nil && runtime.genericOnly {
+		covered = false
+	}
 	if !covered && runtime != nil {
 		if genericImage == nil {
 			return pc, false, false, &genericExecutionError{"generic_profile_missing"}

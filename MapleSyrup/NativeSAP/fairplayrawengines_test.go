@@ -2,11 +2,10 @@ package rawsource
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"math/rand"
-	"regexp"
 	"sort"
-	"strconv"
 	"testing"
 )
 
@@ -18,7 +17,7 @@ func TestAuditAllTranslatedBlocks(t *testing.T) {
 		addresses = append(addresses, pc)
 	}
 	sort.Slice(addresses, func(i, j int) bool { return addresses[i] < addresses[j] })
-	missing := regexp.MustCompile(`oracle memory address (0x[0-9a-f]+) is outside the model`)
+
 	passed, skipped, failed := 0, 0, 0
 	for _, pc := range addresses {
 		for seed := int64(0); seed < 4; seed++ {
@@ -49,11 +48,11 @@ func TestAuditAllTranslatedBlocks(t *testing.T) {
 					if err == nil {
 						continue
 					}
-					match := missing.FindStringSubmatch(err.Error())
-					if match == nil {
+					var fault *sourceMemoryError
+					if !errors.As(err, &fault) {
 						continue
 					}
-					address, _ := strconv.ParseUint(match[1][2:], 16, 64)
+					address := fault.address
 					base := address &^ (pageSize - 1)
 					if fixture.pages[base] == nil {
 						page := make([]byte, pageSize)

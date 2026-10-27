@@ -163,6 +163,7 @@ func runGenericInstructionBlock(s *state, runtime *rawSourceRuntime, start uint6
 		}
 		runtime.genericLastPC = pc
 		runtime.currentInstruction, runtime.executionContext = pc, "generic"
+		observeNativePC(runtime, pc)
 		record := genericImage.record(pc)
 		if record[0] == 0 {
 			runtime.recordUnknownPC(pc)

@@ -11,5 +11,6 @@ func sourceInstructionStop(runtime *rawSourceRuntime, pc uint64) bool {
 		return false
 	}
 	runtime.currentInstruction, runtime.executionContext = pc, "aot"
+	observeNativePC(runtime, pc)
 	return runtime.stopPC == pc
 }
