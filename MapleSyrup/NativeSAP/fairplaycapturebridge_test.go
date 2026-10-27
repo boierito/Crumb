@@ -202,3 +202,38 @@ func TestFlatLockFixStillRejectsTraversal(t *testing.T) {
 		}
 	}
 }
+
+func TestCapturedSINFPairsOnlyOneExactEncryptedDomain(t *testing.T) {
+    captures := map[string]bool{"own-license-sha256": true}
+    tests := []struct {
+        name string
+        domains []fairplay.PortableEnrollmentInput
+        want bool
+    }{
+        {"matching-original", []fairplay.PortableEnrollmentInput{{SINFSHA256:"own-license-sha256"}}, true},
+        {"other-personalization", []fairplay.PortableEnrollmentInput{{SINFSHA256:"other-license-sha256"}}, false},
+        {"empty-digest", []fairplay.PortableEnrollmentInput{{SINFSHA256:""}}, false},
+        {"no-encrypted-images", nil, false},
+        {"ambiguous-multiple-images", []fairplay.PortableEnrollmentInput{
+            {SINFSHA256:"own-license-sha256"}, {SINFSHA256:"own-license-sha256"},
+        }, false},
+    }
+    for _, tt := range tests {
+        t.Run(tt.name,func(t *testing.T){
+            if got:=capturedSINFMatchesDomains(captures,tt.domains); got!=tt.want {
+                t.Fatalf("incorrect exact SINF binding result for %s: got %v want %v",tt.name,got,tt.want)
+            }
+        })
+    }
+}
+
+func TestBindingMismatchUsesFixedErrorWithoutPrivateMaterial(t *testing.T) {
+    _, err := verifyCaptureIPABinding("", "PRIVATE-ORIGINAL-IPA-PATH")
+    if err == nil { t.Fatal("missing private capture erroneously accepted") }
+    stage, code := labErrorDetails("verify-capture-ipa",err)
+    if stage != "verify-capture-ipa/offline-binding/capture-input" || code != "capture_input_invalid" {
+        t.Fatalf("unexpected binding rejection: %s / %s",stage,code)
+    }
+    encoded,_:=json.Marshal(map[string]string{"stage":stage,"code":code})
+    if bytes.Contains(encoded,[]byte("PRIVATE")) {t.Fatal("private file path leaked")}
+}
