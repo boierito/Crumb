@@ -110,6 +110,7 @@ final class FairPlayLab: ObservableObject {
     @Published var output: URL?
     @Published var diagnostic: URL?
     @Published var captureArchive: URL?
+    @Published var importedCapture: URL?
     @Published var enrollmentStages: [String: Bool] = [:]
     @Published var nativeRecoveryVerified = false
     @Published var input: URL? {
@@ -173,6 +174,7 @@ final class FairPlayLab: ObservableObject {
         auditedTransactions = -1
         probeCompletedForCapture = false
         captureArchive = nil
+        importedCapture = nil
         diagnostic = nil
         enrollmentStages = [:]
         log("Transaction", "Validated exchange \(transactions): kbsync \(transaction.kbsync.count) bytes; keybag \(transaction.keybag?.count ?? 0) bytes; SINF count \(transaction.sinfs.count). Capture saved privately.")
@@ -228,9 +230,34 @@ final class FairPlayLab: ObservableObject {
         perform {
             let access = selected.startAccessingSecurityScopedResource()
             defer { if access { selected.stopAccessingSecurityScopedResource() } }
-            self.log("Inspection", "Validating capture ZIP, manifest hashes and SINF structure. No account data will be logged.")
-            let result = try await Task.detached { try FairPlayNative.run("analyze-capture", source: selected) }.value
-            self.log("Inspection", result)
+            self.log("Inspection", "Validating imported capture ZIP and manifest hashes locally.")
+            let report = try await Task.detached { try FairPlayNative.run("analyze-capture", source: selected) }.value
+            guard let bytes = report.data(using: .utf8),
+                  let response = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+                  response["ok"] as? Bool == true,
+                  let result = response["result"] as? [String: Any],
+                  result["transaction_count"] as? Int == 1,
+                  let transactions = result["transactions"] as? [[String: Any]],
+                  transactions.count == 1,
+                  transactions[0]["integrity"] as? String == "verified" else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            let info = try selected.resourceValues(forKeys: [.isSymbolicLinkKey, .isRegularFileKey, .fileSizeKey])
+            guard info.isSymbolicLink != true, info.isRegularFile == true,
+                  let size = info.fileSize, size > 0, size <= 128 << 20 else {
+                throw CocoaError(.fileReadTooLarge)
+            }
+            let copied = self.root.appendingPathComponent("Imported-FairPlay-capture.zip")
+            try? FileManager.default.removeItem(at: copied)
+            try FileManager.default.copyItem(at: selected, to: copied)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600,
+                .protectionKey: FileProtectionType.complete], ofItemAtPath: copied.path)
+            self.importedCapture = copied
+            self.captureArchive = nil
+            self.auditedTransactions = -1
+            self.transactions = 1
+            self.log("Inspection", report)
+            self.log("Enrollment", "Verified private capture imported. Select its matching original encrypted IPA from Files; no download is required.")
         }
     }
     func inspect() {
@@ -427,11 +454,11 @@ final class FairPlayLab: ObservableObject {
     // The user no longer has to import their own private ZIP to analyze it.
     private func analyzeCurrentCaptureFiles() async throws {
         let captures = root.appendingPathComponent("captures")
-        guard FileManager.default.fileExists(atPath: captures.path) else {
+        guard importedCapture != nil || FileManager.default.fileExists(atPath: captures.path) else {
             log("Enrollment", "No new capture in this session. Download an app before analyzing.")
             return
         }
-        let archive = root.appendingPathComponent("Private-FairPlay-capture.zip")
+        let archive = importedCapture ?? root.appendingPathComponent("Private-FairPlay-capture.zip")
         // Once checked, the same immutable transaction does not need to be
         // zipped, inspected and logged again by Prepare exports.
         if auditedTransactions == transactions,
@@ -439,13 +466,15 @@ final class FairPlayLab: ObservableObject {
            FileManager.default.fileExists(atPath: archive.path) {
             return
         }
-        let exported = try await Task.detached {
-            try FairPlayNative.run("export", source: captures, destination: archive)
-        }.value
-        guard let exportData = exported.data(using: .utf8),
-              let exportJSON = try JSONSerialization.jsonObject(with: exportData) as? [String: Any],
-              exportJSON["ok"] as? Bool == true else {
-            throw NSError(domain: "Crumb.FairPlayLab.CaptureExport", code: 1)
+        if importedCapture == nil {
+            let exported = try await Task.detached {
+                try FairPlayNative.run("export", source: captures, destination: archive)
+            }.value
+            guard let exportData = exported.data(using: .utf8),
+                  let exportJSON = try JSONSerialization.jsonObject(with: exportData) as? [String: Any],
+                  exportJSON["ok"] as? Bool == true else {
+                throw NSError(domain: "Crumb.FairPlayLab.CaptureExport", code: 1)
+            }
         }
         // Go's exporter applies mode 0600; protect the archive on iOS as well.
         try FileManager.default.setAttributes(
@@ -501,7 +530,7 @@ final class FairPlayLab: ObservableObject {
         nativeRecoveryVerified = false
         guard !busy else { return }
         try? FileManager.default.removeItem(at: root)
-        input = nil; output = nil; diagnostic = nil; captureArchive = nil; transactions = 0
+        input = nil; output = nil; diagnostic = nil; captureArchive = nil; importedCapture = nil; transactions = 0
         auditedTransactions = -1
         probeCompletedForCapture = false
         enrollmentStages = [:]
