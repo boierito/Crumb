@@ -1,0 +1,94 @@
+name: Publish verified recovery memory IPA
+on:
+  push:
+    branches: [distribution/23049-recovery-memory]
+    paths:
+      - '.github/workflows/publish-fairplay-recovery-memory.yml'
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish-tested-artifact:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require successful pinned CI and artifact provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: 3be97509cdf5aa99e124a083190bcd589bba2175
+        shell: bash
+        run: |
+          set -euo pipefail
+          for RUN in 40488162882 40488162779; do
+            test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" --jq .conclusion)" = success
+            test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" --jq .head_sha)" = "$SOURCE_SHA"
+          done
+      - name: Download completed unsigned Release IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: Crumb-IPA-Release-40488162779
+          run-id: 40488162779
+          github-token: ${{ github.token }}
+          path: ipa-input
+      - name: Download corresponding sources and notices
+        uses: actions/download-artifact@v4
+        with:
+          name: Crumb-Release-40488162779
+          run-id: 40488162779
+          github-token: ${{ github.token }}
+          path: source-input
+      - name: Validate actual IPA and stage a uniquely named asset
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, plistlib, zipfile, shutil
+          ipa = Path('ipa-input/Crumb-Release.ipa')
+          expected = 'bd52f4c5fc617974c727f589696472c07d63f85eef8bd43e3ff3ff8655f3225b'
+          assert hashlib.sha256(ipa.read_bytes()).hexdigest() == expected, 'Pinned IPA SHA256 does not match'
+          with zipfile.ZipFile(ipa) as z:
+              assert z.testzip() is None, 'IPA ZIP corruption'
+              info = plistlib.loads(z.read('Payload/Crumb.app/Info.plist'))
+              assert info['CFBundleVersion'] == '23049', 'Unexpected build number'
+              assert info['CFBundleIdentifier'] == 'com.certlium.crumb'
+              assert not any(p.endswith('embedded.mobileprovision') for p in z.namelist())
+          shutil.copyfile(ipa, 'release/Crumb-23049-Release.ipa')
+          for filename in ['IPATOOL-LICENSE', 'UNICORN-COPYING',
+                           'ipatool-sap-corresponding-source.tar.gz',
+                           'unicorn-tci-corresponding-source.tar.gz']:
+              src = Path('source-input') / filename
+              assert src.is_file(), 'Missing corresponding source/notice: ' + filename
+              shutil.copyfile(src, Path('release') / filename)
+          print('Verified SHA256:', expected)
+          PY
+      - name: Publish a separate GitHub prerelease for the tested checkpoint
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=test-23049-recovery-memory
+          test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
+          gh release upload "$TAG" release/* --repo "$GITHUB_REPOSITORY" --clobber
+          cat > release-notes.txt <<'NOTES'
+          Experimental Crumb 23049 — recovery memory isolation. Unsigned Release; install with your usual authorized iPhone signing method, preserving Crumb's app data and bundle identity.
+
+          The owner's 23048 run authorized the account, imported keybag and diversitybag and saved provisioned state. Recovery then failed in selection before SINF validation. Do not erase that saved authorized state or repeat downloads.
+
+          This update fixes a source-proven allocator defect: requests larger than 1 MiB overlapped later live allocations. The allocator now advances by the complete mapped extent and rejects collisions/overflow before changing memory. An external ABI transaction verifies large allocations, open, fstat, mmap, read, close, and byte preservation across all live buffers. The file mmap path also reserves its complete 16 KiB accessible extent and validates lengths before rounding. Unknown memory accesses still fail; no protected bytes or keys are invented.
+
+          This defect is not yet proven to explain the owner's specific failure. The last generic PC was an indirect call; a memory failure can now include only its last canonical external import slot, without private pointers or register values.
+
+          Test using the already authorized account state:
+          1. Update Crumb in place. Keep its data and use the same Apple Account.
+          2. Settings → FairPlay Laboratory → Import existing encrypted IPA from Files (no download).
+          3. Tap Authorize account and validate this IPA once, keeping Crumb open and the iPhone unlocked. Existing valid provisioned state skips the authorization network request automatically. No capture reimport is required when the saved account state is available.
+          4. Prepare exports → Share diagnostic (no secret blobs). Share only the diagnostic JSON.
+
+          Every original SINF, source/frame and whole-IPA validation gate remains required. Legacy/modern enrollment compatibility and the first real decrypted IPA remain unproven. plaintext_authenticated remains false. The installer is the exact pinned successful CI artifact; native sources and licenses are attached.
+
+          Source commit: 3be97509cdf5aa99e124a083190bcd589bba2175
+          IPA SHA256: bd52f4c5fc617974c727f589696472c07d63f85eef8bd43e3ff3ff8655f3225b
+          NOTES
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false \
+            --title 'Crumb 23049 — recovery memory isolation' --notes-file release-notes.txt
