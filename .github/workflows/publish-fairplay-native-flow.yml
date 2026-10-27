@@ -1,0 +1,123 @@
+name: Publish verified continuous native recovery IPA
+on:
+  push:
+    branches: [distribution/23051-native-control-flow]
+    paths:
+      - '.github/workflows/publish-fairplay-native-flow.yml'
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish-tested-artifact:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require successful pinned CI and artifact provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: 235d6e4a92972b91f2d31571406de21aa44907ae
+        shell: bash
+        run: |
+          set -euo pipefail
+          for RUN in 40524733836 40524733809; do
+            test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" --jq .conclusion)" = success
+            test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" --jq .head_sha)" = "$SOURCE_SHA"
+          done
+      - name: Download completed unsigned Release IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: Crumb-IPA-Release-40524733809
+          run-id: 40524733809
+          github-token: ${{ github.token }}
+          path: ipa-input
+      - name: Download corresponding sources and notices
+        uses: actions/download-artifact@v4
+        with:
+          name: Crumb-Release-40524733809
+          run-id: 40524733809
+          github-token: ${{ github.token }}
+          path: source-input
+      - name: Validate actual IPA and stage a uniquely named asset
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, plistlib, zipfile, shutil, tarfile, json
+          ipa = Path('ipa-input/Crumb-Release.ipa')
+          expected = '3d51183a92bb797dfa59d16147046668b53fed8027c48a07d2720d4604a752d4'
+          assert hashlib.sha256(ipa.read_bytes()).hexdigest() == expected, 'Pinned IPA SHA256 does not match'
+          with zipfile.ZipFile(ipa) as z:
+              assert z.testzip() is None, 'IPA ZIP corruption'
+              info = plistlib.loads(z.read('Payload/Crumb.app/Info.plist'))
+              assert info['CFBundleVersion'] == '23051', 'Unexpected build number'
+              assert info['CFBundleIdentifier'] == 'com.certlium.crumb'
+              assert not any(p.endswith('embedded.mobileprovision') for p in z.namelist())
+          shutil.copyfile(ipa, 'release/Crumb-23051-Release.ipa')
+          for filename in ['IPATOOL-LICENSE', 'UNICORN-COPYING',
+                           'ipatool-sap-corresponding-source.tar.gz',
+                           'unicorn-tci-corresponding-source.tar.gz']:
+              src = Path('source-input') / filename
+              assert src.is_file(), 'Missing corresponding source/notice: ' + filename
+              shutil.copyfile(src, Path('release') / filename)
+          with tarfile.open('source-input/ipatool-sap-corresponding-source.tar.gz') as archive:
+              def read(suffix):
+                  matches = [m for m in archive.getmembers() if m.name.endswith(suffix)]
+                  assert len(matches) == 1, 'Source member missing or ambiguous: ' + suffix
+                  return archive.extractfile(matches[0]).read()
+              checks = {'/wafflebridge/recovery/rawsource/native_flow.go': '2847690814de7601fae9d1a7dd546e1fd8be99f3b27797bafa2e5432c6dd6352', '/wafflebridge/recovery/rawsource/native_replay.go': 'f38a753040290691bccc65d87ac91fd0dc75de57d07c00175c81af960572b97b', '/wafflebridge/recovery/rawsource/native_fault.go': '8b3968b490d7b6a9febdc0bbb7a9a77623df3189e70e5d9e67c7019fdc5ea7ee', '/wafflebridge/fairplayauthorizationbridge.go': '8448c243c5f85d0365afeb599a63faaa98ce37160974136734878fc1a9ab94e9', '/wafflebridge/recovery/rawsource/generic.go': '6dd6300f086ede95a92e49487140f92f88bb9f67281472957c6fc0a6bb41504f', '/wafflebridge/recovery/rawsource/api.go': '2de839696765aabe6624f4554782f8061cb61014068a2477288ece1e7ed3391b'}
+              for suffix, digest in checks.items():
+                  assert hashlib.sha256(read(suffix)).hexdigest() == digest, 'Source mismatch: ' + suffix
+              api = read('/wafflebridge/recovery/rawsource/api.go')
+              assert b'runNativeRegion(worker' in api and b'runRawSourceKernelLoop(worker' not in api
+              assert hashlib.sha256(read('/wafflebridge/recovery/rawsource/profiles/fairplay-immutable-text.bin.gz')).hexdigest() == '7038211db09dcd03828ee394e1983dd8b2747b37f95df035d83949f8a2703ee5'
+              manifest = read('/wafflebridge/recovery/rawsource/IMMUTABLE-IMAGE-PROVENANCE.json')
+              assert json.loads(manifest)['binary_sha256'] == '1e58d37e9602dd0ca5e24b14762063b6c310248b4d3a94272771d815e4ea1784'
+              Path('release/immutable-image-provenance.json').write_bytes(manifest)
+          print('Verified SHA256:', expected)
+          PY
+      - name: Publish a separate GitHub prerelease for the tested checkpoint
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=test-23051-native-control-flow
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft >/dev/null 2>&1; then
+            test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --prerelease \
+              --target 235d6e4a92972b91f2d31571406de21aa44907ae --title 'Crumb 23051 — continuous native FairPlay recovery' \
+              --notes 'Verified experimental build; complete provenance and test instructions follow before publication.'
+          fi
+          gh release upload "$TAG" release/* --repo "$GITHUB_REPOSITORY" --clobber
+          cat > release-notes.txt <<'NOTES'
+          Crumb 23051 — recuperación FairPlay con ejecución nativa continua. IPA Release sin firmar, para instalar con tu método habitual autorizado conservando los datos de Crumb.
+          
+          Cambios del conjunto de recuperación:
+          - El PC sigue los destinos reales de saltos, llamadas y retornos. Las fases son observaciones del recorrido; no reinician registros ni fuerzan entradas a partir de una marca de fin de otra traza.
+          - La fase source utiliza el mismo despacho de bloques AOT/intérprete que el resto del recorrido, en lugar de continuar por saltos grabados sin comprobar su destino.
+          - Los checkpoints Source/Frame se conservan tras verificar sus ecuaciones independientes. Los candidatos producidos naturalmente se comprueban contra el SINF original. Un candidato rechazado continúa en su PC real, con límites de ejecución y de candidatos.
+          - Ante una clase acotada de fallo, hay una única repetición genérica desde estado limpio. Reutiliza los archivos y la autorización; no pide otra licencia ni descarga otra aplicación.
+          - Las excepciones de memoria conservan la dirección sólo dentro del proceso y exportan una categoría fija. El diagnóstico informa cuándo se intentó realmente validar el SINF.
+          
+          Verificación completa: los seis jobs de pruebas CI y las compilaciones iOS Debug/Release pasaron. Incluye 3.354 programas contrastados con ARM64 independiente y ejecución sin nuevos mapeos ejecutables, el inventario AOT completo, una reproducción con un fragmento SINF real, continuaciones, checkpoints, candidatos rechazados, repetición limpia y privacidad. Los 12 vectores móviles independientes también coinciden con el motor real de páginas de la IPA y el consumidor móvil separado, incluidos plaintext y SHA-256 esperados.
+          
+          El último resultado real del iPhone (23050) entró en el recorrido etiquetado sinf y falló en text+0x8a680 antes de validar el SINF. Se demostraron defectos generales de control de flujo que pueden producir contextos incorrectos; el informe no registró el predecesor exacto de ese fallo. La compatibilidad de inscripción y el primer descifrado real siguen pendientes de comprobarse. Esta publicación no declara descifrada una IPA de App Store.
+          
+          Prueba del flujo completo con tus recursos existentes:
+          1. Actualizá Crumb sin desinstalarlo, conservando los datos y la misma identidad de firma.
+          2. Settings → FairPlay Laboratory → Import existing encrypted IPA from Files. Elegí la IPA original que ya tenés. Conservá también la captura anterior si Crumb la necesita para restaurar el estado inicial.
+          3. Pulsá Authorize account and validate this IPA una vez. Dejá Crumb abierto y el iPhone desbloqueado. La selección de candidatos y la repetición local, si corresponden, se ejecutan dentro de ese mismo intento.
+          4. Al terminar, Prepare exports → Share diagnostic. Compartí únicamente el JSON diagnóstico, sin archivos privados de licencia.
+          
+          Se conservan las validaciones originales del SINF, selector, Mach-O, páginas y exportación. Ninguna clave se introduce manualmente ni se obtiene de otro dispositivo.
+          
+          Código: https://github.com/boierito/Crumb/pull/15
+          Commit: 235d6e4a92972b91f2d31571406de21aa44907ae
+          Árbol verificado, idéntico al merge de prueba del PR: 269e130f680b38926b5a830bd9062aef65da0f20
+          Tests: https://github.com/boierito/Crumb/actions/runs/40524733836
+          Build: https://github.com/boierito/Crumb/actions/runs/40524733809
+          IPA SHA256: 3d51183a92bb797dfa59d16147046668b53fed8027c48a07d2720d4604a752d4
+          NOTES
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false \
+            --title 'Crumb 23051 — continuous native FairPlay recovery' --notes-file release-notes.txt
