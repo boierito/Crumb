@@ -46,7 +46,8 @@ nonisolated enum NativeFairPlayAuthorization {
     // PRIVATE bootstrap material is decoded here, never sent to diagnostic logs.
     // Only finish returns a public, key-free result. Native state is per account;
     // each target IPA still has to pass every SINF and executable gate.
-    static func run(account: StoreAccount, source: URL?, ipa: URL, destination: URL) async throws -> Data {
+    static func run(account: StoreAccount, source: URL?, ipa: URL, destination: URL,
+                    diagnostic: @escaping @MainActor @Sendable (String) -> Void = { _ in }) async throws -> Data {
         let identity = try KeychainMachineIdentity.loadOrCreate()
         try account.validate(identity: identity)
         let directory = try stateDirectory(account: account)
@@ -75,7 +76,8 @@ nonisolated enum NativeFairPlayAuthorization {
                 do {
                     let configuration = try await protocolClient.bag(identity: identity)
                     try await sap.initialize(configuration: configuration, identity: identity)
-                    let client = try FairPlayAuthorizationClient(account: account, identity: identity, transport: transport)
+                    let client = try FairPlayAuthorizationClient(account: account, identity: identity, transport: transport,
+                        diagnostic: { message in await diagnostic(message) })
                     let license = try await client.authorize(kbsync: sync, needsDiversity: true, machineName: "Crumb iPhone", sign: { body in
                         try await sap.actionSignature(body: body)
                     })

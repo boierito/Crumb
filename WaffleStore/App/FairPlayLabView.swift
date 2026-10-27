@@ -453,9 +453,10 @@ final class FairPlayLab: ObservableObject {
                 }
             }
             let destination = self.root.appendingPathComponent("authorized-" + UUID().uuidString)
-            self.log("Enrollment", "Preparing account authorization on this iPhone. A required authorization uses one Apple request; saved account state is reused across apps. Keep Crumb open.")
+            self.log("Enrollment", "Preparing account authorization on this iPhone. A required authorization follows validated Apple routing without automatic retries; saved account state is reused across apps. Keep Crumb open.")
             do {
-                let result = try await NativeFairPlayAuthorization.run(account: account, source: self.captureArchive, ipa: original, destination: destination)
+                let result = try await NativeFairPlayAuthorization.run(account: account, source: self.captureArchive, ipa: original, destination: destination,
+                    diagnostic: { message in self.log("Enrollment", message) })
                 let object = try JSONSerialization.jsonObject(with: result)
                 let pretty = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
                 self.log("Enrollment", String(decoding: pretty, as: UTF8.self))

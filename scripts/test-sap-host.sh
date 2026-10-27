@@ -34,4 +34,5 @@ XDG_CACHE_HOME="$WORK/cache" go test ./internal/sap/machine \
 XDG_CACHE_HOME="$WORK/cache" go test ./internal/sap/machine -run 'TestGuestState|TestProducerNative' -v -timeout 6m
 XDG_CACHE_HOME="$WORK/cache" go test ./internal/sap -run 'TestTCIDynamicSAPSmoke|TestTCIKBSyncSmoke' -v -timeout 6m
 python3 "$ROOT/scripts/verify-storeagent-license-profile.py" "$WORK/cache/ipatool/sap/apple-storeagent-v1/storeagent"
+python3 "$ROOT/scripts/verify-store-authorization-profile.py" "$WORK/cache/ipatool/sap/apple-storeagent-v1/storeagent" "$WORK/cache/ipatool/sap/apple-assets-v2/CommerceKit"
 echo 'Host SAP test passed. Physical jailed iOS execution and Apple login remain separate milestones.'
