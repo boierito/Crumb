@@ -125,3 +125,23 @@ KBSync smoke 45.58 s, SAP smoke 2.75 s). VFS ownership/unlink tests also passed
 with `-race`. The ABI verifier and source-overlay contract tests passed. These
 are real native-code executions with public test inputs, not enrollment or
 SINF-decryption evidence for the owner's account.
+
+## iPhone test build 23046
+
+The laboratory now exposes **Test original StoreAgent state (no download)**.
+Import the saved capture ZIP and its exact original encrypted IPA, then run this
+once. It verifies the manifest and SINF association before initializing any
+producer, restores a private filesystem copy, and invokes the same native
+account-diversity query tested on TCI. The DSID is read privately from the
+capture context; it is never included in the report. Old contexts without a
+DSID report `capture_dsid_missing` rather than guessing it from the SINF.
+
+The result reports `state_restored`, `sidb_preserved_after_initialization`,
+`account_query_completed`, and `needs_account_diversity`. The fields
+`sinf_model_verified`, `ready_to_decrypt` and `plaintext_authenticated` stay
+false. A false diversity result is not evidence that a mobile credential was
+recovered. Native initialization rejection reports a fixed error code, with no
+native error text, state bytes, DSID, identity or paths.
+
+This is the device acceptance test for the producer restoration path, not a
+request to rerun the previous modern-fairplayd bridge or SIDB mutation probes.

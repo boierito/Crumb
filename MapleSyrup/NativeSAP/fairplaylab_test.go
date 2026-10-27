@@ -16,3 +16,12 @@ func TestPortableDeviceSelftestContract(t *testing.T) {
 		t.Fatal("missing private frame accepted")
 	}
 }
+
+func TestLegacyProducerProbeRequiresNativeImplementation(t *testing.T) {
+	if legacyProducerProbe != nil {
+		t.Skip("native producer is registered")
+	}
+	if _, err := labRun(labRequest{Operation: "probe-legacy-producer"}); err == nil {
+		t.Fatal("unavailable producer reported success")
+	}
+}

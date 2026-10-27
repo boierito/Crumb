@@ -7,7 +7,14 @@ import CryptoKit
 nonisolated enum FairPlayNative {
     static func run(_ operation: String, source: URL? = nil, destination: URL? = nil,
                     report: URL? = nil, model: URL? = nil, ipa: URL? = nil) throws -> String {
-        let request = ["Operation": operation, "Source": source?.path ?? "",
+        var cachePath = ""
+        if operation == "probe-legacy-producer" {
+            let cache = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask,
+                appropriateFor: nil, create: true).appendingPathComponent("MapleSAP", isDirectory: true)
+            try privateDirectory(cache)
+            cachePath = cache.path
+        }
+        let request = ["Operation": operation, "Cache": cachePath, "Source": source?.path ?? "",
                        "Destination": destination?.path ?? "", "Report": report?.path ?? "", "Model": model?.path ?? "", "IPA": ipa?.path ?? ""]
         let data = try JSONEncoder().encode(request)
         let text = String(decoding: data, as: UTF8.self)
@@ -433,8 +440,25 @@ final class FairPlayLab: ObservableObject {
             self.log("Enrollment", "This research measures sensitivity only. It does not recover a valid model or prove decrypted plaintext.")
         }
     }
-    // Read-only producer/consumer contract audit. Reuses the existing private
-    // capture, runs the authentic interpreter, and validates the actual SINF.
+    // Reopen an isolated state copy in the original legacy producer.
+    // This does not perform SINF validation.
+    func probeOriginalProducer() {
+        guard input != nil else { return }
+        perform {
+            try await self.analyzeCurrentCaptureFiles()
+            guard self.transactions == 1, let archive = self.captureArchive, let original = self.input else {
+                self.log("Enrollment", "Original producer test requires the saved capture and its original encrypted IPA.")
+                return
+            }
+            self.log("Enrollment", "Restoring a private copy in the original StoreAgent 10.9. This can take several minutes; no new app download or keybag request.")
+            let response = try await Task.detached {
+                try FairPlayNative.run("probe-legacy-producer", source: archive, ipa: original)
+            }.value
+            self.log("Enrollment", response)
+            self.log("Enrollment", "Provisioning query only: neither outcome validates the SINF or produces a decrypted IPA.")
+        }
+    }
+
     func researchCurrentCaptureBridge() {
         guard input != nil else { return }
         perform {
@@ -667,6 +691,9 @@ struct FairPlayLabView: View {
                 }
                 Section("4 · Recover or import an enrollment") {
                     Button("Attempt recovery from current capture") { lab.recoverCurrentCapture() }.disabled(lab.input == nil)
+                    Button("Test original StoreAgent state (no download)") { lab.probeOriginalProducer() }.disabled(lab.input == nil)
+                    Text("Reopens a private copy with the original producer and checks account provisioning. It does not decrypt the SINF or export an IPA.")
+                        .font(.footnote)
                     Button("Audit StoreAgent → fairplayd bridge (no download)") { lab.researchCurrentCaptureBridge() }.disabled(lab.input == nil)
                     Text("Verifies SIDB/SIDD provenance, records only static import slots and per-phase state-file lookups, and checks the original SINF. No private material leaves this iPhone.")
                         .font(.footnote)

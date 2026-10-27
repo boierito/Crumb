@@ -16,6 +16,7 @@ import (
 )
 
 type legacyEnrollmentInput struct {
+	dsid     uint64
 	hardware []byte
 	files    map[string][]byte
 	sinfs    map[string]bool
@@ -128,6 +129,7 @@ func decodeLegacyEnrollment(context, consumer []byte) (result legacyEnrollmentIn
 		Schema   string `json:"schema"`
 		Hardware []byte `json:"hardware_id"`
 		Producer string `json:"producer"`
+		DSID     string `json:"dsid"`
 	}
 	var state struct {
 		Consumer  string            `json:"consumer"`
@@ -183,7 +185,13 @@ func decodeLegacyEnrollment(context, consumer []byte) (result legacyEnrollmentIn
 			return result, recoveryFailure("state-files", "state_byte_limit", nil)
 		}
 	}
-	result.hardware, result.files = identity.Hardware, state.Files
+	if identity.DSID != "" {
+        result.dsid, err = strconv.ParseUint(identity.DSID, 10, 64)
+        if err != nil || result.dsid == 0 {
+            return result, recoveryFailure("identity", "capture_dsid_invalid", nil)
+        }
+    }
+    result.hardware, result.files = identity.Hardware, state.Files
 	return result, nil
 }
 

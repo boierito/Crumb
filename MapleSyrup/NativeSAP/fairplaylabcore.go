@@ -17,12 +17,20 @@ import (
 )
 
 type labRequest struct {
-	Operation, Source, Destination, Report, Model, IPA string
-	Input, Frame                                       []byte
+	Operation, Source, Destination, Report, Model, IPA, Cache string
+	Input, Frame                                              []byte
 }
+
+// Set only by the native producer integration; portable tests have no producer.
+var legacyProducerProbe func(labRequest) (any, error)
 
 func labRun(r labRequest) (any, error) {
 	switch r.Operation {
+	case "probe-legacy-producer":
+		if legacyProducerProbe == nil {
+			return nil, recoveryFailure("producer", "producer_unavailable", nil)
+		}
+		return legacyProducerProbe(r)
 	case "recover-capture":
 		return recoverCaptureEnrollment(r.Source, r.IPA, r.Destination)
 	case "probe-capture":
