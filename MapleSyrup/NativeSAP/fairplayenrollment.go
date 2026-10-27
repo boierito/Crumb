@@ -272,6 +272,9 @@ func finishRecoveredEnrollments(recovered []rawsource.Result, ipa, destination s
 	if err := os.Mkdir(model, 0700); err != nil {
 		return nil, recoveryFailure("recovered-validation/model-directory", "recovery_model_directory_failed", err)
 	}
+	// The authorization flow retains the processed IPA on success. The model
+	// is only a temporary input to DecryptIPA and must not survive that flow.
+	defer os.RemoveAll(model)
 	seen := map[[32]byte]bool{}
 	for index, value := range recovered {
 		sum := sha256.Sum256(value.Pack)
@@ -294,6 +297,9 @@ func finishRecoveredEnrollments(recovered []rawsource.Result, ipa, destination s
 			stage, code = detail, "recovered_"+strings.ReplaceAll(detail, "-", "_")+"_failed"
 		}
 		return nil, recoveryFailure("recovered-validation/"+stage, code, err)
+	}
+	if err := os.RemoveAll(model); err != nil {
+		return nil, recoveryFailure("recovered-validation/model-cleanup", "recovery_model_cleanup_failed", err)
 	}
 	complete = true
 	diagnostic.TargetIPAValidated = true
