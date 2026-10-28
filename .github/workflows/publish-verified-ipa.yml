@@ -1,0 +1,55 @@
+name: Publish verified FairPlay experimental IPA
+on:
+  push:
+    branches: [distribution/fairplay-authorized-ff6da948]
+    paths: [.github/workflows/publish-verified-ipa.yml]
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ff6da948f64300b40308b8d4edd750d436be7951
+      - uses: actions/download-artifact@v4
+        with:
+          name: Crumb-Release-40717316339
+          run-id: 40717316339
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: delivery
+      - name: Validate the existing IPA and corresponding sources
+        run: |
+          python3 scripts/verify-ipa.py delivery/Crumb-Release.ipa
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          import hashlib,tarfile
+          p=Path('delivery/Crumb-Release.ipa')
+          expected='0a4bfcbb7806099cba0619f21c2fc122830e432cbda788f9ecdfd951891aa396'
+          assert hashlib.sha256(p.read_bytes()).hexdigest()==expected
+          with tarfile.open('delivery/ipatool-sap-corresponding-source.tar.gz') as archive:
+              for name in ('kbsyncbridge.go','kbsyncretained.go','fairplayauthorizationstate.go'):
+                  entries=[m for m in archive.getmembers() if m.isfile() and m.name.endswith('/'+name)]
+                  assert entries and all(archive.extractfile(m).read()==Path('MapleSyrup/NativeSAP',name).read_bytes() for m in entries)
+          name='Crumb-2026-10-28-1543-UTC-ff6da948.ipa'
+          p.rename(Path('delivery',name))
+          Path('delivery/SHA256SUMS.txt').write_text(expected+'  '+name+'\n')
+          PYCODE
+      - name: Publish the direct IPA asset with matching source archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES: "IPA experimental de Crumb. Compilación finalizada el 28/10/2026 a las 15:43 UTC.\n\nFuente: ff6da948f64300b40308b8d4edd750d436be7951, PR #22. Versión 1.0.0, número interno 23053 (conservado), ARM64, iOS 16.4 o posterior. IPA sin firmar: requiere la firma habitual de sideloading.\n\nRestaura el estado de cuenta antes del KBSync del flujo retenido de FairPlay Lab y conserva ese productor para consumir la respuesta. Todavía no demuestra descifrado real del SINF ni de una IPA.\n\nAlcance de prueba: repetir la recuperación offline de la captura antigua no ejercita el generador corregido. El cambio se utiliza al iniciar una nueva transacción desde FairPlay Lab con estado de cuenta guardado. Si ya hay una IPA cargada, el botón de descarga está deshabilitado. Aún no existe una acción separada para solicitar solamente la licencia de la IPA existente, sin repetir la descarga. No se solicita repetir una descarga para confirmar las verificaciones locales ya realizadas.\n\nInstalar encima de la app existente, con el mismo identificador y firma, para conservar el estado; no desinstalar previamente. Conservar las exportaciones privadas existentes.\n\nCI completo aprobado:\nhttps://github.com/boierito/Crumb/actions/runs/40717316053\nhttps://github.com/boierito/Crumb/actions/runs/40717316339\n\nSe adjuntan fuentes correspondientes y licencias de Unicorn TCI e ipatool. No contienen capturas ni secretos del usuario.\n"
+        run: |
+          python3 - <<'PYCODE'
+          import os,pathlib
+          pathlib.Path('delivery/release-notes.md').write_text(os.environ['NOTES'])
+          PYCODE
+          tag=experimental-authorized-download-20261028-1543-utc
+          if gh release view "$tag" --repo boierito/Crumb --json isDraft --jq .isDraft > delivery/draft-status.txt 2>/dev/null; then
+            test "$(cat delivery/draft-status.txt)" = true
+          else
+            gh release create "$tag" --repo boierito/Crumb --target ff6da948f64300b40308b8d4edd750d436be7951 --draft --prerelease --title 'Crumb experimental · 2026-10-28 15:43 UTC · ff6da948' --notes-file delivery/release-notes.md
+          fi
+          gh release upload "$tag" delivery/Crumb-2026-10-28-1543-UTC-ff6da948.ipa delivery/SHA256SUMS.txt delivery/ipatool-sap-corresponding-source.tar.gz delivery/unicorn-tci-corresponding-source.tar.gz delivery/IPATOOL-LICENSE delivery/UNICORN-COPYING --repo boierito/Crumb --clobber
+          gh release edit "$tag" --repo boierito/Crumb --draft=false --prerelease --notes-file delivery/release-notes.md
