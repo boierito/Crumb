@@ -50,7 +50,7 @@ func TestExternalAndStatePhaseDiagnosticsUseOnlySanitizedFields(t *testing.T) {
 func TestGettimeofdayPreservesNativeDarwinPadding(t *testing.T) {
 	const base uint64 = 0x500000
 	const offset = 32
-	page := bytes.Repeat([]byte{0xa5}, pageSize)
+	page := bytes.Repeat([]byte{0xa5}, int(pageSize))
 	s := newState(&model{pages: map[uint64][]byte{base: page}})
 	s.reset()
 	s.x[0], s.x[30] = base+offset, 0x1234
