@@ -191,7 +191,7 @@ final class FairPlayLab: ObservableObject {
         perform {
             guard self.input == nil else { return }
             self.transactions = 0
-            let retained = NativeRetainedKBSyncGenerator()
+            let retained = NativeRetainedKBSyncGenerator(accountStateDirectory: try NativeFairPlayAuthorization.stateDirectory(account: account))
             let tool = IPATool(account: account, capture: { value in
                 do { try await self.capture(value, retained: retained) }
                 catch { await self.log("Transaction", "Private capture or consumer failed; download may continue. No recovery success is implied.") }

@@ -19,6 +19,7 @@ int WaffleDecryptIPA(char *source, char *destination, char *report, char *model)
 int WaffleFairPlayAuthorization(char *input, unsigned char **output, size_t *length);
 int WaffleFairPlayLab(char *input, unsigned char **output, size_t *length);
 int WaffleKBSyncOpen(char *cache, unsigned char *hardware, size_t length, uint64_t dsid, uint64_t *handle, unsigned char **output, size_t *size);
+int WaffleKBSyncOpenWithState(char *cache, char *directory, unsigned char *hardware, size_t length, uint64_t dsid, uint64_t *handle, unsigned char **output, size_t *size);
 int WaffleKBSyncBind(uint64_t handle, unsigned char *blob, size_t size, unsigned char *keybag, size_t keybagSize);
 void WaffleKBSyncClose(uint64_t handle);
 int WaffleKBSyncConsume(uint64_t handle, unsigned char **output, size_t *length);

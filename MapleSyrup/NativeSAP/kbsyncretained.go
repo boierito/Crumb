@@ -91,6 +91,44 @@ func OpenRetainedKBSync(ctx context.Context, bundle assets.Bundle, hardware []by
 	return &RetainedKBSyncSession{agent: agent, global: global, hardware: append([]byte(nil), hardware...)}, blob, nil
 }
 
+// OpenRetainedAuthorizedKBSync restores account state before generating the
+// download's mode-1 KBSync. The returned producer must also consume that exact
+// download response; another restored producer is not the retained session.
+func OpenRetainedAuthorizedKBSync(ctx context.Context, bundle assets.Bundle, hardware []byte, dsid uint64, files map[string][]byte) (*RetainedKBSyncSession, []byte, error) {
+	if dsid == 0 {
+		return nil, nil, fmt.Errorf("producer_session_invalid")
+	}
+	producer, err := OpenRetainedLicenseState(ctx, bundle, hardware, files)
+	if err != nil {
+		return nil, nil, err
+	}
+	needs, err := producer.NeedsAccountDiversity(dsid)
+	if err != nil || needs {
+		producer.Close()
+		return nil, nil, fmt.Errorf("producer_account_not_provisioned")
+	}
+	blob, err := producer.DownloadSync(dsid)
+	if err != nil {
+		producer.Close()
+		return nil, nil, err
+	}
+	return producer, blob, nil
+}
+
+// DownloadSync uses the same retained native global as subsequent license
+// consumption. It neither authorizes an account nor validates an app license.
+func (r *RetainedKBSyncSession) DownloadSync(dsid uint64) ([]byte, error) {
+	if r == nil {
+		return nil, fmt.Errorf("producer_session_invalid")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.agent == nil || r.agent.closed || r.agent.guest == nil || dsid == 0 {
+		return nil, fmt.Errorf("producer_session_invalid")
+	}
+	return r.agent.guest.generateKBSync(storeAgentKBSyncEntry, r.global, dsid)
+}
+
 // OpenRetainedLicenseState restores a previously captured legacy producer
 // filesystem before the original native global initializer reads any state.
 // It does not generate KBSync, contact Apple, re-import a keybag, convert SIDB,

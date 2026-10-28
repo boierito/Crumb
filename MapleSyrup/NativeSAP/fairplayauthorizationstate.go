@@ -148,3 +148,24 @@ func saveAuthorizedState(directory string, dsid uint64, hardware []byte, files m
 	}
 	return os.Rename(temp.Name(), filepath.Join(directory, "account-state.json"))
 }
+
+// saveDownloadState is called under the shared native bridge mutex. An older
+// retained download must never overwrite state replaced by authorization or a
+// different download while its network response was pending.
+func saveDownloadState(directory string, dsid uint64, hardware []byte, expected map[string]string, files map[string][]byte) error {
+	current, err := readAuthorizedState(directory, dsid, hardware)
+	if err == nil {
+		defer current.clear()
+		if expected == nil || len(current.Digests) != len(expected) {
+			return fmt.Errorf("authorization_state_changed")
+		}
+		for name, digest := range expected {
+			if actual, exists := current.Digests[name]; !exists || actual != digest {
+				return fmt.Errorf("authorization_state_changed")
+			}
+		}
+	} else if !os.IsNotExist(err) || expected != nil {
+		return fmt.Errorf("authorization_state_changed")
+	}
+	return saveAuthorizedState(directory, dsid, hardware, files)
+}
