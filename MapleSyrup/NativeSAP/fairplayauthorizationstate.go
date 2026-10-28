@@ -45,7 +45,10 @@ func validateAuthorizedState(s authorizedAccountState, dsid uint64, hardware []b
 	return nil
 }
 func readAuthorizedState(directory string, dsid uint64, hardware []byte) (result authorizedAccountState, err error) {
-	path := filepath.Join(directory, "account-state.json")
+	return readAuthorizedStateFile(filepath.Join(directory, "account-state.json"), dsid, hardware)
+}
+
+func readAuthorizedStateFile(path string, dsid uint64, hardware []byte) (result authorizedAccountState, err error) {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return result, err
@@ -72,6 +75,43 @@ func readAuthorizedState(directory string, dsid uint64, hardware []byte) (result
 		return authorizedAccountState{}, err
 	}
 	return result, nil
+}
+
+// Export only the validated licensing state. Passwords, cookies and account
+// authentication tokens are not part of this schema. The copy is still private.
+func exportAuthorizedState(directory, destination string, dsid uint64, hardware []byte) error {
+	value, err := readAuthorizedState(directory, dsid, hardware)
+	if err != nil {
+		return fmt.Errorf("authorization_cached_state_invalid")
+	}
+	defer value.clear()
+	data, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("authorization_state_export_failed")
+	}
+	defer clear(data)
+	file, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return fmt.Errorf("authorization_state_export_failed")
+	}
+	complete := false
+	defer func() {
+		file.Close()
+		if !complete {
+			os.Remove(destination)
+		}
+	}()
+	if _, err = file.Write(data); err != nil {
+		return fmt.Errorf("authorization_state_export_failed")
+	}
+	if err = file.Sync(); err != nil {
+		return fmt.Errorf("authorization_state_export_failed")
+	}
+	if err = file.Close(); err != nil {
+		return fmt.Errorf("authorization_state_export_failed")
+	}
+	complete = true
+	return nil
 }
 func saveAuthorizedState(directory string, dsid uint64, hardware []byte, files map[string][]byte) error {
 	info, err := os.Lstat(directory)

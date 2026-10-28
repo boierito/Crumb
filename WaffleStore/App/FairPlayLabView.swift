@@ -118,6 +118,7 @@ final class FairPlayLab: ObservableObject {
     @Published var diagnostic: URL?
     @Published var captureArchive: URL?
     @Published var importedCapture: URL?
+    @Published var authorizedStateExport: URL?
     @Published var enrollmentStages: [String: Bool] = [:]
     @Published var nativeRecoveryVerified = false
     @Published var input: URL? {
@@ -445,6 +446,8 @@ final class FairPlayLab: ObservableObject {
         perform {
             self.output = nil
             self.nativeRecoveryVerified = false
+            if let previous = self.authorizedStateExport { try? FileManager.default.removeItem(at: previous) }
+            self.authorizedStateExport = nil
             if !NativeFairPlayAuthorization.hasSavedState(account: account) {
                 try await self.analyzeCurrentCaptureFiles()
                 guard self.transactions == 1, self.captureArchive != nil else {
@@ -462,6 +465,9 @@ final class FairPlayLab: ObservableObject {
                 self.log("Enrollment", String(decoding: pretty, as: UTF8.self))
                 let envelope = object as? [String: Any] ?? [:]
                 let report = envelope["result"] as? [String: Any] ?? [:]
+                if report["account_state_saved"] as? Bool == true {
+                    await self.prepareAuthorizedStateExport(account)
+                }
                 let processed = destination.appendingPathComponent("processed.ipa")
                 let size = ((try? FileManager.default.attributesOfItem(atPath: processed.path))?[.size] as? NSNumber)?.int64Value ?? 0
                 if report["completed"] as? Bool == true,
@@ -485,6 +491,28 @@ final class FairPlayLab: ObservableObject {
                 self.log("Enrollment", "Account authorization stopped: " + code + ". No automatic replay; original IPA and capture retained.")
             }
         }
+    }
+
+    private func prepareAuthorizedStateExport(_ account: StoreAccount) async {
+        if let previous = authorizedStateExport { try? FileManager.default.removeItem(at: previous) }
+        authorizedStateExport = nil
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd-HHmmss"
+        let file = root.appendingPathComponent("PRIVATE-FairPlay-authorized-state-" + formatter.string(from: Date()) + "-UTC.json")
+        do {
+            try await NativeFairPlayAuthorization.exportState(account: account, to: file)
+            authorizedStateExport = file
+            log("Enrollment", "Private authorized-state copy ready to share. It contains licensing material; no password or Apple session cookies. SINF validation is a separate check.")
+        } catch {
+            try? FileManager.default.removeItem(at: file)
+            log("Enrollment", "Authorized-state export failed. The saved internal state is retained.")
+        }
+    }
+
+    func exportSavedAuthorization(_ account: StoreAccount) {
+        perform { await self.prepareAuthorizedStateExport(account) }
     }
 
     // Reopen an isolated state copy in the original legacy producer.
@@ -664,7 +692,7 @@ final class FairPlayLab: ObservableObject {
         nativeRecoveryVerified = false
         guard !busy else { return }
         try? FileManager.default.removeItem(at: root)
-        input = nil; output = nil; diagnostic = nil; captureArchive = nil; importedCapture = nil; transactions = 0
+        input = nil; output = nil; diagnostic = nil; captureArchive = nil; importedCapture = nil; authorizedStateExport = nil; transactions = 0
         auditedTransactions = -1
         probeCompletedForCapture = false
         enrollmentStages = [:]
@@ -770,6 +798,12 @@ struct FairPlayLabView: View {
                     }
                 }
                 Section("5 · Export evidence and repeat") {
+                    Button("Prepare PRIVATE authorized state (no new authorization)") {
+                        if let account = appData.ipaTool?.account { lab.exportSavedAuthorization(account) }
+                    }.disabled(appData.ipaTool == nil)
+                    if let state = lab.authorizedStateExport {
+                        ShareLink("Share PRIVATE authorized state — contains licensing secrets", item: state)
+                    }
                     Button("Prepare exports") { lab.export() }
                     if let diagnostic = lab.diagnostic { ShareLink("Share diagnostic (no secret blobs)", item: diagnostic) }
                     if let capture = lab.captureArchive { ShareLink("Share PRIVATE capture — contains secrets", item: capture) }

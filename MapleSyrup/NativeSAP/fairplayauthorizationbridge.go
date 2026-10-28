@@ -267,6 +267,16 @@ func WaffleFairPlayAuthorization(input *C.char, output **C.uchar, length *C.size
 	var value any
 	var err error
 	switch r.Operation {
+	case "export-state":
+		dsid, parseErr := strconv.ParseUint(r.DSID, 10, 64)
+		hardware, decodeErr := hex.DecodeString(r.GUID)
+		if parseErr != nil || decodeErr != nil || dsid == 0 || len(hardware) != 6 {
+			err = fmt.Errorf("authorization_identity_invalid")
+		} else {
+			err = exportAuthorizedState(r.Directory, r.Destination, dsid, hardware)
+			value = map[string]bool{"private_state_exported": err == nil}
+		}
+		clear(hardware)
 	case "open":
 		value, err = openAuthorization(r)
 	case "finish":
@@ -302,6 +312,8 @@ func WaffleFairPlayAuthorization(input *C.char, output **C.uchar, length *C.size
 }
 func authorizationErrorCode(err error) string {
 	switch err.Error() {
+	case "authorization_state_export_failed":
+		return err.Error()
 	case "authorization_busy", "authorization_identity_invalid", "authorization_ipa_invalid", "authorization_capture_invalid", "authorization_capture_account_mismatch", "authorization_cached_state_invalid", "authorization_assets_unavailable", "authorization_restore_rejected", "authorization_query_failed", "authorization_sync_failed", "authorization_handle_exhausted", "authorization_handle_invalid", "authorization_session_expired", "authorization_license_incomplete", "authorization_keybag_rejected", "authorization_diversity_rejected", "authorization_unexpected_reply", "authorization_snapshot_failed", "authorization_state_save_failed", "authorization_operation_invalid":
 		return err.Error()
 	}

@@ -9,6 +9,47 @@ import (
 	"github.com/majd/ipatool/v2/internal/fairplay"
 )
 
+func TestAuthorizedStateExportPreservesOriginalAndAccountBinding(t *testing.T) {
+	dir := t.TempDir()
+	os.Chmod(dir, 0700)
+	hardware := []byte{2, 0, 0, 0, 0, 1}
+	if err := saveAuthorizedState(dir, 1, hardware, map[string][]byte{"SC Info.sidb": {0, 7, 0, 11}, "SC Info.sidd": {1, 2, 3}}); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(filepath.Join(dir, "account-state.json"))
+	output := filepath.Join(dir, "PRIVATE-export.json")
+	if err := exportAuthorizedState(dir, output, 1, hardware); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(output)
+	if err != nil || info.Mode().Perm()&0077 != 0 {
+		t.Fatal("export is not private")
+	}
+	state, err := readAuthorizedStateFile(output, 1, hardware)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.clear()
+	if state, err := readAuthorizedStateFile(output, 2, hardware); err == nil {
+		state.clear()
+		t.Fatal("another account accepted")
+	}
+	if err := exportAuthorizedState(dir, output, 1, hardware); err == nil {
+		t.Fatal("existing export overwritten")
+	}
+	wrong := filepath.Join(dir, "wrong-account.json")
+	if err := exportAuthorizedState(dir, wrong, 2, hardware); err == nil {
+		t.Fatal("another account exported")
+	}
+	if _, err := os.Lstat(wrong); !os.IsNotExist(err) {
+		t.Fatal("failed export left a file")
+	}
+	after, _ := os.ReadFile(filepath.Join(dir, "account-state.json"))
+	if !bytes.Equal(before, after) {
+		t.Fatal("export modified saved state")
+	}
+}
+
 func TestAuthorizationStateIsAccountBoundAndAtomic(t *testing.T) {
 	dir := t.TempDir()
 	os.Chmod(dir, 0700)

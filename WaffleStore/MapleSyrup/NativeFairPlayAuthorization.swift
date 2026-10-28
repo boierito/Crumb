@@ -16,6 +16,16 @@ nonisolated enum NativeFairPlayAuthorization {
         guard let directory = try? stateDirectory(account: account) else { return false }
         return FileManager.default.fileExists(atPath: directory.appendingPathComponent("account-state.json").path)
     }
+    static func exportState(account: StoreAccount, to destination: URL) async throws {
+        let directory = try stateDirectory(account: account)
+        let reply = try await call(["Operation": "export-state", "Directory": directory.path,
+                                    "Destination": destination.path, "DSID": account.dsid, "GUID": account.guid])
+        guard let envelope = try JSONSerialization.jsonObject(with: reply) as? [String: Any],
+              let result = envelope["result"] as? [String: Any],
+              result["private_state_exported"] as? Bool == true else { throw Failure.malformedReply }
+        try FileManager.default.setAttributes([.posixPermissions: 0o600,
+            .protectionKey: FileProtectionType.complete], ofItemAtPath: destination.path)
+    }
     private static func wire(_ request: Data) throws -> Data {
         guard request.count <= 4 << 20 else { throw Failure.malformedReply }
         let text = String(decoding: request, as: UTF8.self)

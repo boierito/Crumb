@@ -30,6 +30,33 @@ An original capture predating authorization cannot reproduce the later account
 state saved on an iPhone. The harness therefore does not claim to reproduce
 that state or the complete iOS operating environment.
 
+## Exporting a saved state from Crumb
+
+After the native authorization operation reports that account state was saved,
+FairPlay Lab prepares a separate private JSON copy, even if SINF recovery fails.
+The persistent internal state is retained. The laboratory also offers
+`Prepare PRIVATE authorized state (no new authorization)` to copy an existing
+saved state without another request to Apple, followed by an explicit share
+sheet. No upload is automatic. The file contains account-bound licensing data
+and must remain private; the export schema does not contain login passwords,
+Apple session cookies or second-factor codes. Export alone does not prove that
+provisioning or SINF validation completed successfully.
+
+Replay the exported file with the same capture identity and original IPA:
+
+```sh
+chmod 600 /private/PRIVATE-FairPlay-authorized-state.json
+/private/new-build-directory/crumb-fairplay-host \
+  --ipa /private/original.ipa --capture /private/capture.zip \
+  --authorized-state /private/PRIVATE-FairPlay-authorized-state.json \
+  --output /private/new-output-directory > /private/result.json
+```
+
+The loader verifies the saved account, hardware identity, schema, file hashes
+and permissions. An explicitly supplied missing or invalid state fails rather
+than silently falling back to the original capture. Every candidate must still
+validate the target SINF before IPA processing can proceed.
+
 `test-fairplay-host.sh` also compiles the host entry point after exercising the
 portable contracts, so future changes must continue to build outside the app.
 
