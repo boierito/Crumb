@@ -77,6 +77,18 @@ used. Results:
   executed the native initializer and still rejected both candidates, including
   when combined with the actual wall clock. These experiments do not establish
   a safe production replacement for the modeled services.
+- The native Darwin timeval padding correction was also exercised with the
+  actual saved inputs, alone and combined with the actual wall clock and
+  memory-based once experiment. Both completed with native status -42057 and
+  two rejected SINF candidates. The correction fixes a demonstrated ABI
+  discrepancy; it did not resolve the licensing failure in these trials.
+- A modified-register trace was rejected at its first service boundary; a
+  truncated real trace was rejected for its missing final event after 293
+  calls. Neither negative case was accepted as a completed match.
+- Native stat-buffer read auditing observed size, mode and modification-time
+  reads. Both producer and consumer currently model modification times as zero;
+  this observation does not establish a missing real timestamp or justify
+  inventing one.
 
 The unresolved boundary remains a compatible, source-identified producer of
 material that validates the original mobile SINF. A matching native execution
