@@ -19,7 +19,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python3 -m pip install unicorn==2.1.4 keystone-engine==0.9.2
+      - run: python3 -m pip install unicorn==2.1.4 keystone-engine==0.9.2 capstone==5.0.6
+      - name: Verify native reference tools compile and expose their CLI without private inputs
+        run: |
+          python3 -m py_compile scripts/prepare-fairplay-native-reference.py scripts/replay-fairplay-native-reference.py
+          python3 scripts/replay-fairplay-native-reference.py --help
+          python3 scripts/test-prepare-fairplay-native-reference.py
       - name: Differential generic interpreter, unknown PCs, aliases and resource validation
         run: python3 scripts/test-fairplay-generic.py
       - name: Compare real native byte-processing loop with independent ARM64 execution
@@ -78,6 +83,8 @@ jobs:
 
   fairplay-portable:
     runs-on: ubuntu-latest
+    env:
+      CRUMB_NATIVE_REFERENCE: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

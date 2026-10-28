@@ -33,6 +33,10 @@ cp "$ROOT/MapleSyrup/NativeSAP/mobilelicense/core.go" "$ROOT/MapleSyrup/NativeSA
 
 python3 "$ROOT/scripts/prepare-fairplay-portable.py" "$SOURCE/tools/fairplay-recovery" "$WORK/test/wafflebridge/recovery"
 bash "$ROOT/scripts/fetch-fairplay-raw.sh" "$WORK/test/wafflebridge/recovery/rawsource"
+if [[ ${CRUMB_NATIVE_REFERENCE:-0} == 1 ]]; then
+  python3 "$ROOT/scripts/prepare-fairplay-native-reference.py" "$WORK/test/wafflebridge/recovery/rawsource"
+fi
+
 for name in fairplayauthorizationstate.go fairplayauthorizationstate_test.go fairplayerrors.go fairplaycapturebridge.go fairplaycapturebridge_test.go fairplayprobe.go fairplayprobe_test.go fairplaycausal.go fairplaycausal_test.go fairplaybridgeaudit.go fairplaybridgeaudit_test.go fairplayenrollment.go fairplayenrollment_test.go captureanalysis.go captureanalysis_test.go fairplaylabcore.go fairplaylab_test.go; do
   cp "$ROOT/MapleSyrup/NativeSAP/$name" "$WORK/test/wafflebridge/labtest/"
 done
