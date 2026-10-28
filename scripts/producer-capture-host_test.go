@@ -61,14 +61,23 @@ func TestRetainedPrivateCaptureProvisioning(t *testing.T) {
 		}
 	}
 	defer clear(c.Hardware)
-	defer func() {
-		for _, b := range s.Files {
+	defer func(files map[string][]byte) {
+		for _, b := range files {
 			clear(b)
 		}
-	}()
+	}(s.Files)
 	dsid, e := strconv.ParseUint(c.DSID, 10, 64)
 	if e != nil || dsid == 0 || len(c.Hardware) != 6 {
 		t.Fatal("capture identity")
+	}
+	authorized := os.Getenv("CRUMB_PRIVATE_AUTHORIZED_STATE")
+	if authorized != "" {
+		stored, err := readAuthorizedStateFile(authorized, dsid, c.Hardware)
+		if err != nil {
+			t.Fatal("authorized state validation failed")
+		}
+		defer stored.clear()
+		s.Files = stored.Files
 	}
 	bundle, e := assets.Load(ctx)
 	if e != nil {
@@ -83,7 +92,7 @@ func TestRetainedPrivateCaptureProvisioning(t *testing.T) {
 	if e != nil {
 		t.Fatal("native account query failed")
 	}
-	result := map[string]any{"schema": "crumb-real-producer-host-v1", "actual_capture_used": true, "tci_backend": true, "state_restored": true, "native_account_query_completed": true, "needs_account_diversity": needs, "apple_authorization_executed": false, "sinf_validated": false}
+	result := map[string]any{"schema": "crumb-real-producer-host-v1", "actual_capture_used": true, "authorized_state_supplied": authorized != "", "tci_backend": true, "state_restored": true, "native_account_query_completed": true, "needs_account_diversity": needs, "apple_authorization_executed": false, "sinf_validated": false}
 	b, e := json.Marshal(result)
 	if e != nil {
 		t.Fatal(e)

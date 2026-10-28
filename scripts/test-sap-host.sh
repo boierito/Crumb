@@ -19,6 +19,15 @@ for name in gueststate.go gueststate_test.go guestrestore.go guestrestore_test.g
 done
 cp "$ROOT/scripts/producer-native-probe_test.go" "$SOURCE/internal/sap/machine/"
 cp "$ROOT/scripts/producer-capture-host_test.go" "$SOURCE/internal/sap/machine/"
+# Reuse the production state validator for private account-state replay; compile
+# it only as a test helper in the producer's package.
+python3 - "$ROOT/MapleSyrup/NativeSAP/fairplayauthorizationstate.go" "$SOURCE/internal/sap/machine/authorization_state_host_test.go" <<'PYCODE'
+import pathlib, sys
+source = pathlib.Path(sys.argv[1]).read_text()
+assert source.count('package main') == 1
+pathlib.Path(sys.argv[2]).write_text(source.replace('package main', 'package machine', 1))
+PYCODE
+
 
 python3 - "$SOURCE" "$WORK/native/libunicorn.so.2" <<'PY'
 import pathlib,sys,json

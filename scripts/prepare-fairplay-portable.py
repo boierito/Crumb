@@ -48,6 +48,20 @@ func Evaluate(input, frame []byte) ([]byte, error) {
     api = out / 'api.go'
     text = api.read_text()
     text = text.replace('import "fmt"', 'import ("fmt"; "crypto/sha256")').replace('"encoding/json")', '"encoding/json"; "crypto/sha256")')
+    if stage in ('state', 'frame'):
+        # Only these public, enrollment-independent templates may be shared.
+        # Each Evaluate still creates its own copy-on-write CPU/memory state.
+        text = text.replace('"crypto/sha256"', '"crypto/sha256"; "sync"', 1)
+        text = text.replace('value, err := loadModelBytes(embeddedModelBytes());', 'value, err := immutableEvaluatorModel();', 1)
+        text += """
+// Never cache a model that requires patching private enrollment material.
+var immutableEvaluatorModel = sync.OnceValues(func() (*model, error) {
+    if embeddedModelNeedsEnrollmentFrame() { return nil, fmt.Errorf("public evaluator template requires private enrollment") }
+    return loadModelBytes(embeddedModelBytes())
+})
+"""
+        cache_test = pathlib.Path(__file__).resolve().parent.parent / 'MapleSyrup/NativeSAP/fairplayportablecache_test.go'
+        (out/'api_cache_test.go').write_text(cache_test.read_text().replace('package evaluator', 'package '+stage, 1))
     expected = hashlib.sha256((source/'profiles'/name).read_bytes()).hexdigest()
     text += '\nfunc VerifyResource() bool { return fmt.Sprintf("%x", sha256.Sum256(embeddedModelBytes())) == "' + expected + '" }\n'
     api.write_text(text)
