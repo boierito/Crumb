@@ -10,8 +10,10 @@
 
 static pthread_once_t control = PTHREAD_ONCE_INIT;
 static _Atomic int calls;
+static unsigned char inside[sizeof(control)];
 static int payload[4];
 static void initialize(void) {
+    memcpy(inside, &control, sizeof(control));
     atomic_fetch_add(&calls, 1);
     for (int i = 0; i < 4; ++i) payload[i] = 41 + i;
 }
@@ -52,6 +54,7 @@ int main(void) {
     if (!S_ISREG(info.st_mode) || info.st_size != sizeof(data)) return 1;
     printf("{\"schema\":\"crumb-native-darwin-contracts-v1\",\"once_size\":%zu,\"once_initial\":\"", sizeof(control));
     hexbytes(before, sizeof(before));
+    printf("\",\"once_inside\":\""); hexbytes(inside, sizeof(inside));
     printf("\",\"once_final\":\""); hexbytes((unsigned char *)&control, sizeof(control));
     printf("\",\"initializer_calls\":%d,\"waiters_observed_initialized_data\":true,", atomic_load(&calls));
     printf("\"timeval_size\":%zu,\"timeval_usec_offset\":%zu,\"timeval_usec_size\":%zu,", sizeof(tv), offsetof(struct timeval, tv_usec), sizeof(tv.tv_usec));
