@@ -1,0 +1,29 @@
+name: Native Darwin reference contracts
+on:
+  push:
+    branches: [research/fairplay-native-reference-contracts]
+    paths:
+      - scripts/fairplay-native-reference/darwin-contracts.c
+      - .github/workflows/fairplay-native-reference-contracts.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  darwin:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and execute real platform contracts without account inputs
+        run: |
+          clang -std=c11 -Wall -Wextra -Wno-deprecated-declarations -pthread scripts/fairplay-native-reference/darwin-contracts.c -o /tmp/crumb-darwin-contracts
+          /tmp/crumb-darwin-contracts | tee darwin-contracts.json
+          python3 - <<'PY'
+          import json
+          d = json.load(open('darwin-contracts.json'))
+          assert d['initializer_calls'] == 1 and d['waiters_observed_initialized_data']
+          assert d['regular_file_checked']
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-darwin-contracts
+          path: darwin-contracts.json
