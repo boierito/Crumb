@@ -83,7 +83,18 @@ func TestRetainedPrivateCaptureProvisioning(t *testing.T) {
 	if e != nil {
 		t.Fatal("assets unavailable")
 	}
-	producer, e := OpenRetainedLicenseState(ctx, bundle, c.Hardware, s.Files)
+	var producer *RetainedKBSyncSession
+	var downloadSync []byte
+	withDownloadSync := os.Getenv("CRUMB_PRIVATE_DOWNLOAD_SYNC") == "1"
+	if withDownloadSync {
+		if authorized == "" {
+			t.Fatal("authorized download sync requires matching saved state")
+		}
+		producer, downloadSync, e = OpenRetainedAuthorizedKBSync(ctx, bundle, c.Hardware, dsid, s.Files)
+	} else {
+		producer, e = OpenRetainedLicenseState(ctx, bundle, c.Hardware, s.Files)
+	}
+	defer clear(downloadSync)
 	if e != nil {
 		t.Fatal("native restore failed")
 	}
@@ -92,7 +103,7 @@ func TestRetainedPrivateCaptureProvisioning(t *testing.T) {
 	if e != nil {
 		t.Fatal("native account query failed")
 	}
-	result := map[string]any{"schema": "crumb-real-producer-host-v1", "actual_capture_used": true, "authorized_state_supplied": authorized != "", "tci_backend": true, "state_restored": true, "native_account_query_completed": true, "needs_account_diversity": needs, "apple_authorization_executed": false, "sinf_validated": false}
+	result := map[string]any{"schema": "crumb-real-producer-host-v1", "actual_capture_used": true, "authorized_state_supplied": authorized != "", "tci_backend": true, "state_restored": true, "native_account_query_completed": true, "needs_account_diversity": needs, "apple_authorization_executed": false, "sinf_validated": false, "download_sync_generated": withDownloadSync, "download_sync_bytes": len(downloadSync)}
 	b, e := json.Marshal(result)
 	if e != nil {
 		t.Fatal(e)

@@ -65,8 +65,10 @@ nonisolated enum NativePackage {
     }
 }
 
-// Laboratory only. The normal download generator and persistence are unchanged.
+// Laboratory retained flow. Restore account state before creating this download context.
 nonisolated final class NativeRetainedKBSyncGenerator: KBSyncGenerator, @unchecked Sendable {
+    private let accountStateDirectory: URL
+    init(accountStateDirectory: URL) { self.accountStateDirectory = accountStateDirectory }
     private let lock = NSLock()
     private var handle: UInt64 = 0
     private var identity: MachineIdentity?
@@ -78,8 +80,10 @@ nonisolated final class NativeRetainedKBSyncGenerator: KBSyncGenerator, @uncheck
         try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
         var output: UnsafeMutablePointer<UInt8>?; var count = 0
         let status = cache.path.withCString { path in
-            identity.hardwareID.withUnsafeBytes { bytes in
-                WaffleKBSyncOpen(UnsafeMutablePointer(mutating: path), UnsafeMutablePointer(mutating: bytes.bindMemory(to: UInt8.self).baseAddress), identity.hardwareID.count, dsid, &handle, &output, &count)
+            accountStateDirectory.path.withCString { directory in
+                identity.hardwareID.withUnsafeBytes { bytes in
+                    WaffleKBSyncOpenWithState(UnsafeMutablePointer(mutating: path), UnsafeMutablePointer(mutating: directory), UnsafeMutablePointer(mutating: bytes.bindMemory(to: UInt8.self).baseAddress), identity.hardwareID.count, dsid, &handle, &output, &count)
+                }
             }
         }
         defer { WaffleSAPFree(output, count) }
@@ -116,7 +120,7 @@ nonisolated final class NativeRetainedKBSyncGenerator: KBSyncGenerator, @uncheck
             return count + decoded.count
         }
         let context = try JSONEncoder().encode(["schema":"crumb-fairplay-context-v2", "hardware_id":identity.hardwareID.base64EncodedString(), "dsid":String(dsid), "producer":"retained-storeagent", "keybag_consumer":"storeagent-10.9-import-keybag"])
-        return (context, state, "Keybag consumer completed=\(completed); native status=\(nativeStatus); import succeeded=\(imported); virtual state files=\(files.count), bytes=\(bytes). A portable enrollment model has not been produced.")
+        return (context, state, "Keybag consumer completed=\(completed); account state restored=\(report["account_state_restored"] as? Bool == true), saved=\(report["account_state_saved"] as? Bool == true), save failed=\(report["account_state_save_failed"] as? Bool == true); native status=\(nativeStatus); import succeeded=\(imported); virtual state files=\(files.count), bytes=\(bytes). A portable enrollment model has not been produced.")
     }
     func close() {
         lock.lock(); defer { lock.unlock() }

@@ -41,6 +41,9 @@ func TestGuestStateRestoreRejectsReinitialization(t *testing.T) {
 
 func TestGuestStateClosedProducerRejectsNativeCalls(t *testing.T) {
 	session := &RetainedKBSyncSession{hardware: []byte{2, 0, 0, 0, 0, 1}}
+	if _, err := session.DownloadSync(1); err == nil {
+		t.Fatal("closed producer generated download sync")
+	}
 	if _, err := session.NeedsAccountDiversity(1); err == nil {
 		t.Fatal("closed producer invoked")
 	}
@@ -114,6 +117,9 @@ func TestGuestStateUnlinkIsolation(t *testing.T) {
 func TestGuestStateClosedAuthorizationPrimitives(t *testing.T) {
 	var absent *RetainedKBSyncSession
 	for _, producer := range []*RetainedKBSyncSession{absent, {}} {
+		if output, err := producer.DownloadSync(1); err == nil || output != nil {
+			t.Fatal("absent producer generated download sync")
+		}
 		if output, err := producer.AuthorizationSync(1); err == nil || output != nil {
 			t.Fatal("absent producer generated authorization sync")
 		}

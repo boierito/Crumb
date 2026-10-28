@@ -66,7 +66,7 @@ bash "$ROOT/scripts/fetch-fairplay-raw.sh" "$SOURCE/wafflebridge/recovery/rawsou
 cp "$ROOT/MapleSyrup/NativeSAP/captureanalysis.go" "$SOURCE/wafflebridge/"
 cp "$ROOT/MapleSyrup/NativeSAP/fairplayenrollment.go" "$ROOT/MapleSyrup/NativeSAP/fairplaycapturebridge.go" "$ROOT/MapleSyrup/NativeSAP/fairplayerrors.go" "$ROOT/MapleSyrup/NativeSAP/fairplayprobe.go" "$ROOT/MapleSyrup/NativeSAP/fairplaycausal.go" "$ROOT/MapleSyrup/NativeSAP/fairplaybridgeaudit.go" "$SOURCE/wafflebridge/"
 mkdir -p "$SOURCE/wafflebridge/labtest"
-cp "$ROOT/MapleSyrup/NativeSAP/fairplayauthorizationstate.go" "$ROOT/MapleSyrup/NativeSAP/fairplayauthorizationstate_test.go" "$SOURCE/wafflebridge/labtest/"
+cp "$ROOT/MapleSyrup/NativeSAP/fairplayauthorizationstate.go" "$ROOT/MapleSyrup/NativeSAP/fairplayauthorizationstate_test.go" "$ROOT/MapleSyrup/NativeSAP/fairplaydownloadstate_test.go" "$SOURCE/wafflebridge/labtest/"
 cp "$ROOT/MapleSyrup/NativeSAP/fairplayenrollment.go" "$ROOT/MapleSyrup/NativeSAP/fairplayenrollment_test.go" "$ROOT/MapleSyrup/NativeSAP/fairplaycapturebridge.go" "$ROOT/MapleSyrup/NativeSAP/fairplaycapturebridge_test.go" "$ROOT/MapleSyrup/NativeSAP/fairplayerrors.go" "$ROOT/MapleSyrup/NativeSAP/fairplayprobe.go" "$ROOT/MapleSyrup/NativeSAP/fairplayprobe_test.go" "$ROOT/MapleSyrup/NativeSAP/fairplaycausal.go" "$ROOT/MapleSyrup/NativeSAP/fairplaycausal_test.go" "$ROOT/MapleSyrup/NativeSAP/fairplaybridgeaudit.go" "$ROOT/MapleSyrup/NativeSAP/fairplaybridgeaudit_test.go" "$SOURCE/wafflebridge/labtest/"
 cp "$ROOT/MapleSyrup/NativeSAP/fairplayauthorizationbridge.go" "$ROOT/MapleSyrup/NativeSAP/fairplayauthorizationstate.go" "$SOURCE/wafflebridge/"
 cp "$ROOT/MapleSyrup/NativeSAP/fairplayproducernative.go" "$SOURCE/wafflebridge/"
