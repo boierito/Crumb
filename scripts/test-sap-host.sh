@@ -18,6 +18,7 @@ for name in gueststate.go gueststate_test.go guestrestore.go guestrestore_test.g
  cp "$ROOT/MapleSyrup/NativeSAP/$name" "$SOURCE/internal/sap/machine/"
 done
 cp "$ROOT/scripts/producer-native-probe_test.go" "$SOURCE/internal/sap/machine/"
+cp "$ROOT/scripts/producer-capture-host_test.go" "$SOURCE/internal/sap/machine/"
 
 python3 - "$SOURCE" "$WORK/native/libunicorn.so.2" <<'PY'
 import pathlib,sys,json
@@ -35,4 +36,7 @@ XDG_CACHE_HOME="$WORK/cache" go test ./internal/sap/machine -run 'TestGuestState
 XDG_CACHE_HOME="$WORK/cache" go test ./internal/sap -run 'TestTCIDynamicSAPSmoke|TestTCIKBSyncSmoke' -v -timeout 6m
 python3 "$ROOT/scripts/verify-storeagent-license-profile.py" "$WORK/cache/ipatool/sap/apple-storeagent-v1/storeagent"
 python3 "$ROOT/scripts/verify-store-authorization-profile.py" "$WORK/cache/ipatool/sap/apple-storeagent-v1/storeagent" "$WORK/cache/ipatool/sap/apple-assets-v2/CommerceKit"
+if [[ -n "${CRUMB_PRIVATE_CAPTURE:-}" ]]; then
+  XDG_CACHE_HOME="$WORK/cache" go test ./internal/sap/machine -run '^TestRetainedPrivateCaptureProvisioning$' -count=1 -timeout 6m
+fi
 echo 'Host SAP test passed. Physical jailed iOS execution and Apple login remain separate milestones.'

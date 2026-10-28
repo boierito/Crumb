@@ -32,7 +32,7 @@ with tempfile.TemporaryDirectory(prefix='crumb-generic-real-') as directory:
     definition=re.search(r'var rawSourceBinaryHash = \[32\]byte\{[^}]+\}',source).group(0)
     (work/'fixture_runtime_test.go').write_text('''package rawsource
 import (_ "embed";"testing";"fmt")
-type rawSourceRuntime struct{stopPC,lastKnownBlock uint64;genericOnly bool;byteLoop genericLoopObservation;observe func(uint64);boundary func()(bool,error);additionalBlocks,genericBlocks int;genericInstructions uint64;genericLastPC,currentInstruction uint64;executionContext string;untranslatedTarget,targetClass string}
+type rawSourceRuntime struct{stopPC,lastKnownBlock uint64;genericOnly bool;outputScratchEnabled bool;outputScratchReady uint8;byteLoop genericLoopObservation;observe func(uint64);boundary func()(bool,error);additionalBlocks,genericBlocks int;genericInstructions uint64;genericLastPC,currentInstruction uint64;executionContext string;untranslatedTarget,targetClass string}
 var knownSourceBlocks=map[uint64]sourceBlock{}
 func (r *rawSourceRuntime) handle(s *state,pc uint64)(uint64,error){return pc,fmt.Errorf("external operation unavailable in isolated fixture")}
 '''+definition+'''

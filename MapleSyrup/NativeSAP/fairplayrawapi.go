@@ -34,6 +34,7 @@ type byteLoopDiagnostic struct {
 	MaxBucket string `json:"max_counter_bucket"`
 }
 type RecoveryDiagnostic struct {
+	NativeReturnStatus     *int32                 `json:"native_return_status,omitempty"`
 	Phase                  string                 `json:"phase"`
 	LastExternalSlot       string                 `json:"last_external_slot,omitempty"`
 	FaultInstruction       string                 `json:"fault_instruction,omitempty"`
@@ -70,6 +71,10 @@ func RecoveryDetails(err error) (RecoveryDiagnostic, bool) {
 		return RecoveryDiagnostic{}, false
 	}
 	result := classified.diagnostic
+	if result.NativeReturnStatus != nil {
+		status := *result.NativeReturnStatus
+		result.NativeReturnStatus = &status
+	}
 	if result.Replay != nil {
 		copy := *result.Replay
 		if copy.ByteLoop != nil {
@@ -163,6 +168,17 @@ func runtimeDiagnostic(phase, code string, runtime *rawSourceRuntime) RecoveryDi
 	return diagnostic
 }
 func runtimeFailure(phase string, err error, runtime *rawSourceRuntime) error {
+	var returned *nativeReturnError
+	if errors.As(err, &returned) {
+		code := "native_entry_failed"
+		if returned.status == 0 {
+			code = "native_entry_unvalidated"
+		}
+		diagnostic := runtimeDiagnostic(phase, code, runtime)
+		status := returned.status
+		diagnostic.NativeReturnStatus = &status
+		return &recoveryError{diagnostic}
+	}
 	var generic *genericExecutionError
 	if errors.As(err, &generic) {
 		return recoveryFailed(phase, generic.code, runtime)

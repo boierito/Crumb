@@ -2,6 +2,35 @@ package rawsource
 
 import "testing"
 
+func TestNativeSnapshotReturnRequiresExactCallerAndNeverMeansSuccess(t *testing.T) {
+	s := genericSyntheticState()
+	s.sp, s.x[30] = 0x700000100000, 0
+	s.x[0] = uint64(uint32(0xffff5bb7))
+	r := &rawSourceRuntime{outputScratchEnabled: true, outputScratchReady: 15, currentInstruction: 0x1000e05e0}
+	returned, ok := nativeSnapshotReturn(s, r, 0).(*nativeReturnError)
+	if !ok || returned.status != -42057 {
+		t.Fatal("native error return not recognized")
+	}
+	s.x[0] = 0
+	if nativeSnapshotReturn(s, r, 0) == nil {
+		t.Fatal("zero status bypassed SINF validation")
+	}
+	for _, mutate := range []func(){
+		func() { r.outputScratchReady = 7 },
+		func() { r.outputScratchEnabled = false },
+		func() { r.currentInstruction = 0x1000e05dc },
+		func() { s.sp += 16 },
+		func() { s.x[30] = 4 },
+	} {
+		s.sp, s.x[30] = 0x700000100000, 0
+		*r = rawSourceRuntime{outputScratchEnabled: true, outputScratchReady: 15, currentInstruction: 0x1000e05e0}
+		mutate()
+		if nativeSnapshotReturn(s, r, 0) != nil {
+			t.Fatal("different caller/epilogue recognized")
+		}
+	}
+}
+
 func TestNativeRegionFollowsRealSourceBranchInsteadOfRecordedTrace(t *testing.T) {
 	// Actual 26A428 instructions: add x28,sp,#6,lsl#12; mov x17,#0xc0c7;
 	// braa x24,x17. The old outer kernel unconditionally continued at

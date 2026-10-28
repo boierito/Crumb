@@ -15,6 +15,21 @@ const nativeEnrollmentEnd = uint64(0x100234cdc)
 const nativeFrameLandmark = uint64(0x10008a644)
 const maxNativeRecoveryBlocks = 8_000_000
 
+// The pinned caller snapshot has a null saved LR. A return through its exact
+// epilogue is a native result, not a missing instruction at address zero.
+// It never establishes SINF validity or authorizes plaintext export.
+type nativeReturnError struct{ status int32 }
+
+func (*nativeReturnError) Error() string { return "native entry returned without a validated license" }
+
+func nativeSnapshotReturn(s *state, runtime *rawSourceRuntime, pc uint64) error {
+	if pc == 0 && runtime.outputScratchEnabled && runtime.outputScratchReady == 15 &&
+		runtime.currentInstruction == 0x1000e05e0 && s.sp == 0x700000100000 && s.x[30] == 0 {
+		return &nativeReturnError{status: int32(s.x[0])}
+	}
+	return nil
+}
+
 func observeNativePC(runtime *rawSourceRuntime, pc uint64) {
 	if runtime == nil || runtime.observe == nil {
 		return
@@ -35,6 +50,9 @@ func runNativeRegion(s *state, runtime *rawSourceRuntime, pc uint64, region nati
 	}
 	hits := 0
 	for count := 0; count < region.maxBlocks; count++ {
+		if err := nativeSnapshotReturn(s, runtime, pc); err != nil {
+			return pc, err
+		}
 		if pc == region.end {
 			hits++
 			if hits == region.visits {

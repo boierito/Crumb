@@ -24,7 +24,7 @@ REV='f7242cce58077a4af8db738ed295ee23ad8f067d'
 ARCHIVE_SHA='e89a89c4af74a8b0e6f682efdf89edc36bc093874d706d8f27f43e657bd3ec39'
 HARNESS=r'''package main
 import("crypto/sha256";"encoding/json";"encoding/hex";"os";"fmt")
-type rawSourceRuntime struct {stopPC,lastKnownBlock uint64;genericOnly bool;byteLoop genericLoopObservation;observe func(uint64);boundary func()(bool,error);additionalBlocks int;genericBlocks int;genericInstructions uint64;genericLastPC,currentInstruction uint64;executionContext string;untranslatedTarget,targetClass string}
+type rawSourceRuntime struct {stopPC,lastKnownBlock uint64;genericOnly bool;outputScratchEnabled bool;outputScratchReady uint8;byteLoop genericLoopObservation;observe func(uint64);boundary func()(bool,error);additionalBlocks int;genericBlocks int;genericInstructions uint64;genericLastPC,currentInstruction uint64;executionContext string;untranslatedTarget,targetClass string}
 var knownSourceBlocks=map[uint64]sourceBlock{}
 func (r *rawSourceRuntime) handle(s *state,pc uint64)(uint64,error){return pc,fmt.Errorf("external operation unavailable in isolated fixture")}
 type fixture struct {PC,SP uint64;Chunks int;Registers [31]uint64;Flags [4]bool;Vectors [32][16]byte;Pages map[uint64][]byte}
