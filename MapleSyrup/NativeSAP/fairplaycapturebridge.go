@@ -267,7 +267,10 @@ func recoverCaptureEnrollment(source, ipa, destination string) (any, error) {
 			mappings["/var/db/fpsd/SC Info/"+name] = data
 			mappings["/Users/Shared/SC Info/"+name] = data
 		}
-		value, err := rawsource.Recover(domain.ExecutablePath, input.hardware, mappings)
+		value, err := rawsource.RecoverValidated(domain.ExecutablePath, input.hardware, mappings, func(pack []byte) bool {
+			valid, _ := probeModelSINF(domain.Files, pack)
+			return valid
+		})
 		if err != nil {
 			return nil, recoveryFailure("portable-runtime", "legacy_portable_runtime_rejected", err)
 		}

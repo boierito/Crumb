@@ -49,3 +49,6 @@ MOD
 cd "$WORK/test"
 go mod tidy
 go test -p=1 -race -count=1 ./internal/fairplay ./wafflebridge/recovery/... ./wafflebridge/labtest
+cp "$ROOT/scripts/fairplay-host-main.go" "$WORK/test/wafflebridge/labtest/host_main.go"
+go build -p=1 -o "$WORK/crumb-fairplay-host" ./wafflebridge/labtest
+"$WORK/crumb-fairplay-host" --help
