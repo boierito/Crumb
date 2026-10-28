@@ -6,7 +6,8 @@ rev='f7242cce58077a4af8db738ed295ee23ad8f067d'; archive=root/'third_party/archiv
 encoded,pin=read_image_text(root);text=gzip.decompress(encoded)
 assert hashlib.sha256(text).hexdigest()==pin['immutable_text']['sha256']
 assert hashlib.sha256(archive.read_bytes()).hexdigest()=='e89a89c4af74a8b0e6f682efdf89edc36bc093874d706d8f27f43e657bd3ec39'
-source=(root/'MapleSyrup/NativeSAP/fairplayrawsupplement_hot.go').read_text()
+sources=[root/'MapleSyrup/NativeSAP'/name for name in ('fairplayrawsupplement_hot.go','fairplayrawsupplement_authorized.go')]
+source='package rawsource\n'+'\n'.join(p.read_text().replace('package rawsource','',1) for p in sources)
 comments={int(addr,16):asm for addr,asm in re.findall(r'// 0x([0-9a-f]+): ([^\n]+)',source)}
 registers=[getattr(a,'UC_ARM64_REG_X'+str(i)) for i in range(29)]+[a.UC_ARM64_REG_X29,a.UC_ARM64_REG_X30]
 harness='''package main
@@ -39,9 +40,24 @@ with tempfile.TemporaryDirectory() as folder:
   for trial in range(60):
    u=Uc(UC_ARCH_ARM64,UC_MODE_ARM);u.ctl_set_cpu_model(a.UC_CPU_ARM64_MAX);page=start&~4095; codeend=(start+len(code)+4095)&~4095;u.mem_map(page,codeend-page);u.mem_write(start,code)
    regs=[rng.randrange(0,2**16) for i in range(31)];regs[29]=0x700800;flags=[bool(rng.getrandbits(1)) for _ in range(4)];pages={}
+   if start==0x10048866c:
+    # Exercise evolving scalar state and nonzero lookup bytes, while keeping
+    # pointer fields explicit. These are synthetic inputs, never a user state.
+    stack=bytearray(4096)
+    struct.pack_into('<Q',stack,0x598,rng.getrandbits(64))
+    for offset,ptr in {0x4e0:0x720000,0x4d8:0x730000,0x190:0x750000,0x1f8:0x760000,0x198:0x770000,0x5f0:0x780000}.items():struct.pack_into('<Q',stack,offset,ptr)
+    pages[0x711000]=bytes(stack)
+    pages[0x720000]=struct.pack('<I',rng.randrange(4096))+bytes(4092)
+    pages[0x730000]=struct.pack('<Q',0x740000)+bytes(4088)
+    for base in (0x740000,0x750000,0x760000,0x770000):pages[base]=rng.randbytes(4096)
+    for base,initial in pages.items():u.mem_map(base,4096);u.mem_write(base,initial)
+
    def hook(u,acc,addr,size,value,data):
     base=addr&~4095
-    if len(pages)>=128 or base>=0x800000000000: return False
+    # Zero synthetic relocation cells plus signed public table biases can
+    # address the upper canonical range; permit bounded pages for this block.
+    if len(pages)>=128 or (base>=0x800000000000 and not (start==0x100234cdc and base>=0xffff000000000000)):
+     return False
     if base not in pages:
      try:u.mem_map(base,4096)
      except UcError:return False
@@ -61,6 +77,7 @@ with tempfile.TemporaryDirectory() as folder:
   print(f.stem,'cases',good,flush=True)
   if good<4:raise RuntimeError('too few fixtures')
  r=subprocess.run([str(w/'run')],input=json.dumps(fixtures),text=True,capture_output=True,check=True);actual=json.loads(r.stdout)
+ assert len(actual)==len(expected)==len(fixtures)
  for i,(x,y) in enumerate(zip(actual,expected)):
   if x!=y:print('MISMATCH',i,hex(fixtures[i]['Entry']),[k for k in x if x[k]!=y[k]]);raise SystemExit(1)
- print('All',len(actual),'public synthetic states match Unicorn for all five recovery blocks; no PAC authentication is asserted.')
+ print('All',len(actual),'public synthetic states match Unicorn for',len(list(tmp.glob('*.json'))),'recovery blocks; no PAC authentication is asserted.')
