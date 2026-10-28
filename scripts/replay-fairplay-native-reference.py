@@ -28,6 +28,8 @@ from fairplay_generic_resource import read_profile
 
 p = argparse.ArgumentParser()
 p.add_argument("--trace", required=True)
+p.add_argument("--audit-sinf-header", action="store_true", help="Observe the pinned native header predicate without changing execution")
+p.add_argument("--compare-mobile-sinf", help="Optional private raw SINF: compare native first blocks with independent mobile AES-CBC; requires cryptography")
 args = p.parse_args()
 path = pathlib.Path(args.trace)
 st = path.lstat()
@@ -235,6 +237,31 @@ def stop_hook(u, address, size, data):
     u.emu_stop()
 
 
+header_audit = None
+if args.audit_sinf_header:
+    from fairplay_sinf_header_audit import HeaderAudit, DECODE_PC, WORD_PC, COMPARE_PC, ERROR_PC
+    header_audit = HeaderAudit()
+    def header_hook(u, address, size, data):
+        header_audit.observe(address, [u.reg_read(r) for r in regs],
+                             u.reg_read(arm.UC_ARM64_REG_SP),
+                             lambda address, size: bytes(u.mem_read(address, size)))
+    for address in (DECODE_PC, WORD_PC, COMPARE_PC, ERROR_PC):
+        u.hook_add(UC_HOOK_CODE, header_hook, begin=address, end=address)
+
+mobile_header = None
+if args.compare_mobile_sinf:
+    from fairplay_sinf_header_audit import MobileHeaderComparison, MATERIAL_PC, DECODE_PC
+    sinf_path = pathlib.Path(args.compare_mobile_sinf)
+    info = sinf_path.lstat()
+    assert stat.S_ISREG(info.st_mode) and info.st_mode & 0o077 == 0 and info.st_size <= 1 << 20
+    mobile_header = MobileHeaderComparison(sinf_path.read_bytes())
+    def mobile_hook(u, address, size, data):
+        mobile_header.observe(address, [u.reg_read(r) for r in regs],
+                              u.reg_read(arm.UC_ARM64_REG_SP),
+                              lambda address, size: bytes(u.mem_read(address, size)))
+    for address in (MATERIAL_PC, DECODE_PC):
+        u.hook_add(UC_HOOK_CODE, mobile_hook, begin=address, end=address)
+
 u.hook_add(UC_HOOK_MEM_WRITE, write_hook)
 u.hook_add(UC_HOOK_BLOCK, block_hook)
 u.hook_add(UC_HOOK_CODE, stop_hook, begin=0xF000000000000000, end=0xFFFFFFFFFFFFFFFF)
@@ -359,6 +386,10 @@ for index, line in enumerate(stream, 1):
             ),
             flush=True,
         )
+        if header_audit is not None:
+            print(json.dumps(header_audit.report()), flush=True)
+        if mobile_header is not None:
+            print(json.dumps(mobile_header.report()), flush=True)
         break
     assert e["Type"] == "external"
     if e.get("Failed"):
