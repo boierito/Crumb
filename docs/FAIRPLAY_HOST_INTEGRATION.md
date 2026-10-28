@@ -121,3 +121,24 @@ nonzero scalar state and lookup tables for the 132-instruction block, registers,
 flags, touched pages and returned PC. Execution bounds and original-SINF validation are
 unchanged. This comparison establishes block semantics, not a working license
 or successful whole-program recovery. Private inputs are not CI fixtures.
+
+The AOT-only replay completed native execution instead of exhausting the
+instruction budget. It checked two distinct candidates; neither validated the
+original SINF. It returned `native_entry_failed` with status -42057 after
+10,859,709 generic instructions, and created no output IPA. This does not
+identify the meaning or cryptographic cause of that native status.
+
+A private 30-second CPU profile located another cost: 93% of sampled CPU time
+was inside the auxiliary source/frame verifier; loading and decompressing the
+public frame model accounted for 84%. The public state/frame evaluator APIs now
+load their immutable model template once, while each evaluation keeps a separate
+copy-on-write CPU/memory state. Templates that need private enrollment patching
+are explicitly rejected by this cache; the SIDB evaluator continues to load its
+own per-call model. Concurrent evaluations are compared with a fresh-model
+reference and must leave both caller inputs and the complete public model
+unchanged. The original SINF and source/frame checks are still performed.
+
+The signed-dispatch regression runs with both the configured dispatcher and a
+forced generic fallback, including negative table indices, after promoting
+its formerly unknown PC to AOT. CI's host CLI smoke build uses the same race
+instrumentation as the preceding suite to reuse its large compiled packages.
