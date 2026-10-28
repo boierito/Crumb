@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -82,6 +83,9 @@ func readAuthorizedStateFile(path string, dsid uint64, hardware []byte) (result 
 func exportAuthorizedState(directory, destination string, dsid uint64, hardware []byte) error {
 	value, err := readAuthorizedState(directory, dsid, hardware)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("authorization_state_missing")
+		}
 		return fmt.Errorf("authorization_cached_state_invalid")
 	}
 	defer value.clear()

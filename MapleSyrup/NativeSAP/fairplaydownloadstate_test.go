@@ -55,3 +55,35 @@ func TestDownloadStateRejectsStaleOrForeignProducer(t *testing.T) {
 		t.Fatal("missing original state accepted")
 	}
 }
+
+func TestAuthorizationExportSeparatesMissingInvalidAndDestinationFailure(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	hardware := []byte{2, 0, 0, 0, 0, 1}
+	destination := filepath.Join(dir, "export.json")
+	if err := exportAuthorizedState(dir, destination, 1, hardware); err == nil || err.Error() != "authorization_state_missing" {
+		t.Fatalf("missing state: %v", err)
+	}
+	if err := saveAuthorizedState(dir, 1, hardware, map[string][]byte{"SC Info.sidb": {0, 7, 0, 11}}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(filepath.Join(dir, "account-state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := exportAuthorizedState(dir, destination, 2, hardware); err == nil || err.Error() != "authorization_cached_state_invalid" {
+		t.Fatalf("foreign state: %v", err)
+	}
+	if err := exportAuthorizedState(dir, filepath.Join(dir, "missing", "export.json"), 1, hardware); err == nil || err.Error() != "authorization_state_export_failed" {
+		t.Fatalf("destination failure: %v", err)
+	}
+	if err := exportAuthorizedState(dir, destination, 1, hardware); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(filepath.Join(dir, "account-state.json"))
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatal("export changed internal state")
+	}
+}

@@ -507,7 +507,19 @@ final class FairPlayLab: ObservableObject {
             log("Enrollment", "Private authorized-state copy ready to share. It contains licensing material; no password or Apple session cookies. SINF validation is a separate check.")
         } catch {
             try? FileManager.default.removeItem(at: file)
-            log("Enrollment", "Authorized-state export failed. The saved internal state is retained.")
+            if let failure = error as? NativeFairPlayAuthorization.Failure,
+               case .native(let code) = failure {
+                switch code {
+                case "authorization_state_missing":
+                    log("Enrollment", "No saved authorization exists for the current account and device identity. Download the app, then use Authorize account and validate this IPA before exporting authorization. Export did not modify internal state.")
+                case "authorization_cached_state_invalid":
+                    log("Enrollment", "Saved authorization could not be validated for the current account and device identity. Internal files were not changed. Preserve this installation and copy these logs.")
+                default:
+                    log("Enrollment", "Authorized-state export stopped: " + code + ". Internal files were not changed.")
+                }
+            } else {
+                log("Enrollment", "Authorized-state export failed during local file preparation or protection. Internal files were not changed.")
+            }
         }
     }
 
