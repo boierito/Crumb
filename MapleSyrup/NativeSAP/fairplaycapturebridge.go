@@ -229,11 +229,22 @@ func verifyCaptureIPABinding(source, ipa string) (any, error) {
 }
 
 func recoverCaptureEnrollment(source, ipa, destination string) (any, error) {
+	return recoverCaptureWithAccountState(source, ipa, destination, "")
+}
+
+func recoverCaptureWithAccountState(source, ipa, destination, accountState string) (any, error) {
 	input, err := readLegacyEnrollmentInput(source)
 	if err != nil {
 		return nil, err
 	}
 	defer input.clear()
+	stateFiles := input.files
+	if accountState != "" {
+		stored, err := readAuthorizedStateFile(accountState, input.dsid, input.hardware)
+		if err != nil { return nil, recoveryFailure("authorized-state", "authorized_state_invalid", err) }
+		defer stored.clear()
+		stateFiles = stored.Files
+	}
 	domains, err := fairplay.PortableEnrollmentInputs(ipa)
 	if err != nil {
 		return nil, enrollmentInventoryFailure(err)
@@ -263,11 +274,14 @@ func recoverCaptureEnrollment(source, ipa, destination string) (any, error) {
 		}
 		// Mount unchanged legacy state at the runtime's state locations. This
 		// is a compatibility attempt; only the validation gates can accept it.
-		for name, data := range input.files {
+		for name, data := range stateFiles {
 			mappings["/var/db/fpsd/SC Info/"+name] = data
 			mappings["/Users/Shared/SC Info/"+name] = data
 		}
-		value, err := rawsource.Recover(domain.ExecutablePath, input.hardware, mappings)
+		value, err := rawsource.RecoverValidated(domain.ExecutablePath, input.hardware, mappings, func(pack []byte) bool {
+			valid, _ := probeModelSINF(domain.Files, pack)
+			return valid
+		})
 		if err != nil {
 			return nil, recoveryFailure("portable-runtime", "legacy_portable_runtime_rejected", err)
 		}

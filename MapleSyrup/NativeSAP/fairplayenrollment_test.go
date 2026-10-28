@@ -16,6 +16,23 @@ import (
 	"github.com/majd/ipatool/v2/wafflebridge/recovery/state"
 )
 
+func TestAuthorizationRecoveryDistinguishesIncompleteRuntime(t *testing.T) {
+	_, err := rawsource.Recover("", nil, nil)
+	if err == nil {
+		t.Fatal("invalid input must fail")
+	}
+	if got := authorizationRecoveryStatus(fmt.Errorf("private wrapper: %w", err)); got != "model_recovery_incomplete" {
+		t.Fatalf("runtime error status = %q", got)
+	}
+	fields := labFailureFields("authorization-sinf", err)
+	if fields["stage"] != "authorization-sinf/portable-runtime/inputs" || fields["code"] != "raw_invalid_inputs" {
+		t.Fatalf("unexpected safe failure fields: %v", fields)
+	}
+	if got := authorizationRecoveryStatus(fmt.Errorf("other failure")); got != "model_recovery_rejected" {
+		t.Fatalf("other error status = %q", got)
+	}
+}
+
 func modernCaptureFixture(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()

@@ -28,7 +28,13 @@ type LookupCount struct {
 	Attempts int `json:"attempts"`
 	Missing  int `json:"missing"`
 }
+type byteLoopDiagnostic struct {
+	Visits    uint64 `json:"visits"`
+	Sequences uint64 `json:"nonconsecutive_sequences"`
+	MaxBucket string `json:"max_counter_bucket"`
+}
 type RecoveryDiagnostic struct {
+	NativeReturnStatus     *int32                 `json:"native_return_status,omitempty"`
 	Phase                  string                 `json:"phase"`
 	LastExternalSlot       string                 `json:"last_external_slot,omitempty"`
 	FaultInstruction       string                 `json:"fault_instruction,omitempty"`
@@ -51,6 +57,7 @@ type RecoveryDiagnostic struct {
 	GenericInstructions    uint64                 `json:"generic_instructions,omitempty"`
 	GenericLastInstruction string                 `json:"generic_last_instruction,omitempty"`
 	GenericBlocks          int                    `json:"generic_blocks,omitempty"`
+	ByteLoop               *byteLoopDiagnostic    `json:"native_byte_loop,omitempty"`
 	CheckpointCompared     bool                   `json:"checkpoint_compared_after_sinf"`
 	SourceChangedAfterSINF bool                   `json:"source_changed_after_sinf"`
 	FrameChangedAfterSINF  bool                   `json:"frame_changed_after_sinf"`
@@ -64,9 +71,21 @@ func RecoveryDetails(err error) (RecoveryDiagnostic, bool) {
 		return RecoveryDiagnostic{}, false
 	}
 	result := classified.diagnostic
+	if result.NativeReturnStatus != nil {
+		status := *result.NativeReturnStatus
+		result.NativeReturnStatus = &status
+	}
 	if result.Replay != nil {
 		copy := *result.Replay
+		if copy.ByteLoop != nil {
+			loop := *copy.ByteLoop
+			copy.ByteLoop = &loop
+		}
 		result.Replay = &copy
+	}
+	if result.ByteLoop != nil {
+		copy := *result.ByteLoop
+		result.ByteLoop = &copy
 	}
 	result.Lookups = make(map[string]LookupCount, len(classified.diagnostic.Lookups))
 	for key, count := range classified.diagnostic.Lookups {
@@ -123,6 +142,9 @@ func runtimeDiagnostic(phase, code string, runtime *rawSourceRuntime) RecoveryDi
 		diagnostic.GenericInstructions = runtime.genericInstructions
 		diagnostic.GenericLastInstruction = sourceBlockLabel(runtime.genericLastPC)
 		diagnostic.GenericBlocks = runtime.genericBlocks
+		if runtime.byteLoop.visits != 0 {
+			diagnostic.ByteLoop = &byteLoopDiagnostic{runtime.byteLoop.visits, runtime.byteLoop.sequences, runtime.byteLoop.maxBucket}
+		}
 		diagnostic.CheckpointCompared = runtime.checkpointCompared
 		diagnostic.SourceChangedAfterSINF = runtime.sourceChangedAfterSINF
 		diagnostic.FrameChangedAfterSINF = runtime.frameChangedAfterSINF
@@ -146,6 +168,17 @@ func runtimeDiagnostic(phase, code string, runtime *rawSourceRuntime) RecoveryDi
 	return diagnostic
 }
 func runtimeFailure(phase string, err error, runtime *rawSourceRuntime) error {
+	var returned *nativeReturnError
+	if errors.As(err, &returned) {
+		code := "native_entry_failed"
+		if returned.status == 0 {
+			code = "native_entry_unvalidated"
+		}
+		diagnostic := runtimeDiagnostic(phase, code, runtime)
+		status := returned.status
+		diagnostic.NativeReturnStatus = &status
+		return &recoveryError{diagnostic}
+	}
 	var generic *genericExecutionError
 	if errors.As(err, &generic) {
 		return recoveryFailed(phase, generic.code, runtime)
@@ -435,6 +468,8 @@ func recoverAttempt(executable string, hardware []byte, files map[string][]byte,
 	}
 	defer func() {
 		if activeRawSourceRuntime != nil {
+			clear(activeRawSourceRuntime.rwlocks)
+			activeRawSourceRuntime.byteLoop = genericLoopObservation{}
 			for _, data := range activeRawSourceRuntime.files {
 				clear(data)
 			}

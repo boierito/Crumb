@@ -2,6 +2,34 @@ package rawsource
 
 import "fmt"
 
+// Aggregate only the known native byte loop's counter behaviour. Counter
+// values are retained privately during this attempt and never serialized.
+type genericLoopObservation struct {
+	visits, sequences uint64
+	last              uint64
+	maxBucket         string
+}
+
+func (o *genericLoopObservation) observe(counter uint64) {
+	if o.visits == 0 || o.last == 0 || counter != o.last-1 {
+		o.sequences++
+	}
+	o.visits++
+	o.last = counter
+	if counter > 1<<20 {
+		o.maxBucket = "over_1m"
+	} else if counter > 4096 && o.maxBucket != "over_1m" {
+		o.maxBucket = "4097_to_1m"
+	} else if counter > 0 && o.maxBucket == "" {
+		o.maxBucket = "1_to_4096"
+	} else if counter == 0 && o.maxBucket == "" {
+		o.maxBucket = "zero"
+	}
+	if counter > 0 && o.maxBucket == "zero" {
+		o.maxBucket = "1_to_4096"
+	}
+}
+
 // CAS{A,L,AL}{B,H} executes in the single, serialized guest CPU. Acquire/release
 // do not add an observable action in this private sequential memory model.
 // CASP and all other LSE encodings deliberately remain unsupported.
@@ -33,6 +61,61 @@ func runGenericCAS(s *state, word uint32) (bool, error) {
 	}
 	if compare != 31 {
 		s.x[compare] = old
+	}
+	return true, nil
+}
+
+// LDP/STP of two 64-bit SIMD registers, with signed offset, pre-index or
+// post-index addressing. Other pair encodings remain unsupported.
+func runGenericSIMDPair64(s *state, word uint32) (bool, error) {
+	if word&0xfe000000 != 0x6c000000 {
+		return false, nil
+	}
+	mode := (word >> 23) & 3
+	if mode == 0 { // non-temporal LDNP/STNP has a distinct contract
+		return false, nil
+	}
+	first, second, base := int(word&31), int(word>>10&31), int(word>>5&31)
+	load := word&(1<<22) != 0
+	if load && first == second {
+		return true, fmt.Errorf("unpredictable SIMD pair destination")
+	}
+	offset := int64((word >> 15) & 127)
+	if offset&64 != 0 {
+		offset -= 128
+	}
+	offset *= 8
+	address := s.sp
+	if base != 31 {
+		address = s.x[base]
+	}
+	updated := address + uint64(offset)
+	if mode != 1 {
+		address = updated
+	}
+	if load {
+		data, err := s.outputBytes(address, 16)
+		if err != nil {
+			return true, err
+		}
+		s.clearVector(first)
+		s.clearVector(second)
+		copy(s.vectors[first][:8], data[:8])
+		copy(s.vectors[second][:8], data[8:])
+	} else {
+		var data [16]byte
+		copy(data[:8], s.vectors[first][:8])
+		copy(data[8:], s.vectors[second][:8])
+		if err := s.store(address, data[:]); err != nil {
+			return true, err
+		}
+	}
+	if mode != 2 {
+		if base == 31 {
+			s.sp = updated
+		} else {
+			s.x[base] = updated
+		}
 	}
 	return true, nil
 }

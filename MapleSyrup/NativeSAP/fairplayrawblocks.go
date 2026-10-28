@@ -31,6 +31,9 @@ func callSourceBlock(s *state, runtime *rawSourceRuntime, pc uint64, block sourc
 	if runtime != nil {
 		// pc comes from a generated switch case, never a private register.
 		runtime.lastKnownBlock = pc
+		if _, known := knownSourceBlocks[pc]; pc == 0x1001005ac && known && !runtime.genericOnly {
+			runtime.byteLoop.observe(s.x[9])
+		}
 	}
 	return block(s, runtime)
 }

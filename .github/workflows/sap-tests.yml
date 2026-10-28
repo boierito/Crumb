@@ -24,6 +24,8 @@ jobs:
         run: python3 scripts/test-fairplay-generic.py
       - name: Compare real native byte-processing loop with independent ARM64 execution
         run: python3 scripts/test-fairplay-native-loop.py
+      - name: Compare pinned recovery hotspots with independent ARM64 execution
+        run: python3 scripts/test-fairplay-hot-blocks.py
       - name: Verify shipped generic profile, integrity and current device regression
         run: python3 scripts/test-fairplay-generic-real.py
       - name: Verify complete immutable image, preserved snapshot and independent recoveries

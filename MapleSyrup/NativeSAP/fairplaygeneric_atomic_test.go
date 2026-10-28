@@ -6,6 +6,16 @@ import (
 	"testing"
 )
 
+func TestGenericLoopObservationAggregatesWithoutCounterValues(t *testing.T) {
+	var observation genericLoopObservation
+	for _, value := range []uint64{3, 2, 1, 4097, 4096, 0, 1 << 21} {
+		observation.observe(value)
+	}
+	if observation.visits != 7 || observation.sequences != 4 || observation.maxBucket != "over_1m" {
+		t.Fatalf("incorrect loop aggregation: %#v", observation)
+	}
+}
+
 func TestCASRejectsNonCASAndFaultsWithoutPartialWrites(t *testing.T) {
 	m := &model{pages: map[uint64][]byte{0x600000: bytes.Repeat([]byte{0xa5}, 4096)}}
 	s := newState(m)

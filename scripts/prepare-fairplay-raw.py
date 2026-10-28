@@ -44,6 +44,13 @@ blocks[0x100a4be38] = 'rawSourceBootstrapBlock100a4be38'
 if 0x1008c292c in blocks:
     raise SystemExit('upstream covers exit supplement; review before merging')
 blocks[0x1008c292c] = 'rawSourceBootstrapBlock1008c292c'
+if 0x1001005ac in blocks:
+    raise SystemExit('upstream covers byte loop supplement; review before merging')
+blocks[0x1001005ac] = 'rawSourceBootstrapBlock1001005ac'
+for hot in (0x1009a1f04, 0x100b0b1d0, 0x100a1278c, 0x100a42a30, 0x100aa281c):
+    if hot in blocks:
+        raise SystemExit('upstream covers hotspot supplement; review before merging')
+    blocks[hot] = f'rawSourceBootstrapBlock{hot:x}'
 registry = ['// Generated from the pinned translated blocks; no native execution.',
             'package rawsource', 'var knownSourceBlocks = map[uint64]sourceBlock{']
 for address, function in sorted(blocks.items()):
@@ -65,6 +72,11 @@ for name in names:
         if text.count(fault) != 1:
             raise SystemExit('oracle unmapped memory contract changed')
         text = text.replace(fault, 'return nil, &sourceMemoryError{address: address, write: write}')
+        read_anchor = 'func (s *state) load(address uint64, size int) (uint64, error) {'
+        write_anchor = 'func (s *state) store(address uint64, value []byte) error {'
+        if text.count(read_anchor) != 1 or text.count(write_anchor) != 1: raise SystemExit('oracle output contract changed')
+        text = text.replace(read_anchor, read_anchor + '\n if err := sourceOutputRead(s, address, size); err != nil { return 0, err }')
+        text = text.replace(write_anchor, write_anchor + '\n if err := sourceOutputStore(s, address, value); err != nil { return err }')
     if name == 'raw_source_step.go':
         # Replace the pinned bump allocator as a unit. Its old fixed 1 MiB
         # advance aliases every larger allocation with subsequent allocations.
@@ -82,7 +94,21 @@ for name in names:
         lookup = 'return bestSuffix, bestData, bestSuffix != ""'
         if text.count(field) != 1 or text.count(lookup) != 1:
             raise SystemExit('raw runtime lookup contract changed')
-        text = text.replace(field, field + '\n lookupCounts map[string]LookupCount\n stateFileLookupCounts map[string]LookupCount\n stateLookupsByPhase map[string]LookupCount\n phase string\n genericOnly bool\n observe func(uint64)\n boundary func() (bool,error)\n candidateChecks int\n candidateSINFVerified bool\n currentInstruction uint64\n executionContext string\n lastExternalSlot string\n unmodeledExternalSlot string\n lastKnownBlock uint64\n additionalBlocks int\n untranslatedTarget string\n targetClass string\n genericBlocks int\n genericInstructions uint64\n genericLastPC uint64\n checkpointCompared bool\n sourceChangedAfterSINF bool\n frameChangedAfterSINF bool')
+        text = text.replace(field, field + '\n lookupCounts map[string]LookupCount\n stateFileLookupCounts map[string]LookupCount\n stateLookupsByPhase map[string]LookupCount\n phase string\n genericOnly bool\n observe func(uint64)\n boundary func() (bool,error)\n candidateChecks int\n candidateSINFVerified bool\n rwlocks map[uint64]int\n qosClass uint32\n qosRelative int32\n qosSet bool\n currentInstruction uint64\n executionContext string\n lastExternalSlot string\n unmodeledExternalSlot string\n lastKnownBlock uint64\n additionalBlocks int\n untranslatedTarget string\n targetClass string\n genericBlocks int\n genericInstructions uint64\n genericLastPC uint64\n checkpointCompared bool\n sourceChangedAfterSINF bool\n frameChangedAfterSINF bool')
+        text = text.replace(' genericOnly bool\n', ' genericOnly bool\n byteLoop genericLoopObservation\n', 1)
+        text = text.replace(' genericOnly bool\n', ' genericOnly bool\n outputScratchEnabled bool\n outputScratchReady uint8\n', 1)
+        runtime_anchor = '\tactiveRawSourceRuntime = runtime\n\treturn nil'
+        if text.count(runtime_anchor) != 1: raise SystemExit('runtime output contract changed')
+        text = text.replace(runtime_anchor, '\truntime.outputScratchEnabled = kernel == "enrollment-sinf" && sourceOutputContract(value)\n' + runtime_anchor)
+        # Replace legacy no-op pthread operations as a group. The new model
+        # accepts only lifecycle states supported by native reference tests.
+        legacy = "\tcase 0xF10000000000E000, // pthread_rwlock_unlock\n\t\t0xF100000000040000, // pthread_rwlock_rdlock\n\t\t0xF10000000005C000, // pthread_rwlock_init\n\t\t0xF100000000065000: // pthread_rwlock_wrlock\n\t\ts.x[0] = 0"
+        replacement = "\tcase 0xF10000000004C000, 0xF10000000000E000, 0xF100000000040000, 0xF10000000005C000, 0xF100000000065000:\n\t\tstatus, err := r.handleSourceRWLock(s, pc)\n\t\tif err != nil { r.unmodeledExternalSlot = sourceExternalImportSlot(pc); return pc, err }\n\t\ts.x[0] = status"
+        if text.count(legacy) != 1: raise SystemExit('pthread ABI contract changed')
+        text = text.replace(legacy, replacement)
+        qos_anchor = "\tcase 0xF10000000004C000, 0xF10000000000E000, 0xF100000000040000, 0xF10000000005C000, 0xF100000000065000:"
+        if text.count(qos_anchor) != 1: raise SystemExit('pthread QoS ABI anchor changed')
+        text = text.replace(qos_anchor, "\tcase 0xF100000000057000: // pthread_set_qos_class_self_np\n\t\ts.x[0] = r.handleSourceQoS(s)\n" + qos_anchor)
         entry = 'returnAddress := s.x[30]'
         if text.count(entry) != 1: raise SystemExit('external entry contract changed')
         text = text.replace(entry, entry + '\n r.lastExternalSlot = sourceExternalImportSlot(pc)\n r.executionContext = "external"')
@@ -124,6 +150,15 @@ api = pathlib.Path(__file__).resolve().parent.parent / 'MapleSyrup/NativeSAP/fai
 text = api.read_text().replace('RAW_RESOURCE_SHA256', expected)
 (target / 'api.go').write_text(text)
 
+(target/'source_qos.go').write_bytes((api.parent/'fairplayrawqos.go').read_bytes())
+(target/'source_qos_test.go').write_bytes((api.parent/'fairplayrawqos_test.go').read_bytes())
+
+(target/'source_rwlock.go').write_bytes((api.parent/'fairplayrawrwlock.go').read_bytes())
+(target/'source_rwlock_test.go').write_bytes((api.parent/'fairplayrawrwlock_test.go').read_bytes())
+(target/'source_outputs.go').write_bytes((api.parent/'fairplayrawoutputs.go').read_bytes())
+(target/'source_outputs_test.go').write_bytes((api.parent/'fairplayrawoutputs_test.go').read_bytes())
+(target/'source_outputs_real_test.go').write_bytes((api.parent/'fairplayrawoutputs_real_test.go').read_bytes())
+
 (target/'candidate_validation.go').write_bytes((api.parent/'fairplayrawcandidates.go').read_bytes())
 (target/'candidate_validation_test.go').write_bytes((api.parent/'fairplayrawcandidates_test.go').read_bytes())
 
@@ -147,6 +182,8 @@ for name, origin in [('LICENSE-IPATOOL', source.parent.parent / 'LICENSE'),
 
 (target / 'bootstrap_exit.go').write_text((api.parent / 'fairplayrawsupplement_exit.go').read_text())
 (target / 'bootstrap_exit_test.go').write_text((api.parent / 'fairplayrawsupplement_exit_test.go').read_text())
+(target / 'bootstrap_byteloop.go').write_text((api.parent / 'fairplayrawsupplement_byteloop.go').read_text())
+(target / 'bootstrap_hot.go').write_text((api.parent / 'fairplayrawsupplement_hot.go').read_text())
 
 # Generic instruction profile: data covering every executable-section slot.
 import subprocess, json

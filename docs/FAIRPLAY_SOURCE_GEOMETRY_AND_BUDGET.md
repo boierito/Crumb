@@ -29,3 +29,19 @@ length requires evidence from its producer or native calling convention.
 The diagnostic does not establish the reason for the instruction-budget exit.
 The private capture and original IPA remain on the owner's phone. No mobile
 license or complete IPA decryption has been validated.
+
+The subsequent account-authorized diagnostic also exhausted the same budget
+at this byte loop after one candidate was rejected. Both SIDB and SIDD were
+found in that execution, unlike the original, pre-authorization capture. The
+device retains that later state; the original capture cannot reproduce it.
+
+To distinguish a long counter from repeated visits, the interpreter now records
+only the number of visits, discontinuities in consecutive counter values, and
+a coarse maximum-counter bucket. Raw counter values are held only inside the
+attempt and cleared on cleanup; no keys or private bytes are included in the
+report. The metric covers generic execution of the pinned loop only, not AOT
+work. A discontinuity is a heuristic rather than proof of a new function call.
+It does not alter the instruction budget or treat a candidate as valid. The
+actual pinned loop and these counters are checked against Unicorn at ten
+synthetic lengths; only another authorized-device execution can reveal which
+pattern applies to that device's saved state.

@@ -39,6 +39,15 @@ func recoveryFailure(stage, code string, cause error) error {
 	return &labStageError{stage: stage, code: code, cause: cause}
 }
 
+// A runtime error, including a budget exit after a rejected candidate, does
+// not establish that all candidates failed validation.
+func authorizationRecoveryStatus(err error) string {
+	if _, incomplete := rawsource.RecoveryDetails(err); incomplete {
+		return "model_recovery_incomplete"
+	}
+	return "model_recovery_rejected"
+}
+
 // The public error envelope is shared by the C bridge and host tests. Only
 // typed, fixed labels and counters are included; never serialize cause.Error().
 func labFailureFields(operation string, err error) map[string]any {
@@ -60,7 +69,7 @@ func labFailureFields(operation string, err error) map[string]any {
 }
 
 func labErrorDetails(operation string, err error) (string, string) {
-	if details, ok := rawsource.RecoveryDetails(err); ok && (operation == "recover-capture" || operation == "recover-enrollment") {
+	if details, ok := rawsource.RecoveryDetails(err); ok {
 		return operation + "/portable-runtime/" + details.Phase, details.Failure
 	}
 	var classified *labStageError

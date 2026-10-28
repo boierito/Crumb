@@ -119,7 +119,7 @@ func ExecutionProfileSummary() map[string]any {
 	result := map[string]any{"backend": "generic-profile", "profile_version": 2, "ready": genericImage != nil, "jit_required": false}
 	if genericImage != nil {
 		if len(genericImage.nativeText) != 0 {
-			result["semantic_extensions"] = []string{"arm64-cas-v1"}
+			result["semantic_extensions"] = []string{"arm64-cas-v1", "arm64-simd-pair64-v1"}
 		}
 		result["instruction_slots"] = genericImage.executable
 		result["span_slots"] = genericImage.count
@@ -169,12 +169,24 @@ func runGenericInstructionBlock(s *state, runtime *rawSourceRuntime, start uint6
 		}
 		runtime.genericLastPC = pc
 		runtime.currentInstruction, runtime.executionContext = pc, "generic"
+		if pc == 0x1001005ac {
+			runtime.byteLoop.observe(s.x[9])
+		}
 		observeNativePC(runtime, pc)
 		record := genericImage.record(pc)
 		if record[0] == 0 {
 			if pc >= genericImage.nativeBase && pc-genericImage.nativeBase <= uint64(len(genericImage.nativeText)) && uint64(len(genericImage.nativeText))-(pc-genericImage.nativeBase) >= 4 {
 				word := binary.LittleEndian.Uint32(genericImage.nativeText[pc-genericImage.nativeBase:])
 				handled, err := runGenericCAS(s, word)
+				if err != nil {
+					return pc, false, err
+				}
+				if handled {
+					runtime.genericInstructions++
+					pc += 4
+					continue
+				}
+				handled, err = runGenericSIMDPair64(s, word)
 				if err != nil {
 					return pc, false, err
 				}
