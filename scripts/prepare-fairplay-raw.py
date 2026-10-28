@@ -79,6 +79,12 @@ for name in names:
         text = text.replace(read_anchor, read_anchor + '\n if err := sourceOutputRead(s, address, size); err != nil { return 0, err }')
         text = text.replace(write_anchor, write_anchor + '\n if err := sourceOutputStore(s, address, value); err != nil { return err }')
     if name == 'raw_source_step.go':
+        # Native Darwin timeval has 64-bit seconds, 32-bit microseconds and
+        # untouched 32-bit padding. Verified by the account-free C reference.
+        timeval = 's.storeValue(s.x[0]+8, 0, 8)'
+        if text.count(timeval) != 1:
+            raise SystemExit('raw timeval contract changed')
+        text = text.replace(timeval, 's.storeValue(s.x[0]+8, 0, 4)')
         # Replace the pinned bump allocator as a unit. Its old fixed 1 MiB
         # advance aliases every larger allocation with subsequent allocations.
         allocation = re.compile(r'func \(r \*rawSourceRuntime\) allocate\(s \*state, size uint64\) \(uint64, error\) \{.*?\n\}', re.S)
