@@ -26,6 +26,7 @@ jobs:
           python3 scripts/replay-fairplay-native-reference.py --help
           python3 scripts/test-prepare-fairplay-native-reference.py
           python3 scripts/test-fairplay-sinf-header-audit.py
+          python3 scripts/test-fairplay-candidate-provenance.py
       - name: Differential generic interpreter, unknown PCs, aliases and resource validation
         run: python3 scripts/test-fairplay-generic.py
       - name: Compare real native byte-processing loop with independent ARM64 execution

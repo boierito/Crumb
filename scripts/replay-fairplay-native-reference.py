@@ -16,6 +16,7 @@ from unicorn import (
     UC_HOOK_CODE,
     UC_HOOK_BLOCK,
     UC_HOOK_MEM_WRITE,
+    UC_HOOK_MEM_READ,
     UC_HOOK_MEM_WRITE_UNMAPPED,
     UC_ERR_FETCH_UNMAPPED,
     UcError,
@@ -30,6 +31,7 @@ p = argparse.ArgumentParser()
 p.add_argument("--trace", required=True)
 p.add_argument("--audit-sinf-header", action="store_true", help="Observe the pinned native header predicate without changing execution")
 p.add_argument("--compare-mobile-sinf", help="Optional private raw SINF: compare native first blocks with independent mobile AES-CBC; requires cryptography")
+p.add_argument("--audit-candidate-origins", action="store_true", help="Local conservative data-origin audit; does not prove complete control/service dependencies")
 args = p.parse_args()
 path = pathlib.Path(args.trace)
 st = path.lstat()
@@ -262,6 +264,14 @@ if args.compare_mobile_sinf:
     for address in (MATERIAL_PC, DECODE_PC):
         u.hook_add(UC_HOOK_CODE, mobile_hook, begin=address, end=address)
 
+candidate_origins = None
+if args.audit_candidate_origins:
+    from fairplay_candidate_provenance import CandidateProvenance
+    candidate_origins = CandidateProvenance(native)
+    u.hook_add(UC_HOOK_CODE, candidate_origins.instruction)
+    u.hook_add(UC_HOOK_MEM_READ, candidate_origins.read)
+    u.hook_add(UC_HOOK_MEM_WRITE, candidate_origins.write)
+
 u.hook_add(UC_HOOK_MEM_WRITE, write_hook)
 u.hook_add(UC_HOOK_BLOCK, block_hook)
 u.hook_add(UC_HOOK_CODE, stop_hook, begin=0xF000000000000000, end=0xFFFFFFFFFFFFFFFF)
@@ -324,7 +334,9 @@ for index, line in enumerate(stream, 1):
         u.emu_start(
             u.reg_read(arm.UC_ARM64_REG_PC),
             e["CPU"]["PC"] if e["Type"] == "final" else 0,
-            timeout=30_000_000,
+            # Per-instruction Python provenance is substantially slower than
+            # native replay. This host watchdog does not alter guest budgets.
+            timeout=300_000_000 if candidate_origins is not None else 30_000_000,
         )
     except UcError as error:
         if not (
@@ -390,10 +402,15 @@ for index, line in enumerate(stream, 1):
             print(json.dumps(header_audit.report()), flush=True)
         if mobile_header is not None:
             print(json.dumps(mobile_header.report()), flush=True)
+        if candidate_origins is not None:
+            candidate_origins.finish()
+            print(json.dumps(candidate_origins.report()), flush=True)
         break
     assert e["Type"] == "external"
     if e.get("Failed"):
         fail("captured_service_failed", index)
+    if candidate_origins is not None:
+        candidate_origins.service(u, e)
     for a in e.get("Removed") or []:
         if a in mapped:
             u.mem_unmap(a, 4096)
