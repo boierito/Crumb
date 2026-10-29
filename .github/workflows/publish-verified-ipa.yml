@@ -1,0 +1,63 @@
+name: Publish verified FairPlay experimental IPA
+on:
+  push:
+    branches: [distribution/fairplay-complete-ee25a787]
+    paths: [.github/workflows/publish-verified-ipa.yml]
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ee25a7875aea6405d0101a3c1916d281d80d44ae
+      - name: Require successful CI on the exact source commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for run in 40799098166 40799098176; do
+            test "$(gh api repos/boierito/Crumb/actions/runs/$run --jq .conclusion)" = success
+            test "$(gh api repos/boierito/Crumb/actions/runs/$run --jq .head_sha)" = ee25a7875aea6405d0101a3c1916d281d80d44ae
+          done
+      - uses: actions/download-artifact@v4
+        with:
+          name: Crumb-Release-40799098166
+          run-id: 40799098166
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: delivery
+      - name: Validate the existing IPA and corresponding sources
+        run: |
+          python3 scripts/verify-ipa.py delivery/Crumb-Release.ipa
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          import hashlib,tarfile
+          p=Path('delivery/Crumb-Release.ipa')
+          expected='7b71cb3f077d9a1b11570f94f9946bfc13cc03da6a8004c7d7bbca8dc2a1a794'
+          assert hashlib.sha256(p.read_bytes()).hexdigest()==expected
+          with tarfile.open('delivery/ipatool-sap-corresponding-source.tar.gz') as archive:
+              for name in ('kbsyncbridge.go','kbsyncretained.go','kbsynclicense.go','captureanalysis.go'):
+                  entries=[m for m in archive.getmembers() if m.isfile() and m.name.endswith('/'+name)]
+                  assert entries and all(archive.extractfile(m).read()==Path('MapleSyrup/NativeSAP',name).read_bytes() for m in entries)
+          name='Crumb-2026-10-29-0123-UTC-ee25a787.ipa'
+          p.rename(Path('delivery',name))
+          Path('delivery/SHA256SUMS.txt').write_text(expected+'  '+name+'\n')
+          PYCODE
+      - name: Publish the direct IPA asset with matching source archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES: "IPA experimental de Crumb. Compilación Release finalizada el 29/10/2026 a las 01:23 UTC.\n\nFuente: ee25a7875aea6405d0101a3c1916d281d80d44ae, PR #24, apilado sobre los PR #23 y #22. Versión 1.0.0; número interno 23053 conservado; ARM64; iOS 16.4 o posterior. IPA sin firmar; requiere la firma habitual de sideloading.\n\nCorrige una omisión de la descarga: conserva el diversitybag cuando Apple lo incluye, lo vincula al mismo productor KBSync, importa keybag y diversitybag en orden y guarda sólo el resultado completo aceptado. Rechaza bolsas ambiguas o inválidas y conserva la evidencia privada de ambas importaciones.\n\nNo se ha validado el SINF real ni descifrado la IPA TT. Las pruebas locales reprodujeron el retorno -42057 y confirmaron la coincidencia de los 432 bytes del buffer rechazado entre la rutina nativa y la derivación móvil independiente. La captura TT anterior no permite saber si Apple había enviado un diversitybag descartado.\n\nInstalar encima de Crumb con el mismo identificador y firma para conservar la autorización. No desinstalar. Conservar las exportaciones originales. Este cambio no recupera retroactivamente material omitido por una captura anterior.\n\nCI aprobado:\nhttps://github.com/boierito/Crumb/actions/runs/40799098176\nhttps://github.com/boierito/Crumb/actions/runs/40799098166\n\nSHA-256: 7b71cb3f077d9a1b11570f94f9946bfc13cc03da6a8004c7d7bbca8dc2a1a794\nSe adjuntan fuentes correspondientes y licencias. No contienen archivos privados del usuario.\n"
+        run: |
+          python3 - <<'PYCODE'
+          import os,pathlib
+          pathlib.Path('delivery/release-notes.md').write_text(os.environ['NOTES'])
+          PYCODE
+          tag=experimental-complete-license-20261029-0123-utc
+          if gh release view "$tag" --repo boierito/Crumb --json isDraft --jq .isDraft > delivery/draft-status.txt 2>/dev/null; then
+            test "$(cat delivery/draft-status.txt)" = true
+          else
+            gh release create "$tag" --repo boierito/Crumb --target ee25a7875aea6405d0101a3c1916d281d80d44ae --draft --prerelease --title 'Crumb experimental · 2026-10-29 01:23 UTC · ee25a787' --notes-file delivery/release-notes.md
+          fi
+          gh release upload "$tag" delivery/Crumb-2026-10-29-0123-UTC-ee25a787.ipa delivery/SHA256SUMS.txt delivery/ipatool-sap-corresponding-source.tar.gz delivery/unicorn-tci-corresponding-source.tar.gz delivery/IPATOOL-LICENSE delivery/UNICORN-COPYING --repo boierito/Crumb --clobber
+          gh release edit "$tag" --repo boierito/Crumb --draft=false --prerelease --notes-file delivery/release-notes.md
