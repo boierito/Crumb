@@ -160,6 +160,7 @@ final class FairPlayLab: ObservableObject {
         var files: [[String: String]] = []
         var blobs: [(String, Data)] = [("kbsync.bin", transaction.kbsync)]
         if let keybag = transaction.keybag { blobs.append(("keybag.bin", keybag)) }
+        if let diversitybag = transaction.diversitybag { blobs.append(("diversitybag.bin", diversitybag)) }
         blobs += transaction.sinfs.enumerated().map { ("sinf-\($0.offset).bin", $0.element) }
         for (name, data) in blobs {
             guard data.count <= 16 << 20 else { throw CocoaError(.fileWriteOutOfSpace) }

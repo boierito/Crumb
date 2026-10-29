@@ -14,3 +14,22 @@ final class FairPlayCaptureTests: XCTestCase {
         XCTAssertNil(FairPlayTransaction.keybag([:]))
     }
 }
+
+extension FairPlayCaptureTests {
+    func testLicenseBagsKeepKindsSeparateAndAcceptExactAliases() throws {
+        let key = Data([1, 2]), diversity = Data([3, 4])
+        let bags = try FairPlayTransaction.licenseBags(["keybag": key, "songList": [["sbKeyBag": key.base64EncodedString(), "metadata": ["diversitybag": diversity]]]])
+        XCTAssertEqual(bags.keybag, key)
+        XCTAssertEqual(bags.diversitybag, diversity)
+        XCTAssertNil(try FairPlayTransaction.licenseBags([:]).diversitybag)
+    }
+    func testLicenseBagsRejectAmbiguityMalformedAndOversizedValues() {
+        let roots: [[String: Any]] = [
+            ["keybag": Data([1]), "songList": [["keybag": Data([2])]]],
+            ["keybag": Data([1]), "diversitybag": "invalid base64"],
+            ["diversitybag": Data()],
+            ["keybag": Data(repeating: 1, count: (1 << 20) + 1)]
+        ]
+        for root in roots { XCTAssertThrowsError(try FairPlayTransaction.licenseBags(root)) }
+    }
+}

@@ -428,12 +428,15 @@ extension StoreTests {
         let keybag = Data("response-keybag".utf8)
         var root = try PropertyListSerialization.propertyList(from: reply(), format: nil) as! [String: Any]
         root["keybag"] = keybag
+        let diversity = Data("response-diversity".utf8)
+        root["diversitybag"] = diversity
         let transport = StoreFixtureTransport([.init(status: 200, data: try bag()), .init(status: 200, data: try plist(root))])
         _ = try await session(transport, capture: { await capture.append($0) }).descriptor(app: app, externalVersionID: "999")
         let values = await capture.values
         XCTAssertEqual(values.count, 1)
         XCTAssertEqual(values.first?.kbsync, Data("fresh-fixture-blob".utf8))
         XCTAssertEqual(values.first?.keybag, keybag)
+        XCTAssertEqual(values.first?.diversitybag, diversity)
     }
     func testFairPlayCaptureRejectsMismatchedAppReply() async throws {
         let capture = CapturedFairPlayTransactions()

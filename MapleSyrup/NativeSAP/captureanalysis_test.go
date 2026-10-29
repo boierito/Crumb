@@ -76,11 +76,15 @@ func TestAnalyzeCaptureIntegrityAndPrivacy(t *testing.T) {
 	if _, exists := values["selector"]; exists {
 		t.Fatal("selector leaked")
 	}
-    one := result["transactions"].([]map[string]any)[0]
-    if one["sinf_key_family"] != "non-key5" { t.Fatal("non-key5 synthetic fixture misclassified") }
-    for _, forbidden := range []string{"user_id", "key_id", "apple_id", "hardware_id", "selector"} {
-        if strings.Contains(string(encoded), forbidden) { t.Fatalf("private field leaked: %s", forbidden) }
-    }
+	one := result["transactions"].([]map[string]any)[0]
+	if one["sinf_key_family"] != "non-key5" {
+		t.Fatal("non-key5 synthetic fixture misclassified")
+	}
+	for _, forbidden := range []string{"user_id", "key_id", "apple_id", "hardware_id", "selector"} {
+		if strings.Contains(string(encoded), forbidden) {
+			t.Fatalf("private field leaked: %s", forbidden)
+		}
+	}
 	for _, tc := range [][3]bool{{true, false, false}, {false, true, false}, {false, false, true}} {
 		if _, e := analyzeCapture(captureFixture(t, tc[0], tc[1], tc[2])); e == nil {
 			t.Fatal("unsafe capture accepted")
@@ -100,10 +104,13 @@ func TestPrivateCaptureExternal(t *testing.T) {
 	t.Log(string(encoded)) // Only the explicit non-secret summary.
 }
 
- 
 // All v3 fixtures use public synthetic blobs; no account, device, or keybag
 // captured from an iPhone is stored in the repository or test output.
 func captureV3Fixture(t *testing.T, overrides map[string]any) string {
+	return captureV3FixtureWithDiversity(t, overrides, false)
+}
+
+func captureV3FixtureWithDiversity(t *testing.T, overrides map[string]any, diversity bool) string {
 	t.Helper()
 	atom := func(tag string, b []byte) []byte {
 		out := make([]byte, 8+len(b))
@@ -113,28 +120,33 @@ func captureV3Fixture(t *testing.T, overrides map[string]any) string {
 		return out
 	}
 	key5 := make([]byte, 4)
-    binary.BigEndian.PutUint32(key5, 5)
-    fields := append(atom("user", make([]byte, 4)), atom("key ", key5)...)
+	binary.BigEndian.PutUint32(key5, 5)
+	fields := append(atom("user", make([]byte, 4)), atom("key ", key5)...)
 	fields = append(fields, atom("priv", make([]byte, 440))...)
 	report := map[string]any{
-		"consumer": "storeagent-10.9-import-keybag",
-		"native_status": -42052,
-		"emulator_completed": true,
-		"import_succeeded": false,
+		"consumer":             "storeagent-10.9-import-keybag",
+		"native_status":        -42052,
+		"emulator_completed":   true,
+		"import_succeeded":     false,
 		"portable_model_ready": false,
-		"state_files": map[string][]byte{"fixture.sidb": []byte("SYNTHETIC-SECRET-CANARY")},
+		"state_files":          map[string][]byte{"fixture.sidb": []byte("SYNTHETIC-SECRET-CANARY")},
 	}
 	for k, v := range overrides {
 		report[k] = v
 	}
 	consumer, err := json.Marshal(report)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	blobs := map[string][]byte{
-		"kbsync.bin": make([]byte, 196),
-		"keybag.bin": make([]byte, 904),
-		"sinf-0.bin": atom("sinf", atom("schi", fields)),
-		"context.json": []byte(`{"schema":"crumb-fairplay-context-v2"}`),
+		"kbsync.bin":          make([]byte, 196),
+		"keybag.bin":          make([]byte, 904),
+		"sinf-0.bin":          atom("sinf", atom("schi", fields)),
+		"context.json":        []byte(`{"schema":"crumb-fairplay-context-v2"}`),
 		"consumer-state.json": consumer,
+	}
+	if diversity {
+		blobs["diversitybag.bin"] = []byte{1, 2, 3}
 	}
 	entries := []map[string]string{}
 	for name, blob := range blobs {
@@ -143,30 +155,46 @@ func captureV3Fixture(t *testing.T, overrides map[string]any) string {
 			"sha256": hex.EncodeToString(checksum[:])})
 	}
 	manifest, err := json.Marshal(map[string]any{"schema": "crumb-fairplay-capture-v3", "files": entries})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	p := filepath.Join(t.TempDir(), "v3.zip")
 	f, err := os.Create(p)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	w := zip.NewWriter(f)
 	for name, blob := range blobs {
 		entry, err := w.Create("run/" + name)
-		if err != nil { t.Fatal(err) }
-		if _, err = entry.Write(blob); err != nil { t.Fatal(err) }
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = entry.Write(blob); err != nil {
+			t.Fatal(err)
+		}
 	}
 	entry, err := w.Create("run/manifest.json")
-	if err != nil { t.Fatal(err) }
-	if _, err = entry.Write(manifest); err != nil { t.Fatal(err) }
-	if err = w.Close(); err != nil { t.Fatal(err) }
-	if err = f.Close(); err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = entry.Write(manifest); err != nil {
+		t.Fatal(err)
+	}
+	if err = w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.Close(); err != nil {
+		t.Fatal(err)
+	}
 	return p
 }
 
 func TestAnalyzeV3ConsumerStagesAndPrivacy(t *testing.T) {
 	cases := []struct {
-		name string
+		name      string
 		overrides map[string]any
-		stage string
-		missing string
+		stage     string
+		missing   string
 	}{
 		{"rejected", nil, "native_rejected", "accepted_keybag_import"},
 		{"zero-return", map[string]any{"native_status": 0, "import_succeeded": true},
@@ -177,12 +205,16 @@ func TestAnalyzeV3ConsumerStagesAndPrivacy(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			result, err := analyzeCapture(captureV3Fixture(t, tc.overrides))
-			if err != nil { t.Fatal(err) }
-			if result["ready_to_decrypt"] != false { t.Fatal("unvalidated model was accepted") }
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result["ready_to_decrypt"] != false {
+				t.Fatal("unvalidated model was accepted")
+			}
 			summary := result["transactions"].([]map[string]any)[0]
-            if summary["sinf_key_family"] != "key5" {
-                t.Fatal("key5 SINF family was not recognized in synthetic v3 capture")
-            }
+			if summary["sinf_key_family"] != "key5" {
+				t.Fatal("key5 SINF family was not recognized in synthetic v3 capture")
+			}
 			if summary["keybag_consumer"] != tc.stage || summary["ready_to_recover"] != false {
 				t.Fatalf("incorrect readiness for %s", tc.name)
 			}
@@ -201,7 +233,9 @@ func TestAnalyzeV3ConsumerStagesAndPrivacy(t *testing.T) {
 				}
 			}
 			data, err := json.Marshal(result)
-			if err != nil { t.Fatal(err) }
+			if err != nil {
+				t.Fatal(err)
+			}
 			if strings.Contains(string(data), "SYNTHETIC-SECRET-CANARY") ||
 				strings.Contains(string(data), "hardware_id") ||
 				strings.Contains(string(data), "dsid") {
@@ -226,7 +260,6 @@ func TestAnalyzeV3RejectsContradictoryConsumerReports(t *testing.T) {
 	}
 }
 
-
 // V6 shape is modeled with synthetic bytes: a successful native call can
 // create a nonempty SIDB and a null/empty lock-file entry, but must never be
 // mistaken for verified enrollment or permission to decrypt any IPA.
@@ -236,12 +269,12 @@ func TestAnalyzeV3AcceptedConsumerWithMixedVirtualFiles(t *testing.T) {
 	copy(sidb, []byte(sentinel))
 	p := captureV3Fixture(t, map[string]any{
 		"native_status":        0,
-		"emulator_completed":    true,
+		"emulator_completed":   true,
 		"import_succeeded":     true,
 		"portable_model_ready": false,
 		"state_files": map[string][]byte{
 			".sid.lockFile": nil,
-			"SC Info.sidb": sidb,
+			"SC Info.sidb":  sidb,
 		},
 		"virtual_io": map[string]any{
 			"total_calls": 21,
@@ -297,29 +330,34 @@ func TestAnalyzeV3AcceptedConsumerWithMixedVirtualFiles(t *testing.T) {
 	}
 }
 
-
 // Real-world accepted native states have variable sizes; these are *public
 // synthetic fixtures* and must not imply a fixed SIDB size or recovered key.
 func TestAnalyzeAcceptedNativeSIDBVariableLengths(t *testing.T) {
 	for _, size := range []int{862, 883} {
 		t.Run(strconv.Itoa(size), func(t *testing.T) {
 			fixture := make([]byte, size)
-			for i := range fixture { fixture[i] = byte((i * 13 + 7) & 0xff) }
+			for i := range fixture {
+				fixture[i] = byte((i*13 + 7) & 0xff)
+			}
 			p := captureV3Fixture(t, map[string]any{
-				"native_status": 0,
+				"native_status":    0,
 				"import_succeeded": true,
 				"state_files": map[string][]byte{
 					".sid.lockFile": nil,
-					"SC Info.sidb": fixture,
+					"SC Info.sidb":  fixture,
 				},
 			})
 			result, err := analyzeCapture(p)
-			if err != nil { t.Fatal(err) }
+			if err != nil {
+				t.Fatal(err)
+			}
 			if result["ready_to_decrypt"] != false {
 				t.Fatal("variable legacy state incorrectly promoted to portable model")
 			}
 			transactions := result["transactions"].([]map[string]any)
-			if len(transactions) != 1 { t.Fatalf("unexpected transactions count %d", len(transactions)) }
+			if len(transactions) != 1 {
+				t.Fatalf("unexpected transactions count %d", len(transactions))
+			}
 			got := transactions[0]
 			bridge, ok := got["enrollment_bridge"].(map[string]any)
 			if !ok || bridge["legacy_sidb_bytes"] != size ||
@@ -330,5 +368,26 @@ func TestAnalyzeAcceptedNativeSIDBVariableLengths(t *testing.T) {
 				t.Fatalf("invalid portability classification for synthetic size %d", size)
 			}
 		})
+	}
+}
+
+func TestCaptureDiversityImportMustMatchManifestAndWholeResult(t *testing.T) {
+	cases := []struct {
+		present  bool
+		report   map[string]any
+		accepted bool
+	}{
+		{true, map[string]any{"native_status": 0, "import_succeeded": true, "diversitybag_present": true, "diversitybag_native_status": 0}, true},
+		{true, map[string]any{"native_status": -9, "import_succeeded": false, "diversitybag_present": true, "diversitybag_native_status": -9}, true},
+		{false, map[string]any{"native_status": 0, "import_succeeded": true, "diversitybag_present": true, "diversitybag_native_status": 0}, false},
+		{true, map[string]any{"native_status": 0, "import_succeeded": true}, false},
+		{true, map[string]any{"native_status": 0, "import_succeeded": true, "diversitybag_present": true, "diversitybag_native_status": -9}, false},
+		{true, map[string]any{"native_status": 0, "import_succeeded": true, "diversitybag_present": true}, false},
+	}
+	for i, tc := range cases {
+		_, err := analyzeCapture(captureV3FixtureWithDiversity(t, tc.report, tc.present))
+		if (err == nil) != tc.accepted {
+			t.Fatalf("case %d wrong acceptance: %v", i, err)
+		}
 	}
 }
