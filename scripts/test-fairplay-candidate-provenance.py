@@ -34,6 +34,17 @@ class OriginTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'memory bound'):
             memory[16384*4096] = (BITS['sidd'], BASE+256)
 
+    def test_sparse_bulk_access_crosses_pages_without_erasing_neighbors(self):
+        memory = ByteOrigins()
+        memory[4093] = (BITS['sidb'], BASE+256)
+        memory.store(4094, 4, BITS['sidd'], BASE+260)
+        memory.store(4095, 2, BITS['sinf'], BASE+264)
+        fallback = lambda address: BITS['initial_context']
+        self.assertEqual(memory.origin(4094, 4, fallback), BITS['sidd'] | BITS['sinf'])
+        self.assertEqual(memory[4093], (BITS['sidb'], BASE+256))
+        self.assertEqual(memory[4097], (BITS['sidd'], BASE+260))
+        self.assertEqual(memory.origin(4098, 1, fallback), BITS['initial_context'])
+
     def test_macho_permissions_not_image_address_range(self):
         audit = CandidateProvenance(image())
         self.assertEqual(audit.default_origin(BASE+256), BITS['readonly_image'])

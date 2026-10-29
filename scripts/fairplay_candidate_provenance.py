@@ -57,6 +57,35 @@ class ByteOrigins:
             page[1][address & 4095] = 0
         return value
 
+    def origin(self, address, size, fallback):
+        result = 0
+        while size:
+            count = min(size, 4096 - (address & 4095))
+            page = self.pages.get(address >> 12)
+            if page is None:
+                for a in range(address, address + count):
+                    result |= fallback(a)
+            else:
+                for index in range(count):
+                    encoded = page[0][(address & 4095) + index]
+                    result |= encoded - 1 if encoded else fallback(address + index)
+            address += count
+            size -= count
+        return result
+
+    def store(self, address, size, origin, writer):
+        while size:
+            count = min(size, 4096 - (address & 4095))
+            number = address >> 12
+            if number not in self.pages:
+                self[address] = (origin, writer)
+            page = self.pages[number]
+            start = address & 4095
+            page[0][start:start+count] = array('I', [origin+1]) * count
+            page[1][start:start+count] = array('Q', [writer or 0]) * count
+            address += count
+            size -= count
+
 
 def image_segments(image):
     if len(image) < 32 or struct.unpack_from('<I', image)[0] != 0xFEEDFACF:
@@ -130,10 +159,7 @@ class CandidateProvenance:
         return BITS['initial_context']
 
     def memory_origin(self, address, size):
-        origin = 0
-        for a in range(address, address + size):
-            origin |= self.memory.get(a, (self.default_origin(a), None))[0]
-        return origin
+        return self.memory.origin(address, size, self.default_origin)
 
     def reg_origin(self, name):
         key = canonical_register(name)
@@ -190,8 +216,7 @@ class CandidateProvenance:
         if self.pending is None:
             return
         pc, _, origin = self.pending
-        for a in range(address, address + size):
-            self.memory[a] = (origin, pc)
+        self.memory.store(address, size, origin, pc)
 
     def candidate(self, u):
         self.visits += 1
@@ -258,8 +283,7 @@ class CandidateProvenance:
             address, size, kind = target
             if size > 0x10000000:
                 raise ValueError('invalid audited service size')
-            for a in range(address, address + size):
-                self.memory[a] = (BITS[kind], None)
+            self.memory.store(address, size, BITS[kind], None)
         for index, (before, value) in enumerate(zip(args, after['Registers'])):
             if before != value or index == 0:
                 self.registers['x%d' % index] = BITS['service']
