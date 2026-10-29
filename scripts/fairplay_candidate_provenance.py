@@ -9,7 +9,7 @@ import base64
 from array import array
 
 from capstone import Cs, CS_ARCH_ARM64, CS_MODE_ARM
-from capstone.arm64_const import ARM64_OP_REG
+from capstone.arm64_const import ARM64_OP_REG, ARM64_OP_MEM
 from unicorn import arm64_const as arm, UcError
 
 MATERIAL_PC = 0x100234CDC
@@ -140,6 +140,7 @@ class CandidateProvenance:
         self.memory = ByteOrigins()
         self.default_pages = {}
         self.pending = None
+        self.address_writebacks = {}
         self.fd = {}
         self.rows = []
         self.materials = []  # Private in-memory equality only; never serialized.
@@ -170,8 +171,9 @@ class CandidateProvenance:
             return
         pc, writes, origin = self.pending
         for name in writes:
-            self.registers[name] = origin
+            self.registers[name] = self.address_writebacks.get(name, origin)
         self.pending = None
+        self.address_writebacks = {}
 
     def instruction(self, u, address, size, _):
         self.finish()
@@ -197,9 +199,15 @@ class CandidateProvenance:
                 # the address base. Never discard that explicit value source.
                 reads.update(canonical_register(instruction.reg_name(op.reg))
                              for op in instruction.operands if op.type == ARM64_OP_REG)
-            info = (reads, writes, instruction.mnemonic)
+            writebacks = set()
+            if instruction.writeback:
+                writebacks = {canonical_register(instruction.reg_name(op.mem.base))
+                              for op in instruction.operands if op.type == ARM64_OP_MEM and op.mem.base}
+            info = (reads, writes, writebacks)
             self.cache[address] = info
-        reads, writes, mnemonic = info
+        reads, writes, writebacks = info
+        self.address_writebacks = {name: self.reg_origin(name) | BITS['native_literal']
+                                   for name in writebacks}
         origin = 0
         for name in reads:
             origin |= self.reg_origin(name)

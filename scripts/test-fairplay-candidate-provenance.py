@@ -117,6 +117,25 @@ class OriginTests(unittest.TestCase):
         self.assertTrue(audit.memory_origin(0x7100, 1) & BITS['sidb'])
         self.assertTrue(audit.memory_origin(0x7100, 1) & BITS['readonly_image'])
 
+    def test_load_writeback_does_not_turn_address_into_loaded_secret(self):
+        native = bytearray(image())
+        code, _ = Ks(KS_ARCH_ARM64, KS_MODE_LITTLE_ENDIAN).asm('ldrb w0, [x1], #1')
+        native[256:256+len(code)] = bytes(code)
+        audit = CandidateProvenance(bytes(native))
+        u = Uc(UC_ARCH_ARM64, UC_MODE_ARM)
+        u.mem_map(BASE, 4096)
+        u.mem_write(BASE, bytes(native))
+        u.mem_map(0x7000, 4096)
+        u.reg_write(arm.UC_ARM64_REG_X1, 0x7000)
+        audit.memory[0x7000] = (BITS['sidb'], None)
+        u.hook_add(UC_HOOK_CODE, audit.instruction)
+        u.hook_add(UC_HOOK_MEM_READ, audit.read)
+        u.emu_start(BASE+256, BASE+256+len(code))
+        audit.finish()
+        self.assertTrue(audit.reg_origin('w0') & BITS['sidb'])
+        self.assertFalse(audit.reg_origin('x1') & BITS['sidb'])
+        self.assertEqual(u.reg_read(arm.UC_ARM64_REG_X1), 0x7001)
+
     def test_invalid_segment_contract_rejected(self):
         data = bytearray(image())
         struct.pack_into('<I', data, 36, 8)
