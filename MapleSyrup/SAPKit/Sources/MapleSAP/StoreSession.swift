@@ -175,7 +175,8 @@ public actor StoreSession {
         let root = try await post(url, body: body, token: true, ent: true)
         let result = try StoreParsing.download(root, app: app, version: version, email: account.email)
         if let capture {
-            await capture(FairPlayTransaction(kbsync: blob, keybag: FairPlayTransaction.keybag(root), sinfs: result.sinfs))
+            let bags = try FairPlayTransaction.licenseBags(root)
+            await capture(FairPlayTransaction(kbsync: blob, keybag: bags.keybag, sinfs: result.sinfs, diversitybag: bags.diversitybag))
         }
         return result
     }

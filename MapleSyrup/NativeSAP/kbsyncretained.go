@@ -51,12 +51,33 @@ func (r *RetainedKBSyncSession) ImportDiversityBag(bag []byte) (int32, map[strin
 	return r.importLicenseBag(storeAgentBase+0xcdea0, bag)
 }
 
+// ImportDownloadLicense consumes every supplied bag on this retained producer,
+// in the same keybag-then-diversity order as the native purchase handler.
+func (r *RetainedKBSyncSession) ImportDownloadLicense(keybag, diversity []byte) (LicenseBagsResult, error) {
+	if r == nil || len(keybag) == 0 || len(keybag) > 1<<20 || len(diversity) > 1<<20 {
+		return LicenseBagsResult{}, fmt.Errorf("invalid consumer input")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return consumeLicenseBags(keybag, diversity,
+		func(b []byte) (int32, map[string][]byte, map[string]any, error) {
+			return r.importLicenseBagLocked(storeAgentBase+0xd5ce0, b)
+		},
+		func(b []byte) (int32, map[string][]byte, map[string]any, error) {
+			return r.importLicenseBagLocked(storeAgentBase+0xcdea0, b)
+		})
+}
+
 func (r *RetainedKBSyncSession) importLicenseBag(entry uint64, keybag []byte) (int32, map[string][]byte, map[string]any, error) {
 	if r == nil {
 		return 0, nil, nil, fmt.Errorf("invalid consumer input")
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.importLicenseBagLocked(entry, keybag)
+}
+
+func (r *RetainedKBSyncSession) importLicenseBagLocked(entry uint64, keybag []byte) (int32, map[string][]byte, map[string]any, error) {
 	if r.agent == nil || r.agent.guest == nil || len(keybag) == 0 || len(keybag) > 1<<20 {
 		return 0, nil, nil, fmt.Errorf("invalid consumer input")
 	}

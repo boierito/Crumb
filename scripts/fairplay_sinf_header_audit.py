@@ -90,7 +90,7 @@ def sinf_field(sinf, wanted):
 
 
 class MobileHeaderComparison:
-    """Compare first blocks; never accept a key or license on a partial match.
+    """Compare the native work buffer; never accept a license on a match.
 
     Python/cryptography cannot guarantee erasure of intermediate key copies.
     This optional host research tool is never installed in the iOS runtime.
@@ -105,7 +105,7 @@ class MobileHeaderComparison:
         if len(private) == 440 and private[-8:] != bytes(8):
             raise ValueError("invalid mobile SINF trailer")
         self.iv = hashlib.md5(name + iviv).digest()
-        self.block = private[:16]
+        self.block = private[:-8] if len(private) == 440 else private
         self.candidates = []
         self.rows = []
 
@@ -118,19 +118,23 @@ class MobileHeaderComparison:
             # creating or exporting an alleged account credential.
             key = bytes(a ^ b for a, b in zip(material, KEY_MASK))
             decrypt = Cipher(algorithms.AES(key), modes.CBC(self.iv)).decryptor()
-            first = decrypt.update(self.block) + decrypt.finalize()
+            first = (decrypt.update(self.block) + decrypt.finalize())[:432]
             if first not in self.candidates:
                 self.candidates.append(first)
         elif pc == DECODE_PC:
             offsets = [(registers[8] + registers[i]) & MASK for i in (20, 3, 4, 5)]
             contiguous = offsets == list(range(offsets[0], offsets[0] + 4))
             matches = []
+            first_matches = []
             if contiguous and registers[26] < 256:
-                native = bytes(x ^ registers[26] for x in read(registers[25] + offsets[0], 16))
+                native = bytes(x ^ registers[26] for x in read(registers[25] + offsets[0], 432))
                 matches = [native == candidate for candidate in self.candidates]
+                first_matches = [native[:16] == candidate[:16] for candidate in self.candidates]
             self.rows.append({"candidate_count_at_read": len(self.candidates),
                               "native_offsets_contiguous": contiguous,
-                              "native_first_block_matches_candidates": matches})
+                              "native_first_block_matches_candidates": first_matches,
+                              "compared_work_bytes": 432,
+                              "native_work_buffer_matches_candidates": matches})
 
     def report(self):
         return {"schema": "crumb-native-mobile-header-comparison-v1",

@@ -72,9 +72,10 @@ func analyzeCapture(source string) (map[string]any, error) {
 		prefix := path.Dir(name)
 		seen := map[string]bool{}
 		consumerStage := "not_observed"
+		var diversityReported *bool
 		summary := map[string]any{"schema": manifest.Schema, "integrity": "verified", "keybag_consumer": consumerStage, "ready_to_recover": false, "generation_context_metadata": false}
 		sinfs := 0
-        licenseFamily := ""
+		licenseFamily := ""
 		for _, entry := range manifest.Files {
 			if path.Base(entry.Name) != entry.Name || seen[entry.Name] {
 				return nil, fmt.Errorf("capture_manifest_path")
@@ -100,14 +101,21 @@ func analyzeCapture(source string) (map[string]any, error) {
 					return nil, fmt.Errorf("capture_empty")
 				}
 				summary["keybag_bytes"] = len(b)
+			case entry.Name == "diversitybag.bin":
+				if len(b) == 0 || len(b) > 1<<20 {
+					return nil, fmt.Errorf("capture_diversitybag_invalid")
+				}
+				summary["diversitybag_bytes"] = len(b)
 			case entry.Name == "consumer-state.json":
 				var report struct {
-					Consumer  string            `json:"consumer"`
-					Status    *int32            `json:"native_status"`
-					Completed *bool             `json:"emulator_completed"`
-					Imported  *bool             `json:"import_succeeded"`
-					Ready     *bool             `json:"portable_model_ready"`
-					Files     map[string][]byte `json:"state_files"`
+					Consumer         string            `json:"consumer"`
+					DiversityPresent *bool             `json:"diversitybag_present"`
+					DiversityStatus  *int32            `json:"diversitybag_native_status"`
+					Status           *int32            `json:"native_status"`
+					Completed        *bool             `json:"emulator_completed"`
+					Imported         *bool             `json:"import_succeeded"`
+					Ready            *bool             `json:"portable_model_ready"`
+					Files            map[string][]byte `json:"state_files"`
 				}
 				if json.Unmarshal(b, &report) != nil || report.Consumer == "" ||
 					report.Status == nil || report.Completed == nil || report.Imported == nil ||
@@ -115,6 +123,11 @@ func analyzeCapture(source string) (map[string]any, error) {
 					*report.Imported != (*report.Completed && *report.Status == 0) ||
 					len(report.Files) > 32 {
 					return nil, fmt.Errorf("capture_consumer_report")
+				}
+				diversityReported = report.DiversityPresent
+				if (report.DiversityStatus != nil && (report.DiversityPresent == nil || !*report.DiversityPresent)) ||
+					(report.DiversityPresent != nil && *report.DiversityPresent && *report.Imported && (report.DiversityStatus == nil || *report.DiversityStatus != 0)) {
+					return nil, fmt.Errorf("capture_diversity_import_inconsistent")
 				}
 				// JSON encodes state-file bytes as base64. Clear decoded data, even on rejection.
 				defer func() {
@@ -148,13 +161,13 @@ func analyzeCapture(source string) (map[string]any, error) {
 				// from a successful call or an opaque SIDB container.
 				legacySIDB := report.Files["SC Info.sidb"]
 				summary["enrollment_bridge"] = map[string]any{
-					"legacy_import_accepted":          *report.Imported,
-					"legacy_sidb_observed":            len(legacySIDB) > 0,
-					"legacy_sidb_bytes":               len(legacySIDB),
-					"portable_raw_state_verified":      false,
+					"legacy_import_accepted":             *report.Imported,
+					"legacy_sidb_observed":               len(legacySIDB) > 0,
+					"legacy_sidb_bytes":                  len(legacySIDB),
+					"portable_raw_state_verified":        false,
 					"portable_enrollment_frame_verified": false,
-					"validated_portable_model":         false,
-					"status":                           "missing_portable_enrollment_source",
+					"validated_portable_model":           false,
+					"status":                             "missing_portable_enrollment_source",
 				}
 				switch {
 				case !*report.Completed:
@@ -176,20 +189,30 @@ func analyzeCapture(source string) (map[string]any, error) {
 					return nil, fmt.Errorf("capture_sinf")
 				}
 				sinfs++
-                // SINF key ID is the license generation, not the account's
-                // age. Report only a fixed family label; never emit user ID,
-                // selector, private payload, or per-app identifier.
-                selector, selectorErr := fairplay.ParseSINFSelector(b)
-                if selectorErr != nil { return nil, fmt.Errorf("capture_sinf_selector") }
-                family := "non-key5"
-                if selector.Key == 5 { family = "key5" }
-                if licenseFamily == "" { licenseFamily = family
-                } else if licenseFamily != family { licenseFamily = "mixed" }
+				// SINF key ID is the license generation, not the account's
+				// age. Report only a fixed family label; never emit user ID,
+				// selector, private payload, or per-app identifier.
+				selector, selectorErr := fairplay.ParseSINFSelector(b)
+				if selectorErr != nil {
+					return nil, fmt.Errorf("capture_sinf_selector")
+				}
+				family := "non-key5"
+				if selector.Key == 5 {
+					family = "key5"
+				}
+				if licenseFamily == "" {
+					licenseFamily = family
+				} else if licenseFamily != family {
+					licenseFamily = "mixed"
+				}
 				summary["sinf_current_layout"] = info.CurrentLayout
 				summary["sinf_private_bytes"] = info.PrivateBytes
 			default:
 				return nil, fmt.Errorf("capture_unexpected_file")
 			}
+		}
+		if seen["diversitybag.bin"] != (diversityReported != nil && *diversityReported) {
+			return nil, fmt.Errorf("capture_diversity_binding_inconsistent")
 		}
 		if !seen["kbsync.bin"] || sinfs == 0 {
 			return nil, fmt.Errorf("capture_incomplete")
@@ -201,7 +224,7 @@ func analyzeCapture(source string) (map[string]any, error) {
 			}
 		}
 		summary["sinf_count"] = sinfs
-        summary["sinf_key_family"] = licenseFamily
+		summary["sinf_key_family"] = licenseFamily
 		summary["keybag_consumer"] = consumerStage
 		missing := []string{}
 		switch consumerStage {

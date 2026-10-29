@@ -17,13 +17,13 @@ import (
 )
 
 type retainedKBSync struct {
-	agent            *machine.RetainedKBSyncSession
-	blob, keybag     []byte
-	accountDirectory string
-	accountRestored  bool
-	hardwareID       []byte
-	accountID        uint64
-	expectedDigests  map[string]string
+	agent                   *machine.RetainedKBSyncSession
+	blob, keybag, diversity []byte
+	accountDirectory        string
+	accountRestored         bool
+	hardwareID              []byte
+	accountID               uint64
+	expectedDigests         map[string]string
 }
 
 var retainedSessions = map[uint64]*retainedKBSync{}
@@ -105,13 +105,22 @@ func openKBSyncWithState(cache, directory *C.char, hardware *C.uchar, length C.s
 
 //export WaffleKBSyncBind
 func WaffleKBSyncBind(handle C.uint64_t, blob *C.uchar, size C.size_t, keybag *C.uchar, keybagSize C.size_t) C.int {
+	return bindDownloadLicense(handle, blob, size, keybag, keybagSize, nil, 0)
+}
+
+//export WaffleKBSyncBindLicense
+func WaffleKBSyncBindLicense(handle C.uint64_t, blob *C.uchar, size C.size_t, keybag *C.uchar, keybagSize C.size_t, diversity *C.uchar, diversitySize C.size_t) C.int {
+	return bindDownloadLicense(handle, blob, size, keybag, keybagSize, diversity, diversitySize)
+}
+
+func bindDownloadLicense(handle C.uint64_t, blob *C.uchar, size C.size_t, keybag *C.uchar, keybagSize C.size_t, diversity *C.uchar, diversitySize C.size_t) C.int {
 	mutex.Lock()
 	defer mutex.Unlock()
 	g := retainedSessions[uint64(handle)]
 	if g == nil {
 		return 7
 	}
-	if blob == nil || size == 0 || size > 1<<20 || keybag == nil || keybagSize == 0 || keybagSize > 16<<20 {
+	if blob == nil || size == 0 || size > 1<<20 || keybag == nil || keybagSize == 0 || keybagSize > 1<<20 || diversitySize > 1<<20 || (diversitySize != 0 && diversity == nil) {
 		return 1
 	}
 	candidate := C.GoBytes(unsafe.Pointer(blob), C.int(size))
@@ -121,7 +130,12 @@ func WaffleKBSyncBind(handle C.uint64_t, blob *C.uchar, size C.size_t, keybag *C
 		return 10
 	}
 	clear(g.keybag)
+	clear(g.diversity)
 	g.keybag = C.GoBytes(unsafe.Pointer(keybag), C.int(keybagSize))
+	g.diversity = nil
+	if diversitySize != 0 {
+		g.diversity = C.GoBytes(unsafe.Pointer(diversity), C.int(diversitySize))
+	}
 	// Binding is not consumption: no unverified guest entrypoint is invoked.
 	return 0
 }
@@ -137,6 +151,7 @@ func WaffleKBSyncClose(handle C.uint64_t) {
 	delete(retainedSessions, uint64(handle))
 	clear(g.blob)
 	clear(g.keybag)
+	clear(g.diversity)
 	clear(g.hardwareID)
 	clear(g.expectedDigests)
 	g.accountID = 0
@@ -154,17 +169,19 @@ func WaffleKBSyncConsume(handle C.uint64_t, output **C.uchar, length *C.size_t) 
 	if output == nil || length == nil || len(g.keybag) == 0 {
 		return 1
 	}
-	status, files, ioTrace, err := g.agent.ImportKeybag(g.keybag)
+	consumption, err := g.agent.ImportDownloadLicense(g.keybag, g.diversity)
+	status, files, ioTrace := consumption.Status, consumption.Files, consumption.Trace
 	// Keybags are single-use. Discard the retained copy immediately after the
 	// emulated call, not only when the whole download session is closed.
 	clear(g.keybag)
-	g.keybag = nil
+	clear(g.diversity)
+	g.keybag, g.diversity = nil, nil
 	saved, saveFailed := false, false
 	if err == nil && status == 0 && g.accountDirectory != "" {
 		saveErr := saveDownloadState(g.accountDirectory, g.accountID, g.hardwareID, g.expectedDigests, files)
 		saved, saveFailed = saveErr == nil, saveErr != nil
 	}
-	result := map[string]any{"consumer": "storeagent-10.9-import-keybag", "native_status": status, "emulator_completed": err == nil, "import_succeeded": err == nil && status == 0, "portable_model_ready": false, "account_state_restored": g.accountRestored, "account_state_saved": saved, "account_state_save_failed": saveFailed, "state_files": files, "virtual_io": ioTrace}
+	result := map[string]any{"keybag_native_status": consumption.KeybagStatus, "diversitybag_present": consumption.DiversityPresent, "diversitybag_native_status": consumption.DiversityStatus, "consumer": "storeagent-10.9-import-keybag", "native_status": status, "emulator_completed": err == nil, "import_succeeded": err == nil && status == 0, "portable_model_ready": false, "account_state_restored": g.accountRestored, "account_state_saved": saved, "account_state_save_failed": saveFailed, "state_files": files, "virtual_io": ioTrace}
 	defer func() {
 		for _, b := range files {
 			clear(b)

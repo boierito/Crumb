@@ -79,9 +79,10 @@ cp "$ROOT/MapleSyrup/NativeSAP/gueststate.go" "$SOURCE/internal/sap/machine/"
 python3 "$ROOT/scripts/prepare-retained-storeagent.py" "$SOURCE/internal/sap/machine"
 cp "$ROOT/MapleSyrup/NativeSAP/guestrestore.go" "$SOURCE/internal/sap/machine/"
 cp "$ROOT/MapleSyrup/NativeSAP/kbsyncretained.go" "$SOURCE/internal/sap/machine/"
+cp "$ROOT/MapleSyrup/NativeSAP/kbsynclicense.go" "$ROOT/MapleSyrup/NativeSAP/kbsynclicense_test.go" "$SOURCE/internal/sap/machine/"
 cp "$ROOT/MapleSyrup/NativeSAP/kbsyncbridge.go" "$SOURCE/wafflebridge/"
 cp "$ROOT/MapleSyrup/NativeSAP/gueststate_test.go" "$ROOT/MapleSyrup/NativeSAP/guestrestore_test.go" "$SOURCE/internal/sap/machine/"
-(cd "$SOURCE" && CGO_ENABLED=0 go test -run '^TestGuestState' ./internal/sap/machine)
+(cd "$SOURCE" && CGO_ENABLED=0 go test -run 'TestGuestState|TestDownloadLicense' ./internal/sap/machine)
 (cd "$SOURCE" && CGO_ENABLED=0 GOOS=ios GOARCH=arm64 go build ./wafflebridge/mobilelicense)
 SDK=$(xcrun --sdk iphoneos --show-sdk-path)
 CLANG=$(xcrun --sdk iphoneos --find clang)

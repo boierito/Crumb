@@ -89,12 +89,15 @@ class HeaderContracts(unittest.TestCase):
                 self.assertEqual((address, size), (0x1000 - 0x70, 16))
                 return material
             comparison.observe(MATERIAL_PC, registers, 0, read_material)
-            self.assertEqual(comparison.candidates[0], b'itun' + bytes(12))
+            self.assertEqual(comparison.candidates[0][:16], b'itun' + bytes(12))
+            self.assertEqual(len(comparison.candidates[0]), 432)
+            self.assertEqual(bytes(a ^ b for a, b in zip(comparison.candidates[0][24:40], bytes.fromhex('c7626110cecd15963d850f6605f11c4b'))), bytes.fromhex(vector['work']))
             registers[3], registers[4], registers[5], registers[26] = 1, 2, 3, 27
             encoded = bytes(x ^ 27 for x in comparison.candidates[0])
             comparison.observe(DECODE_PC, registers, 0, lambda address, size: encoded[address:address+size])
             report = comparison.report()
             self.assertEqual(report['comparisons'][0]['native_first_block_matches_candidates'], [True])
+            self.assertEqual(report['comparisons'][0]['native_work_buffer_matches_candidates'], [True])
             self.assertFalse(report['license_validated_by_comparison'])
             tested += 1
         self.assertGreaterEqual(tested, 4)
