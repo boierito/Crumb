@@ -101,3 +101,29 @@ the group name/path. Preparation/validation failures do not trigger relocation
 retries. This probes a distinct storage class, **not a demonstrated policy
 exception**. It may be refused by the same system policy, and would not provide
 universal support for ordinary installs without an authorized app group.
+
+## Matching iOS kernel follow-up
+
+The official iPhone17,1 iOS 27.0.1 IPSW is build **24A446**:
+`https://updates.cdn-apple.com/2026FallFCS/59ffd938-75b6-41e5-af04-f4295ee8aeb3/iPhone17,1_27.0.1_24A446_Restore.ipsw`.
+Its kernel reports `xnu-13432.2.10~2/RELEASE_ARM64_T8140`. Extracted FairPlayIOKit
+version: 72.19.0; SHA-256:
+`6bae7cc2a7e6808dcceefe1dabe16d97458d6431c0fdbb00e508357a92c482f1`.
+Unlike the earlier macOS input, this kernel is for the model/OS version identified
+by the supplied device log. The phone's exact installed build was not recorded
+in that log; the firmware catalog supplied the 27.0.1 build association.
+
+The three entitlement-name queries occur at `0xfffffff009bdf8c0` through
+`0xfffffff009bdf8f4`. Their absent-results branch at `0xfffffff009bdf8fc` through
+`0xfffffff009bdf914` selects the `entitlement not found` rejection. Entry inferred
+from the actual prologue and identical gate structure: `0xfffffff009bdf890`.
+The iOS binary is stripped; the entitlement-query call target has no exported
+symbol name. Do not present the macOS symbol name as a resolved iOS symbol.
+
+`scripts/audit-fairplay-ios-access.py --driver <extracted driver>` pins those exact
+bytes and replays the absent-entitlement branch in Unicorn. With only the three
+lookup results modeled as NULL and the logger mocked, the original 47 executed
+instructions return false, without patching a branch. This verifies the rejection
+control flow; it does not measure an iOS service, authenticate a license or prove
+all possible interfaces inaccessible. PAC stack instructions are explicitly
+modeled and are not a cryptographic authentication result.
