@@ -1,0 +1,129 @@
+{
+  "schema": "crumb-coreml-identity-audit-v1",
+  "build": "24A446",
+  "os": "27.0.1",
+  "service_sha256": "07b277507b80a27b3aeb5c954721f3223b657cd3c5b551e45fbb2f8d4afb4e5a",
+  "identity_helper": "0x100006c14",
+  "service_entitlements": {
+    "com.apple.private.fpsd.client": true,
+    "com.apple.private.coreml.decrypt_allowed": true,
+    "platform-application": true,
+    "fairplay-client": "703697"
+  },
+  "model_blob_contract": {
+    "static_producer_call_sites": [
+      {
+        "call_site": "0x100006990",
+        "selector": "generateKeyRequestForKeyIdentifier:teamIdentifier:error:"
+      },
+      {
+        "call_site": "0x1000069d8",
+        "selector": "fetchKeyResponseFromServerForKeyID:signedKeyRequest:error:"
+      },
+      {
+        "call_site": "0x100006a08",
+        "selector": "generatePersistentKeyBlobFromKeyResponse:error:"
+      }
+    ],
+    "static_request_field_call_sites": [
+      {
+        "call_site": "0x1000049dc",
+        "selector": "setKeyId:"
+      },
+      {
+        "call_site": "0x1000049e8",
+        "selector": "setSignedKeyRequest:"
+      },
+      {
+        "call_site": "0x100004a04",
+        "selector": "setTeamId:"
+      },
+      {
+        "call_site": "0x100004a14",
+        "selector": "setRawRequest:"
+      }
+    ],
+    "native_raw_request_flag": false,
+    "network_request_executed": false
+  },
+  "cases": [
+    {
+      "uses_code_signing_identity": false,
+      "modeled_identity_present": false,
+      "selected": "team_identifier",
+      "native_returned_identity": false,
+      "native_error_written": true,
+      "modeled_calls": [
+        "0x100008e80",
+        "0x100007eb4",
+        "0x100008820",
+        "0x100007eb4",
+        "0x100007e74",
+        "0x100008380",
+        "0x100007eb4",
+        "0x1000080c4",
+        "0x100007f24"
+      ],
+      "pac_stack_instructions_modeled": [
+        "0x100006c14",
+        "0x100006cf4"
+      ]
+    },
+    {
+      "uses_code_signing_identity": false,
+      "modeled_identity_present": true,
+      "selected": "team_identifier",
+      "native_returned_identity": true,
+      "native_error_written": false,
+      "modeled_calls": [
+        "0x100008e80",
+        "0x100007eb4"
+      ],
+      "pac_stack_instructions_modeled": [
+        "0x100006c14",
+        "0x100006cf4"
+      ]
+    },
+    {
+      "uses_code_signing_identity": true,
+      "modeled_identity_present": false,
+      "selected": "signing_identifier",
+      "native_returned_identity": false,
+      "native_error_written": true,
+      "modeled_calls": [
+        "0x1000082c0",
+        "0x100007eb4",
+        "0x100008820",
+        "0x100007eb4",
+        "0x100007e74",
+        "0x100008380",
+        "0x100007eb4",
+        "0x1000080c4",
+        "0x100007f24"
+      ],
+      "pac_stack_instructions_modeled": [
+        "0x100006c14",
+        "0x100006cf4"
+      ]
+    },
+    {
+      "uses_code_signing_identity": true,
+      "modeled_identity_present": true,
+      "selected": "signing_identifier",
+      "native_returned_identity": true,
+      "native_error_written": false,
+      "modeled_calls": [
+        "0x1000082c0",
+        "0x100007eb4"
+      ],
+      "pac_stack_instructions_modeled": [
+        "0x100006c14",
+        "0x100006cf4"
+      ]
+    }
+  ],
+  "evidence_scope": "original ARM64 control flow with modeled Objective-C/ARC calls",
+  "system_service_executed": false,
+  "license_conversion_verified": false,
+  "decryption_verified": false
+}
