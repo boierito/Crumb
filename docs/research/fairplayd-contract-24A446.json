@@ -1,0 +1,79 @@
+{
+  "client_operation_or_required_entitlement_identified": false,
+  "data_container_access_verified": false,
+  "device_firmware": "iPhone17,1",
+  "device_service_executed": false,
+  "direct_entitlement_import_calls": [
+    {
+      "address": "0x100001bb4",
+      "import": "SecTaskCreateWithAuditToken"
+    },
+    {
+      "address": "0x100001bc8",
+      "import": "SecTaskCopyValueForEntitlement"
+    },
+    {
+      "address": "0x100001d58",
+      "import": "SecTaskCreateWithAuditToken"
+    },
+    {
+      "address": "0x100001d6c",
+      "import": "SecTaskCopyValueForEntitlement"
+    }
+  ],
+  "embedded_xml_entitlements": {
+    "AvpFairPlayUserClient.access": true,
+    "adi-client": "315444076",
+    "application-identifier": "com.apple.fairplayd",
+    "com.apple.TapToRadarKit.service-access": true,
+    "com.apple.authkit.client.private": true,
+    "com.apple.private.FairPlayIOKitUserClient.access": true,
+    "com.apple.private.security.storage.fpsd": true,
+    "com.apple.rootless.storage.fpsd": true,
+    "com.apple.security.iokit-user-client-class": [
+      "com_apple_driver_FairPlayIOKitUserClient",
+      "AvpFairPlayUserClient"
+    ],
+    "com.apple.security.system-container": true,
+    "com.apple.timed": true,
+    "lskd-client": "1835739258"
+  },
+  "firmware_build": "24A446",
+  "focal_imports": {
+    "_SecTaskCopyValueForEntitlement": true,
+    "_SecTaskCreateWithAuditToken": true,
+    "_container_system_path_for_identifier": true,
+    "_fcntl": true,
+    "_fstat": true,
+    "_lstat": true,
+    "_open": true,
+    "_open_dprotected_np": true,
+    "_read": true,
+    "_sandbox_check": false,
+    "_sandbox_extension_consume": false
+  },
+  "group": "mobile",
+  "indirect_calls_resolved": false,
+  "inputs_sha256": {
+    "daemon": "94d32a82fdc2a80c46b7734b20895a935836a676a34b1c3e863cdb479a68cb01",
+    "launchd": "d5c584072e2a54214c7f7ca0c2ed3c78d3bd4d5c444949c97ccb1c17a1e765f9",
+    "profile": "5a2757015a13a923de2227277f44b2110c97a0f66924d11f79dd971bba225af9"
+  },
+  "mach_services": {
+    "com.apple.fairplayd": true,
+    "com.apple.fairplayd.versioned": true,
+    "com.apple.fairplayd.xpc": true,
+    "com.apple.unfreed": {
+      "HostSpecialPort": 17
+    }
+  },
+  "other_security_policy_layers_evaluated": false,
+  "profile_allow_default": true,
+  "profile_explicit_file_read_write_rules": [],
+  "profile_provenance": "ipsw v3.1.739 sb dec --type protobox fairplayd.H2 --inline",
+  "program": "/usr/sbin/fairplayd.H2",
+  "schema": "crumb-fairplayd-static-contract-v1",
+  "signature_cryptographically_verified_by_this_audit": false,
+  "sinf_validated": false,
+  "user": "mobile"
+}

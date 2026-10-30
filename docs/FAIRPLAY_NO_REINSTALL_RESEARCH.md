@@ -59,6 +59,12 @@ or zero-filled substitute is fabricated. Merely issuing a file-provider access
 permission to Crumb would not demonstrate that fairplayd consumes that permission;
 that consumer behavior must be established before claiming it solves the issue.
 
+Follow-up: [matching daemon and system-storage contracts](FAIRPLAY_SYSTEM_STORAGE_CONTRACT.md)
+records the original daemon's mobile/mobile launch identity, matching protobox
+profile, unresolved caller-entitlement helpers, and the limits of Background
+Assets and ODR as alternate storage mechanisms. These observations do not
+identify the cause of the phone's native remap error.
+
 ## Local verification with real DD data
 
 The new direct extractor retained all 57 original DD files byte-for-byte and
