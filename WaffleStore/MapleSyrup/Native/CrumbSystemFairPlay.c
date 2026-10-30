@@ -1,4 +1,8 @@
+#if defined(__APPLE__)
+#define _DARWIN_C_SOURCE 1
+#else
 #define _POSIX_C_SOURCE 200809L
+#endif
 #include "CrumbSystemFairPlay.h"
 #include <errno.h>
 #include <fcntl.h>
@@ -10,7 +14,6 @@
 #if defined(__APPLE__) && defined(__aarch64__)
 #include <dlfcn.h>
 #include <mach/mach.h>
-#include <mach/mach_vm.h>
 #include <sys/mman.h>
 
 static uint32_t little32(const unsigned char *p) {
@@ -61,7 +64,7 @@ int CrumbSystemDecryptRange(const char *source,const char *destination,
     uint64_t page = (uint64_t)page_value;
     if (!range.crypt_size || range.cpu_type!=0x100000c || range.slice_offset%page || range.crypt_offset%page ||
         range.crypt_offset>range.slice_size || range.crypt_size>range.slice_size-range.crypt_offset ||
-        range.slice_offset>INT64_MAX-range.slice_size || range.cryptid_field<range.slice_offset+48 ||
+        range.slice_size>INT64_MAX || range.slice_offset>INT64_MAX-range.slice_size || range.cryptid_field<range.slice_offset+48 ||
         range.cryptid_field>range.slice_offset+range.slice_size-4 || range.slice_size>SIZE_MAX-page) {
         result->remap_errno=EINVAL;return -1;
     }
@@ -92,9 +95,9 @@ int CrumbSystemDecryptRange(const char *source,const char *destination,
     if(!plain||!cipher){result->read_error=ENOMEM;goto done;}
     for(uint64_t offset=0;offset<range.crypt_size;offset+=page){
         size_t count=(size_t)(range.crypt_size-offset<page?range.crypt_size-offset:page);
-        mach_vm_size_t read=0;
-        kern_return_t kr=mach_vm_read_overwrite(mach_task_self(),(mach_vm_address_t)(mapping+range.crypt_offset+offset),
-                                               (mach_vm_size_t)count,(mach_vm_address_t)plain,&read);
+        vm_size_t read=0;
+        kern_return_t kr=vm_read_overwrite(mach_task_self(),(vm_address_t)(mapping+range.crypt_offset+offset),
+                                          (vm_size_t)count,(vm_address_t)plain,&read);
         if(kr!=KERN_SUCCESS||read!=count){result->read_error=kr==KERN_SUCCESS?EIO:kr;goto done;}
         result->pages_read++;
         if(transfer(input,cipher,count,range.slice_offset+range.crypt_offset+offset,0)){result->read_error=EIO;goto done;}
