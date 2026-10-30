@@ -86,6 +86,9 @@ final class OTAInstaller: ObservableObject {
 }
 struct SystemPackageInstallationView: View {
     let package: URL
+    var bundleID: String? = nil
+    var appName = "Crumb"
+    var version: String? = nil
     @StateObject private var installer = OTAInstaller()
     @Environment(\.dismiss) private var dismiss
     var body: some View {
@@ -94,12 +97,12 @@ struct SystemPackageInstallationView: View {
                 if let url = installer.pageURL { InstallationSafari(url: url) }
                 else { Text(installer.status.isEmpty ? "Preparing local installation…" : installer.status).padding() }
             }
-            .navigationTitle("Install prepared Crumb")
+            .navigationTitle("Install \(appName)")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { installer.stop(); dismiss() } } }
             .task {
                 do {
-                    try installer.start(source: package, bundleID: Bundle.main.bundleIdentifier ?? "",
-                        name: "Crumb", version: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "")
+                    try installer.start(source: package, bundleID: bundleID ?? Bundle.main.bundleIdentifier ?? "",
+                        name: appName, version: version ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "")
                 } catch { installer.status = "Could not start local installation. The signed package was retained." }
             }
             .onDisappear { installer.stop() }

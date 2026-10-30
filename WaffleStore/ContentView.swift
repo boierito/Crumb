@@ -5,6 +5,8 @@ import MapleSAP
 struct ContentView: View {
     @EnvironmentObject var appData: AppData
     @State private var confirmLogout = false
+    @StateObject private var systemSession = SystemFairPlaySession.shared
+    @State private var resumeDecryption = false
 
     var body: some View {
         TabView(selection: $appData.selectedTab) {
@@ -20,9 +22,16 @@ struct ContentView: View {
                 .tabItem { Label("Settings".localized, systemImage: "gearshape") }.tag(AppTab.settings)
         }
         .sheet(isPresented: $appData.showStoreVersions) { StoreVersionsView() }
+        .sheet(isPresented: $systemSession.showIdentity) { SigningIdentityView() }
+        .sheet(isPresented: $resumeDecryption) { SystemFairPlayView() }
         .sheet(item: $appData.downloadReady) { DownloadReadyView(record: $0) }
         .sheet(item: $appData.installationRequest) { OTAInstallationView(record: $0, startImmediately: true) }
-        .onAppear { appData.restoreStoreAccount(); appData.restoreDownloadedIPA() }
+        .onAppear {
+            appData.restoreStoreAccount(); appData.restoreDownloadedIPA()
+            let session = SystemFairPlaySession.shared
+            session.restore()
+            resumeDecryption = session.canResume
+        }
         .onChange(of: appData.isAuthenticated) { authenticated in
             if authenticated, appData.openVersionsAfterLogin {
                 appData.openVersionsAfterLogin = false

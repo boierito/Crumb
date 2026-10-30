@@ -428,3 +428,72 @@ func mustSystemSize(t *testing.T, f *os.File) int64 {
 	}
 	return s.Size()
 }
+
+func TestSystemDecryptedInstallPackagingRejectsReintroducedProtectionAndChangedResources(t *testing.T) {
+	root := t.TempDir()
+	_, plain := systemFixtureMachO(true, 0)
+	image, e := systemMachO(bytes.NewReader(plain), int64(len(plain)))
+	if e != nil {
+		t.Fatal(e)
+	}
+	cleaned, _ := systemRemoveSignatures(bytes.NewReader(plain), image)
+	body := make([]byte, len(plain))
+	if _, e = cleaned.ReadAt(body, 0); e != nil {
+		t.Fatal(e)
+	}
+	info, _ := plist.Marshal(Info{BundleID: "test.app", Version: "1", Build: "3", Executable: "Main"}, plist.BinaryFormat)
+	input := filepath.Join(root, "clean.ipa")
+	if e = systemZIP(input, func(z *zip.Writer) error {
+		for name, data := range map[string][]byte{"Info.plist": info, "Main": body, "resource.txt": []byte("unchanged resource")} {
+			if e := systemPut(z, "Payload/Target.app/"+name, 0600, bytes.NewReader(data)); e != nil {
+				return e
+			}
+		}
+		return nil
+	}); e != nil {
+		t.Fatal(e)
+	}
+	unpacked := filepath.Join(root, "unpacked")
+	folder, e := UnpackSystemExport(input, unpacked)
+	if e != nil || folder.BundleID != "test.app" || folder.Build != "3" {
+		t.Fatalf("bad identity: %+v %v", folder, e)
+	}
+	app := filepath.Join(unpacked, folder.BundlePath)
+	systemFixtureWrite(t, app, "embedded.mobileprovision", []byte("synthetic public signing profile"))
+	systemFixtureWrite(t, app, "_CodeSignature/CodeResources", []byte("synthetic signing resource"))
+	result, e := ArchiveSystemExport(unpacked, input, filepath.Join(root, "accepted.ipa"))
+	if e != nil || result["installation_verified"] != false {
+		t.Fatalf("archive %v %v", result, e)
+	}
+	for _, kind := range []string{"encrypted", "resource", "license", "added", "identity"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := filepath.Join(root, kind)
+			f, e := UnpackSystemExport(input, dir)
+			if e != nil {
+				t.Fatal(e)
+			}
+			a := filepath.Join(dir, f.BundlePath)
+			switch kind {
+			case "encrypted":
+				cipher, _ := systemFixtureMachO(true, 0)
+				systemFixtureWrite(t, a, "Main", cipher)
+			case "resource":
+				systemFixtureWrite(t, a, "resource.txt", []byte("changed"))
+			case "license":
+				systemFixtureWrite(t, a, "SC_Info/Main.sinf", []byte("reintroduced secret"))
+			case "added":
+				systemFixtureWrite(t, a, "new.bin", []byte("unexpected"))
+			case "identity":
+				data, _ := plist.Marshal(Info{BundleID: "another.app", Executable: "Main"}, plist.BinaryFormat)
+				systemFixtureWrite(t, a, "Info.plist", data)
+			}
+			out := filepath.Join(root, "rejected-"+kind+".ipa")
+			if _, e = ArchiveSystemExport(dir, input, out); e == nil {
+				t.Fatal("invalid installation copy accepted")
+			}
+			if _, e = os.Stat(out); !os.IsNotExist(e) {
+				t.Fatal("partial output retained")
+			}
+		})
+	}
+}

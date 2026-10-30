@@ -4,28 +4,31 @@ struct DownloadReadyView: View {
     let record: DownloadRecord
     @Environment(\.dismiss) private var dismiss
     @State private var install = false
+    @State private var decryption: DownloadDecryptionAction?
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Download ready") {
-                    Text(record.appName).font(.headline)
-                    Text("Version \(record.version)")
-                    if let build = record.build { Text("Build \(build)") }
-                    Text(record.bundleID).font(.caption).foregroundStyle(.secondary)
+            List {
+                Section {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("Saved on your iPhone", systemImage: "checkmark.circle.fill")
+                            .font(.caption.weight(.semibold)).foregroundStyle(.green)
+                        Text(record.appName).font(.system(.title2, design: .rounded, weight: .bold))
+                        Text("Version \(record.version)\(record.build.map { " · Build " + $0 } ?? "")")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }.padding(.vertical, 12)
                 }
                 Section {
-                    Button { install = true } label: { Label("Install now", systemImage: "arrow.down.app") }
-                    if let url = record.fileURL {
-                        ShareLink(item: url) { Label("Export IPA", systemImage: "square.and.arrow.up") }
-                    }
+                    DownloadActions(record: record, install: { install = true }, decrypt: {
+                        decryption = DownloadDecryptionAction(record: record, install: $0)
+                    })
                 } footer: {
-                    Text("The IPA is saved in Downloaded apps. iOS will ask you to confirm installation.")
+                    Text("Your original IPA stays in Downloads. Decryption uses this iPhone’s FairPlay and requires a signed Crumb update. Installation requires a compatible certificate and profile.")
                 }
             }
-            .navigationTitle("Download complete")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
+            .navigationTitle("Choose what’s next").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
             .sheet(isPresented: $install) { OTAInstallationView(record: record, startImmediately: true) }
+            .sheet(item: $decryption) { SystemFairPlayView(record: $0.record, startAction: $0) }
         }
     }
 }

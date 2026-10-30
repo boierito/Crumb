@@ -7,7 +7,7 @@ struct DownloadedAppsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var decryption: DownloadRecord?
-    @State private var systemDecryption: DownloadRecord?
+    @State private var systemDecryption: DownloadDecryptionAction?
     @State private var installation: DownloadRecord?
     @State private var deletion: DownloadRecord?
     @State private var confirmDeleteAll = false
@@ -66,12 +66,14 @@ struct DownloadedAppsView: View {
                             }
                             Spacer(minLength: 0)
                             Menu {
-                                Button { systemDecryption = record } label: {
+                                Button { systemDecryption = DownloadDecryptionAction(record: record, install: false) } label: {
                                     Label("Decrypt with iPhone FairPlay…", systemImage: "iphone")
                                 }
+                                #if DEBUG
                                 Button { decryption = record } label: {
                                     Label("FairPlay Laboratory…", systemImage: "lock.open")
                                 }
+                                #endif
 
                                 Button(role: .destructive) { requestDeletion(record) } label: {
                                     Label("Delete IPA", systemImage: "trash")
@@ -82,13 +84,9 @@ struct DownloadedAppsView: View {
                             .buttonStyle(.borderless)
                             .accessibilityLabel("Options for \(record.appName), version \(record.version)")
                         }
-                        HStack(spacing: 10) {
-                            Button { installation = record } label: { Label("Install", systemImage: "arrow.down.app") }
-                            if let url = record.fileURL {
-                                ShareLink(item: url) { Label("Export", systemImage: "square.and.arrow.up") }
-                            }
-                        }
-                        .buttonStyle(TranslucentButtonStyle())
+                        DownloadActions(record: record, install: { installation = record }, decrypt: {
+                            systemDecryption = DownloadDecryptionAction(record: record, install: $0)
+                        })
                         DisclosureGroup("Details") {
                             if let build = record.build { Text("Build \(build)").font(.caption) }
                             Text(record.bundleID).font(.caption).textSelection(.enabled)
@@ -123,7 +121,7 @@ struct DownloadedAppsView: View {
                 if !embedded { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
             }
             .sheet(item: $decryption) { FairPlayLabView(record: $0) }
-            .sheet(item: $systemDecryption) { SystemFairPlayView(record: $0) }
+            .sheet(item: $systemDecryption) { SystemFairPlayView(record: $0.record, startAction: $0) }
             .sheet(item: $installation) { OTAInstallationView(record: $0, startImmediately: true) }
             .alert("Delete downloaded IPA?", isPresented: $confirmDeletion) {
                 if let record = deletion {

@@ -31,6 +31,9 @@ with zipfile.ZipFile(ipa) as archive:
     assert not any(n.endswith("embedded.mobileprovision") for n in archive.namelist()), "IPA must be resignable"
     assert not any("/CrumbSystemPayload/" in n or "/EmbeddedPayload/" in n for n in archive.namelist()), "Public IPA includes a private target"
     assert not any(n.lower().endswith((".p12", ".sinf", ".sidb", ".sidd")) for n in archive.namelist()), "Public IPA contains private identity/license files"
+    compatibility = archive.read(root + "Frameworks/FilePickerFix.dylib")
+    assert hashlib.sha256(compatibility).hexdigest() == "4af2e076f2377ed64ddabe9f2dce32edca3d43db624b4707214fc0f1dd71d6eb", "Unexpected file-picker compatibility binary"
+    assert struct.unpack("<II", compatibility[:8]) == (0xFEEDFACF, 0x0100000C), "FilePickerFix must be arm64"
     notices = [n for n in archive.namelist() if n.endswith(("ThirdPartyNotices.txt", "UNICORN-COPYING", "GoThirdPartyNotices.txt"))]
     assert len(notices) == 3, "Linked code license notices missing"
     assert b"MIT License" in archive.read(root + "ThirdPartyNotices.txt"), "ipatool MIT notice missing"

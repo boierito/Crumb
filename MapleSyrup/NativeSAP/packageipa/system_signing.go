@@ -16,9 +16,20 @@ import (
 
 type SystemSigningFolder struct {
 	BundlePath string `json:"bundle_path"`
+	BundleID   string `json:"bundle_id"`
+	Version    string `json:"version"`
+	Build      string `json:"build"`
 }
 
 func UnpackSystemSigning(source, destination string) (result SystemSigningFolder, err error) {
+	return unpackSigning(source, destination, true)
+}
+
+func UnpackSystemExport(source, destination string) (SystemSigningFolder, error) {
+	return unpackSigning(source, destination, false)
+}
+
+func unpackSigning(source, destination string, prepared bool) (result SystemSigningFolder, err error) {
 	z, err := zip.OpenReader(source)
 	if err != nil {
 		return result, err
@@ -28,18 +39,37 @@ func UnpackSystemSigning(source, destination string) (result SystemSigningFolder
 	if err != nil {
 		return result, err
 	}
-	manifest := files[root+SystemPayload+"/job.json"]
-	if manifest == nil {
-		return result, errors.New("prepared job is missing")
+	if prepared {
+		manifest := files[root+SystemPayload+"/job.json"]
+		if manifest == nil {
+			return result, errors.New("prepared job is missing")
+		}
+		data, e := readSmall(manifest)
+		if e != nil {
+			return result, e
+		}
+		var job SystemJob
+		if json.Unmarshal(data, &job) != nil || job.Schema != "crumb-system-fairplay-job-v1" {
+			return result, errors.New("invalid prepared job")
+		}
+	} else {
+		for name := range files {
+			if strings.Contains(name, "/"+SystemPayload+"/") {
+				return result, errors.New("private helper is not a decrypted export")
+			}
+		}
 	}
-	data, err := readSmall(manifest)
-	if err != nil {
-		return result, err
+	data, e := readSmall(files[root+"Info.plist"])
+	if e != nil {
+		return result, e
 	}
-	var job SystemJob
-	if json.Unmarshal(data, &job) != nil || job.Schema != "crumb-system-fairplay-job-v1" {
-		return result, errors.New("invalid prepared job")
+	var app Info
+	if _, e = plist.Unmarshal(data, &app); e != nil || app.BundleID == "" {
+		return result, errors.New("missing signing identity")
 	}
+	result.BundleID = app.BundleID
+	result.Version = app.Version
+	result.Build = app.Build
 	if err = os.Mkdir(destination, 0700); err != nil {
 		return result, err
 	}
@@ -73,6 +103,12 @@ func UnpackSystemSigning(source, destination string) (result SystemSigningFolder
 		}
 		if closeErr != nil {
 			return result, closeErr
+		}
+	}
+	if !prepared {
+		e = validatePlaintextTree(filepath.Join(destination, filepath.FromSlash(root)), false)
+		if e != nil {
+			return result, e
 		}
 	}
 	result.BundlePath = strings.TrimSuffix(root, "/")

@@ -46,6 +46,8 @@ jobs:
         with:
           path: build/Native
           key: crumb-native-macos15-xcode26-go125-${{ hashFiles('scripts/*.sh', 'scripts/*.py', 'scripts/system-signing/**', 'MapleSyrup/NativeSAP/**/*.go', 'third_party/archives/*.tar.gz', 'third_party/unfairplay-generic/**', 'third_party/fairplay-immutable-image/**') }}
+          restore-keys: |
+            crumb-native-macos15-xcode26-go125-
       - name: Build and verify native library fingerprint
         run: bash scripts/ensure-native.sh
       - name: Share compiled native libraries across configurations

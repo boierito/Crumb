@@ -10,6 +10,7 @@ struct SettingsView: View {
     @AppStorage("autoCleanApp") var autoCleanApp: Bool = true
     @State private var fairPlayLab = false
     @State private var systemFairPlay = false
+    @State private var signingIdentity = false
     @StateObject private var localizationManager = LocalizationManager.shared
     
     private var appVersionString: String {
@@ -21,8 +22,13 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
+                Section("IPAs & signing") {
+                    Button { signingIdentity = true } label: { Label("Signing identity", systemImage: "signature") }
+                    Button { systemFairPlay = true } label: { Label("Continue decryption", systemImage: "lock.open") }
+                }
+                #if DEBUG
                 Section { Button("FairPlay Laboratory") { fairPlayLab = true } }
-                Section { Button("FairPlay on iPhone") { systemFairPlay = true } }
+                #endif
                 Section(header: HeaderLabel(text: "About".localized, icon: "info.circle")) {
                     VStack(alignment: .leading, spacing: 10) {
                         AppInfoCell()
@@ -78,6 +84,7 @@ struct SettingsView: View {
                 }
             }
             .sheet(isPresented: $fairPlayLab) { FairPlayLabView() }
+            .sheet(isPresented: $signingIdentity) { SigningIdentityView() }
             .sheet(isPresented: $systemFairPlay) { SystemFairPlayView() }
             .navigationTitle("Settings".localized)
             .toolbar {
