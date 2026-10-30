@@ -17,6 +17,17 @@
 #include <mach/mach.h>
 #include <sys/mman.h>
 
+// Read only entitlements already granted to THIS process by iOS. This never
+// fabricates a group identifier or asks for another application's container.
+static CFTypeRef self_entitlement(CFStringRef name) {
+    typedef CFTypeRef (*CreateTask)(CFAllocatorRef);
+    typedef CFTypeRef (*ReadEntitlement)(CFTypeRef,CFStringRef,CFErrorRef*);
+    CreateTask create=(CreateTask)dlsym(RTLD_DEFAULT,"SecTaskCreateFromSelf");
+    ReadEntitlement read=(ReadEntitlement)dlsym(RTLD_DEFAULT,"SecTaskCopyValueForEntitlement");
+    if (!create || !read) return NULL;
+    CFTypeRef task=create(kCFAllocatorDefault);if(!task)return NULL;
+    CFTypeRef result=read(task,name,NULL);CFRelease(task);return result;
+}
 static uint32_t little32(const unsigned char *p) {
     return (uint32_t)p[0] | (uint32_t)p[1]<<8 | (uint32_t)p[2]<<16 | (uint32_t)p[3]<<24;
 }
@@ -53,18 +64,29 @@ int CrumbCurrentSigningTeam(char *output,size_t length) {
     if (!output || length<2) return -1;
     output[0]=0;
 #if defined(__APPLE__) && defined(__aarch64__)
-    typedef CFTypeRef (*CreateTask)(CFAllocatorRef);
-    typedef CFTypeRef (*ReadEntitlement)(CFTypeRef,CFStringRef,CFErrorRef*);
-    CreateTask create=(CreateTask)dlsym(RTLD_DEFAULT,"SecTaskCreateFromSelf");
-    ReadEntitlement read=(ReadEntitlement)dlsym(RTLD_DEFAULT,"SecTaskCopyValueForEntitlement");
-    if (!create || !read) return -1;
-    CFTypeRef task=create(kCFAllocatorDefault);if(!task)return -1;
-    CFTypeRef team=read(task,CFSTR("com.apple.developer.team-identifier"),NULL);
-    CFRelease(task);if(!team)return -1;
+    CFTypeRef team=self_entitlement(CFSTR("com.apple.developer.team-identifier"));
+    if(!team)return -1;
     int ok=CFGetTypeID(team)==CFStringGetTypeID()&&CFStringGetCString((CFStringRef)team,output,(CFIndex)length,kCFStringEncodingUTF8);
     CFRelease(team);return ok&&output[0]?0:-1;
 #else
     return -1;
+#endif
+}
+
+int CrumbCurrentAppGroup(size_t index,char *output,size_t length) {
+    if (!output || length<2 || index>=32) return -1;
+    output[0]=0;
+#if defined(__APPLE__) && defined(__aarch64__)
+    CFTypeRef groups=self_entitlement(CFSTR("com.apple.security.application-groups"));
+    if(!groups)return 1;
+    if(CFGetTypeID(groups)!=CFArrayGetTypeID()){CFRelease(groups);return -1;}
+    if(index>=(size_t)CFArrayGetCount((CFArrayRef)groups)){CFRelease(groups);return 1;}
+    CFTypeRef group=CFArrayGetValueAtIndex((CFArrayRef)groups,(CFIndex)index);
+    int ok=group && CFGetTypeID(group)==CFStringGetTypeID() &&
+           CFStringGetCString((CFStringRef)group,output,(CFIndex)length,kCFStringEncodingUTF8);
+    CFRelease(groups);return ok&&output[0]?0:-1;
+#else
+    (void)index;return 1;
 #endif
 }
 

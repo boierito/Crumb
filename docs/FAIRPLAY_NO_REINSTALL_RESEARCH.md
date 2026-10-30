@@ -80,3 +80,24 @@ remaining unknown is the actual native service result for the local source on
 that iPhone, or a verified alternative interface that legitimately accepts the
 license. Until one succeeds, this route is not presented as a working generic
 one-tap decryptor and no new IPA is offered as a solution to that limitation.
+
+## Authorized shared-container hypothesis
+
+The direct route can also try an **already granted dedicated Crumb** app-group container
+after a native failure from the ordinary data container. The actual own-process
+`com.apple.security.application-groups` entitlement is read with SecTask, and
+Foundation must return the corresponding container URL. The only eligible namespace is `group.<current Crumb bundle ID>.fairplay`;
+general-purpose sideloader groups are never used for private licenses. The
+identifier must be present in the actual entitlement and Foundation must grant
+access; a matching spelling alone grants nothing. No guessed accessible path,
+modified profile, other app's container, global temporary path or fabricated
+entitlement is accepted. With no actual authorized groups this route is skipped.
+
+Each shared attempt uses a fresh UUID-named, protected, backup-excluded directory
+and the same untouched target, native reader and export validator. It never
+mixes pages from different attempts. Its own directory is removed afterward;
+other group files are untouched. Results identify only the storage class, never
+the group name/path. Preparation/validation failures do not trigger relocation
+retries. This probes a distinct storage class, **not a demonstrated policy
+exception**. It may be refused by the same system policy, and would not provide
+universal support for ordinary installs without an authorized app group.

@@ -23,6 +23,60 @@ nonisolated private struct SystemNativePlan: Decodable {
     let encryptedSlices: Int
 }
 
+nonisolated private enum SystemNativeProcessor {
+    static func process(source: URL, directory: URL, destination: URL, identifiers: [String], route: String) throws -> String {
+        let nativeDirectory = directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FairPlayNative.privateDirectory(nativeDirectory)
+        defer { try? FileManager.default.removeItem(at: nativeDirectory) }
+        let planText = try FairPlayNative.run("plan-system-target", source: source)
+        let decoder = JSONDecoder(); decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let envelope = try decoder.decode(SystemEnvelope<SystemNativePlan>.self, from: Data(planText.utf8))
+        guard envelope.ok, let plan = envelope.result,
+              plan.schema == "crumb-system-fairplay-native-plan-v1", plan.encryptedSlices > 0 else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        for file in plan.files {
+            let original = source.appendingPathComponent(file.relativePath)
+            let candidate = nativeDirectory.appendingPathComponent(file.relativePath)
+            try FairPlayNative.privateDirectory(candidate.deletingLastPathComponent())
+            try FileManager.default.copyItem(at: original, to: candidate)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600,
+                .protectionKey: FileProtectionType.complete], ofItemAtPath: candidate.path)
+            for range in file.ranges {
+                let request = CrumbSystemRange(slice_offset: range.sliceOffset, slice_size: range.sliceSize,
+                    crypt_offset: range.cryptOffset, crypt_size: range.cryptSize, cryptid_field: range.cryptidField,
+                    cpu_type: range.cpuType, cpu_subtype: range.cpuSubtype)
+                var result = CrumbSystemRangeResult()
+                let code = original.path.withCString { input in
+                    candidate.path.withCString { output in CrumbSystemDecryptRange(input, output, request, &result) }
+                }
+                guard code == 0, result.remap_result == 0, result.pages_total > 0,
+                      result.pages_read == result.pages_total, result.pages_changed == result.pages_total else {
+                    throw NSError(domain: "Crumb.SystemFairPlay", code: Int(result.remap_errno != 0 ? result.remap_errno : result.read_error), userInfo: [
+                        "native_remap_return": result.remap_result, "native_remap_errno": result.remap_errno,
+                        "native_read_error": result.read_error, "pages_total": result.pages_total,
+                        "pages_read": result.pages_read, "pages_changed": result.pages_changed])
+                }
+            }
+        }
+        let export = try FairPlayNative.run("export-system-result", source: source, destination: destination,
+            model: nativeDirectory, privateIdentifiers: identifiers)
+        guard var outputEnvelope = try JSONSerialization.jsonObject(with: Data(export.utf8)) as? [String: Any],
+              outputEnvelope["ok"] as? Bool == true else { throw CocoaError(.fileReadCorruptFile) }
+        outputEnvelope["native_route"] = route
+        return String(decoding: try JSONSerialization.data(withJSONObject: outputEnvelope, options: [.sortedKeys, .prettyPrinted]), as: UTF8.self)
+    }
+    static func safeFailure(_ error: Error, route: String) -> [String: Any] {
+        let native = error as NSError
+        var result: [String: Any] = ["route": route, "code": native.code,
+            "stage": native.domain == "Crumb.SystemFairPlay" ? "native_pages" : "preparation_or_validation"]
+        for key in ["native_remap_return", "native_remap_errno", "native_read_error", "pages_total", "pages_read", "pages_changed"] {
+            if let count = native.userInfo[key] as? NSNumber { result[key] = count }
+        }
+        return result
+    }
+}
+
 @MainActor
 final class SystemFairPlaySession: ObservableObject {
     static let shared = SystemFairPlaySession()
@@ -348,15 +402,46 @@ final class SystemFairPlaySession: ObservableObject {
             }
         }
     }
+    private func makeSharedWorkspaces() -> [URL] {
+        var result = [URL](), seen = Set<String>()
+        for index in 0..<32 {
+            var buffer = [CChar](repeating: 0, count: 1024)
+            let status = CrumbCurrentAppGroup(index, &buffer, 1024)
+            if status == 1 { break }; if status != 0 { continue }
+            let group = String(cString: buffer)
+            // Do not stage private licenses in a signer's general-purpose group.
+            // Only a dedicated Crumb namespace is eligible, and iOS must have
+            // actually granted it; no entitlement is added or forged here.
+            guard group == "group." + currentBundleID + ".fairplay" else { continue }
+            guard let root = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group),
+                  seen.insert(root.standardizedFileURL.path).inserted else { continue }
+            let directory = root.appendingPathComponent("Crumb-FairPlay-" + UUID().uuidString, isDirectory: true)
+            var created = false
+            do {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false,
+                    attributes: [.posixPermissions: 0o700, .protectionKey: FileProtectionType.complete])
+                created = true
+                var values = URLResourceValues(); values.isExcludedFromBackup = true
+                var protected = directory; try protected.setResourceValues(values)
+                result.append(directory)
+                if result.count == 2 { break }
+            } catch { if created { try? FileManager.default.removeItem(at: directory) } }
+        }
+        return result
+    }
     func decrypt(identifiers: [String], localIPA: URL? = nil, description: String? = nil) {
         guard !busy, localIPA != nil || installedTarget != nil else { return }
         let bundledTarget = installedTarget
         let label = description ?? installedDescription
+        let sharedWorkspaces = localIPA == nil ? [] : makeSharedWorkspaces()
         busy = true; readyToSignOutput = false; phase = "processing"; try? save()
         message = "Reading all protected pages through this iPhone's FairPlay…"
         Task {
             var signNext = false
-            defer { busy = false; if signNext { signExport() } }
+            defer {
+                for group in sharedWorkspaces { try? FileManager.default.removeItem(at: group) }
+                busy = false; if signNext { signExport() }
+            }
             do {
                 let directory = try workspace()
                 let destination = directory.appendingPathComponent("App-Unsigned.ipa")
@@ -377,42 +462,23 @@ final class SystemFairPlaySession: ObservableObject {
                         source = extracted
                     } else if let bundledTarget { source = bundledTarget }
                     else { throw CocoaError(.fileNoSuchFile) }
-                    let nativeDirectory = directory.appendingPathComponent("native", isDirectory: true)
-                    try FairPlayNative.privateDirectory(nativeDirectory)
-                    defer { try? FileManager.default.removeItem(at: nativeDirectory) }
-                    let planText = try FairPlayNative.run("plan-system-target", source: source)
-                    let decoder = JSONDecoder(); decoder.keyDecodingStrategy = .convertFromSnakeCase
-                    let envelope = try decoder.decode(SystemEnvelope<SystemNativePlan>.self, from: Data(planText.utf8))
-                    guard envelope.ok, let plan = envelope.result,
-                          plan.schema == "crumb-system-fairplay-native-plan-v1", plan.encryptedSlices > 0 else {
-                        throw CocoaError(.fileReadCorruptFile)
+                    var attempts = [[String: Any]]()
+                    do { return try SystemNativeProcessor.process(source: source, directory: directory, destination: destination, identifiers: identifiers,
+                        route: localIPA == nil ? "installed_resource" : "data_container") }
+                    catch {
+                        guard (error as NSError).domain == "Crumb.SystemFairPlay" else { throw error }
+                        attempts.append(SystemNativeProcessor.safeFailure(error, route: localIPA == nil ? "installed_resource" : "data_container")) }
+                    // A legitimate shared container is a distinct storage class
+                    // from the normal data container. Its accessibility to
+                    // fairplayd is UNVERIFIED, not assumed from our own access.
+                    for group in sharedWorkspaces {
+                        do {
+                            let sharedTarget = group.appendingPathComponent("Target.app", isDirectory: true)
+                            try FileManager.default.copyItem(at: source, to: sharedTarget)
+                            return try SystemNativeProcessor.process(source: sharedTarget, directory: directory, destination: destination, identifiers: identifiers, route: "authorized_app_group")
+                        } catch { attempts.append(SystemNativeProcessor.safeFailure(error, route: "authorized_app_group")) }
                     }
-                    for file in plan.files {
-                        let original = source.appendingPathComponent(file.relativePath)
-                        let candidate = nativeDirectory.appendingPathComponent(file.relativePath)
-                        try FairPlayNative.privateDirectory(candidate.deletingLastPathComponent())
-                        try FileManager.default.copyItem(at: original, to: candidate)
-                        try FileManager.default.setAttributes([.posixPermissions: 0o600,
-                            .protectionKey: FileProtectionType.complete], ofItemAtPath: candidate.path)
-                        for range in file.ranges {
-                            let request = CrumbSystemRange(slice_offset: range.sliceOffset, slice_size: range.sliceSize,
-                                crypt_offset: range.cryptOffset, crypt_size: range.cryptSize, cryptid_field: range.cryptidField,
-                                cpu_type: range.cpuType, cpu_subtype: range.cpuSubtype)
-                            var result = CrumbSystemRangeResult()
-                            let code = original.path.withCString { input in
-                                candidate.path.withCString { output in CrumbSystemDecryptRange(input, output, request, &result) }
-                            }
-                            guard code == 0, result.remap_result == 0, result.pages_total > 0,
-                                  result.pages_read == result.pages_total, result.pages_changed == result.pages_total else {
-                                throw NSError(domain: "Crumb.SystemFairPlay", code: Int(result.remap_errno != 0 ? result.remap_errno : result.read_error), userInfo: [
-                                    "native_remap_return": result.remap_result, "native_remap_errno": result.remap_errno,
-                                    "native_read_error": result.read_error, "pages_total": result.pages_total,
-                                    "pages_read": result.pages_read, "pages_changed": result.pages_changed])
-                            }
-                        }
-                    }
-                    return try FairPlayNative.run("export-system-result", source: source, destination: destination,
-                        model: nativeDirectory, privateIdentifiers: identifiers)
+                    throw NSError(domain: "Crumb.SystemLocations", code: 1, userInfo: ["attempts": attempts])
                 }.value
                 let object = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any]
                 guard object?["ok"] as? Bool == true else { throw CocoaError(.fileReadCorruptFile) }
@@ -432,6 +498,7 @@ final class SystemFairPlaySession: ObservableObject {
                     "route": localIPA == nil ? "installed_resource" : "data_container", "code": native.code,
                     "stage": native.domain == "Crumb.SystemFairPlay" ? "native_pages" : "preparation_or_validation",
                     "signing_requested": false, "installation_requested": false]
+                if let attempts = native.userInfo["attempts"] as? [[String: Any]] { failure["attempts"] = attempts }
                 for key in ["native_remap_return", "native_remap_errno", "native_read_error", "pages_total", "pages_read", "pages_changed"] {
                     if let count = native.userInfo[key] as? NSNumber { failure[key] = count }
                 }
