@@ -131,6 +131,7 @@ final class SystemFairPlaySession: ObservableObject {
             pendingJobID = ""; report = ""; reportFile = nil; phase = "idle"
             try? save()
         }
+        if record != nil && output != nil && phase == "exported" { return false }
         let boundInstalledJob = !pendingJobID.isEmpty && pendingJobID == (installedIdentity?["job_id"] as? String)
         if boundInstalledJob && matchesInstalledTarget(record) && installedTarget != nil {
             if output == nil { decrypt(identifiers: identifiers) }
@@ -322,6 +323,7 @@ final class SystemFairPlaySession: ObservableObject {
     }
     func restore(restoringPackages: Bool = true) {
         guard !busy, let root = try? storage() else { return }
+        retireSharedStaging()
         if let directory = try? signingStorage() {
             hasCertificate = FileManager.default.fileExists(atPath: directory.appendingPathComponent("Identity.p12").path)
             hasProfile = FileManager.default.fileExists(atPath: directory.appendingPathComponent("Profile.mobileprovision").path)
@@ -402,6 +404,24 @@ final class SystemFairPlaySession: ObservableObject {
             }
         }
     }
+    // Keep cleanup ownership in private app storage BEFORE copying a license
+    // into a dedicated shared container. A kill/relaunch can then retire it.
+    private func retireSharedStaging() {
+        guard let ledger = try? storage().appendingPathComponent("shared-staging.json"),
+              let data = try? Data(contentsOf: ledger), data.count < 32768,
+              let names = try? JSONDecoder().decode([String].self, from: data), names.count <= 16,
+              let root = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group." + currentBundleID + ".fairplay") else { return }
+        var retained = [String]()
+        for name in names {
+            guard name.hasPrefix("Crumb-FairPlay-"), UUID(uuidString: String(name.dropFirst(15))) != nil,
+                  name == URL(fileURLWithPath: name).lastPathComponent else { continue }
+            let directory = root.appendingPathComponent(name, isDirectory: true)
+            do {
+                if FileManager.default.fileExists(atPath: directory.path) { try FileManager.default.removeItem(at: directory) }
+            } catch { retained.append(name) }
+        }
+        if let data = try? JSONEncoder().encode(retained) { try? FairPlayNative.privateWrite(data, to: ledger) }
+    }
     private func makeSharedWorkspaces() -> [URL] {
         var result = [URL](), seen = Set<String>()
         for index in 0..<32 {
@@ -423,6 +443,10 @@ final class SystemFairPlaySession: ObservableObject {
                 created = true
                 var values = URLResourceValues(); values.isExcludedFromBackup = true
                 var protected = directory; try protected.setResourceValues(values)
+                let ledger = try storage().appendingPathComponent("shared-staging.json")
+                let prior = (try? Data(contentsOf: ledger)).flatMap { try? JSONDecoder().decode([String].self, from: $0) } ?? []
+                guard prior.count < 16 else { throw CocoaError(.fileWriteOutOfSpace) }
+                try FairPlayNative.privateWrite(JSONEncoder().encode(prior + [directory.lastPathComponent]), to: ledger)
                 result.append(directory)
                 if result.count == 2 { break }
             } catch { if created { try? FileManager.default.removeItem(at: directory) } }
@@ -439,7 +463,7 @@ final class SystemFairPlaySession: ObservableObject {
         Task {
             var signNext = false
             defer {
-                for group in sharedWorkspaces { try? FileManager.default.removeItem(at: group) }
+                retireSharedStaging()
                 busy = false; if signNext { signExport() }
             }
             do {
@@ -497,7 +521,8 @@ final class SystemFairPlaySession: ObservableObject {
                 var failure: [String: Any] = ["schema": "crumb-system-attempt-v1", "ok": false,
                     "route": localIPA == nil ? "installed_resource" : "data_container", "code": native.code,
                     "stage": native.domain == "Crumb.SystemFairPlay" ? "native_pages" : "preparation_or_validation",
-                    "signing_requested": false, "installation_requested": false]
+                    "signing_requested": false, "installation_requested": false,
+                    "authorized_shared_locations": sharedWorkspaces.count]
                 if let attempts = native.userInfo["attempts"] as? [[String: Any]] { failure["attempts"] = attempts }
                 for key in ["native_remap_return", "native_remap_errno", "native_read_error", "pages_total", "pages_read", "pages_changed"] {
                     if let count = native.userInfo[key] as? NSNumber { failure[key] = count }
@@ -600,7 +625,9 @@ struct SystemFairPlayView: View {
                 } else if !session.failureMessage.isEmpty {
                     Text(session.failureMessage).multilineTextAlignment(.center).foregroundStyle(.secondary)
                     Button("Try again", action: proceed).buttonStyle(.borderedProminent)
-
+                    if !session.report.isEmpty {
+                        ShareLink(item: session.report) { Label("Share error details", systemImage: "square.and.arrow.up") }
+                    }
                 } else {
                     Text("Crumb will process the app and check the result before saving it.")
                         .multilineTextAlignment(.center).foregroundStyle(.secondary)

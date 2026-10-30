@@ -127,3 +127,10 @@ instructions return false, without patching a branch. This verifies the rejectio
 control flow; it does not measure an iOS service, authenticate a license or prove
 all possible interfaces inaccessible. PAC stack instructions are explicitly
 modeled and are not a cryptographic authentication result.
+
+A private cleanup ledger is written before any license is copied into the
+dedicated shared directory. Completion removes it; restart also reaps only
+UUID-named directories recorded in that private ledger. Unrelated shared-group
+files are not enumerated or removed. A failed-attempt screen offers one ordinary
+Share error details action containing the safe numeric report; there is no
+debug-configuration menu or automatic transmission.
