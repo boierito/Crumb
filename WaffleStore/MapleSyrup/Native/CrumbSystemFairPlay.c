@@ -129,8 +129,10 @@ int CrumbSystemDecryptRange(const char *source,const char *destination,
         result->remap_errno=EINVAL;goto done;
     }
     mapped_size=(size_t)(range.crypt_offset+range.crypt_size+page-1)/page*(size_t)page;
+    result->mapping_attempted=1;
     mapping=mmap(NULL,mapped_size,PROT_READ,MAP_PRIVATE,input,(off_t)range.slice_offset);
-    if(mapping==MAP_FAILED){result->remap_errno=errno;goto done;}
+    if(mapping==MAP_FAILED){result->mapping_errno=errno;result->remap_errno=errno;goto done;}
+    result->remap_attempted=1;
     errno=0;result->remap_result=native_remap(mapping+range.crypt_offset,(size_t)range.crypt_size,range.cpu_type,range.cpu_subtype);
     result->remap_errno=result->remap_result==0?0:errno;
     if(result->remap_result!=0)goto done;

@@ -9,6 +9,8 @@ int main(void) {
     assert(result.remap_result==-1);
     assert(result.remap_errno==ENOTSUP);
     assert(result.pages_read==0&&result.pages_changed==0);
+    assert(result.mapping_attempted==0&&result.remap_attempted==0);
+    assert(result.mapping_errno==0);
     char group[32]="sentinel";
     assert(CrumbCurrentAppGroup(0,group,sizeof(group))==1);
     assert(group[0]==0); // Unsupported hosts must not invent a granted group.

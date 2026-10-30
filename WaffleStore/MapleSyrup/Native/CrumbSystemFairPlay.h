@@ -9,6 +9,8 @@ typedef struct {
 typedef struct {
     uint64_t pages_total, pages_read, pages_changed;
     int32_t remap_result, remap_errno, read_error;
+    // An initial remap_result=-1 is not evidence that the syscall ran.
+    int32_t mapping_attempted, mapping_errno, remap_attempted;
 } CrumbSystemRangeResult;
 // Returns an actually granted own app group; 1 means absent/end, -1 malformed.
 int CrumbCurrentAppGroup(size_t index, char *output, size_t length);
