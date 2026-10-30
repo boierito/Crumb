@@ -31,6 +31,7 @@ print(files[0])
 PY
 )"
 shasum -a 256 "$archive_path" > "$research_dir/artifacts/public-component-sha256.txt"
+printf '%s  %s\n' '23bd07e51c154ea4c1afd5f59c24e05ddeab2b6d0cbd380d4623c13fb5a93091' "$archive_path" | shasum -a 256 -c -
 "$ipsw_tool" --no-color fw aea "$archive_path" --output "$research_dir/plain"
 plain_path="$(python3 - "$research_dir/plain" <<'PY'
 import pathlib, sys
@@ -78,6 +79,7 @@ PY
     continue
   fi
   "$ipsw_tool" --no-color dyld extract --slide --stubs \
+    --cache "$research_dir/tool/cache.a2s" \
     --output "$research_dir/artifacts/macho" "$cache_path" "$image"
 done
 python3 - "$research_dir/artifacts" <<'PY'
