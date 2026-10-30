@@ -13,6 +13,7 @@
 #include <unistd.h>
 #if defined(__APPLE__) && defined(__aarch64__)
 #include <dlfcn.h>
+#include <CoreFoundation/CoreFoundation.h>
 #include <mach/mach.h>
 #include <sys/mman.h>
 
@@ -47,6 +48,25 @@ static int native_remap(void *address, size_t size, uint32_t cpu, uint32_t subty
     return (int)a;
 }
 #endif
+
+int CrumbCurrentSigningTeam(char *output,size_t length) {
+    if (!output || length<2) return -1;
+    output[0]=0;
+#if defined(__APPLE__) && defined(__aarch64__)
+    typedef CFTypeRef (*CreateTask)(CFAllocatorRef);
+    typedef CFTypeRef (*ReadEntitlement)(CFTypeRef,CFStringRef,CFErrorRef*);
+    CreateTask create=(CreateTask)dlsym(RTLD_DEFAULT,"SecTaskCreateFromSelf");
+    ReadEntitlement read=(ReadEntitlement)dlsym(RTLD_DEFAULT,"SecTaskCopyValueForEntitlement");
+    if (!create || !read) return -1;
+    CFTypeRef task=create(kCFAllocatorDefault);if(!task)return -1;
+    CFTypeRef team=read(task,CFSTR("com.apple.developer.team-identifier"),NULL);
+    CFRelease(task);if(!team)return -1;
+    int ok=CFGetTypeID(team)==CFStringGetTypeID()&&CFStringGetCString((CFStringRef)team,output,(CFIndex)length,kCFStringEncodingUTF8);
+    CFRelease(team);return ok&&output[0]?0:-1;
+#else
+    return -1;
+#endif
+}
 
 int CrumbSystemDecryptRange(const char *source,const char *destination,
                            CrumbSystemRange range,CrumbSystemRangeResult *result) {

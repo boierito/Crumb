@@ -156,7 +156,7 @@
 			buildActionMask = 2147483647;
 			files = ();
 			inputPaths = ();
-			outputPaths = ("$(SRCROOT)/build/Native/libunicorn.a", "$(SRCROOT)/build/Native/libWaffleSAP.a", "$(SRCROOT)/build/Native/GoThirdPartyNotices.txt", "$(SRCROOT)/build/Native/UNICORN-COPYING");
+			outputPaths = ("$(SRCROOT)/build/Native/libCrumbSigning.a", "$(SRCROOT)/build/Native/libCrumbCrypto.a", "$(SRCROOT)/build/Native/libunicorn.a", "$(SRCROOT)/build/Native/libWaffleSAP.a", "$(SRCROOT)/build/Native/GoThirdPartyNotices.txt", "$(SRCROOT)/build/Native/UNICORN-COPYING");
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
 			shellScript = "bash \"$SRCROOT/scripts/ensure-native.sh\"\n";
@@ -335,7 +335,7 @@
 				SWIFT_OBJC_BRIDGING_HEADER = "WaffleStore/MapleSyrup/Native/SAP-Bridging-Header.h";
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/build/Native/include";
 				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/build/Native";
-				OTHER_LDFLAGS = ("$(inherited)", "-Wl,-export_dynamic", "-Wl,-force_load,$(SRCROOT)/build/Native/libunicorn.a", "$(SRCROOT)/build/Native/libWaffleSAP.a");
+				OTHER_LDFLAGS = ("$(inherited)", "-Wl,-export_dynamic", "-Wl,-force_load,$(SRCROOT)/build/Native/libunicorn.a", "$(SRCROOT)/build/Native/libWaffleSAP.a", "$(SRCROOT)/build/Native/libCrumbSigning.a", "$(SRCROOT)/build/Native/libCrumbCrypto.a", "-lc++");
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
@@ -380,7 +380,7 @@
 				SWIFT_OBJC_BRIDGING_HEADER = "WaffleStore/MapleSyrup/Native/SAP-Bridging-Header.h";
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/build/Native/include";
 				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/build/Native";
-				OTHER_LDFLAGS = ("$(inherited)", "-Wl,-export_dynamic", "-Wl,-force_load,$(SRCROOT)/build/Native/libunicorn.a", "$(SRCROOT)/build/Native/libWaffleSAP.a");
+				OTHER_LDFLAGS = ("$(inherited)", "-Wl,-export_dynamic", "-Wl,-force_load,$(SRCROOT)/build/Native/libunicorn.a", "$(SRCROOT)/build/Native/libWaffleSAP.a", "$(SRCROOT)/build/Native/libCrumbSigning.a", "$(SRCROOT)/build/Native/libCrumbCrypto.a", "-lc++");
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;

@@ -23,6 +23,7 @@ type SystemJob struct {
 	JobID            string `json:"job_id"`
 	BundleID         string `json:"bundle_id"`
 	Version          string `json:"version"`
+	Build            string `json:"build"`
 	Files            int    `json:"files"`
 	RequiresSigning  bool   `json:"requires_signing"`
 	LicenseValidated bool   `json:"license_validated"`
@@ -125,6 +126,22 @@ func PrepareSystemHelper(bundleDirectory, original, destination string) (job Sys
 	if err != nil || !info.IsDir() {
 		return job, errors.New("helper bundle unavailable")
 	}
+	helperInfoPath := filepath.Join(bundleDirectory, "Info.plist")
+	helperStat, e := os.Lstat(helperInfoPath)
+	if e != nil || !helperStat.Mode().IsRegular() || helperStat.Size() > 1<<20 {
+		return job, errors.New("helper bundle identity unavailable")
+	}
+	helperData, e := os.ReadFile(helperInfoPath)
+	if e != nil {
+		return job, e
+	}
+	var helperInfo Info
+	if _, e = plist.Unmarshal(helperData, &helperInfo); e != nil || helperInfo.BundleID == "" || helperInfo.Version == "" || !systemSafe(helperInfo.Executable) || strings.Contains(helperInfo.Executable, "/") {
+		return job, errors.New("invalid helper identity")
+	}
+	if st, e := os.Lstat(filepath.Join(bundleDirectory, helperInfo.Executable)); e != nil || !st.Mode().IsRegular() {
+		return job, errors.New("helper executable missing")
+	}
 	abs, err := filepath.Abs(bundleDirectory)
 	if err != nil {
 		return job, err
@@ -183,7 +200,7 @@ func PrepareSystemHelper(bundleDirectory, original, destination string) (job Sys
 	if _, err = rand.Read(nonce[:]); err != nil {
 		return job, err
 	}
-	job = SystemJob{Schema: "crumb-system-fairplay-job-v1", JobID: hex.EncodeToString(nonce[:]), BundleID: app.BundleID, Version: app.Version, RequiresSigning: true}
+	job = SystemJob{Schema: "crumb-system-fairplay-job-v1", JobID: hex.EncodeToString(nonce[:]), BundleID: app.BundleID, Version: app.Version, Build: app.Build, RequiresSigning: true}
 	helperRoot := "Payload/" + filepath.Base(bundleDirectory) + "/"
 	target := helperRoot + SystemPayload + "/Target/"
 	err = systemZIP(destination, func(z *zip.Writer) error {

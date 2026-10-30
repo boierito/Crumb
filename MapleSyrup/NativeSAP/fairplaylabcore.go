@@ -30,6 +30,10 @@ func labRun(r labRequest) (any, error) {
 	switch r.Operation {
 	case "prepare-system-helper":
 		return packageipa.PrepareSystemHelper(r.Source, r.IPA, r.Destination)
+	case "unpack-system-helper":
+		return packageipa.UnpackSystemSigning(r.Source, r.Destination)
+	case "archive-system-helper":
+		return packageipa.ArchiveSystemSigning(r.Source, r.IPA, r.Destination)
 	case "plan-system-target":
 		return packageipa.PlanSystemTarget(r.Source)
 	case "export-system-result":

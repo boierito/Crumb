@@ -274,6 +274,8 @@ func TestSystemPrepareSnapshotsOwnBundleAndRetainsOriginalLicense(t *testing.T) 
 	root := t.TempDir()
 	bundle := filepath.Join(root, "Crumb.app")
 	systemFixtureWrite(t, bundle, "Crumb", []byte("helper executable"))
+	helperInfo, _ := plist.Marshal(Info{BundleID: "com.certlium.crumb", Version: "1", Executable: "Crumb"}, plist.BinaryFormat)
+	systemFixtureWrite(t, bundle, "Info.plist", helperInfo)
 	systemFixtureWrite(t, bundle, SystemPayload+"/old-secret", []byte("not forwarded"))
 	info, _ := plist.Marshal(Info{BundleID: "test.app", Version: "1", Executable: "Main"}, plist.BinaryFormat)
 	manifest, _ := plist.Marshal(map[string]any{"SinfPaths": []string{"SC_Info/Main.sinf"}, "SinfReplicationPaths": []string{"PlugIns/Share.appex/SC_Info/Share.sinf"}}, plist.BinaryFormat)
@@ -328,5 +330,21 @@ func TestSystemPrepareSnapshotsOwnBundleAndRetainsOriginalLicense(t *testing.T) 
 	}
 	if count != 2 {
 		t.Fatal("manifest-directed license replication missing")
+	}
+	unpacked := filepath.Join(root, "unpacked")
+	folder, e := UnpackSystemSigning(output, unpacked)
+	if e != nil || folder.BundlePath != "Payload/Crumb.app" {
+		t.Fatalf("unpack %+v: %v", folder, e)
+	}
+	if _, e := ArchiveSystemSigning(unpacked, output, filepath.Join(root, "preserved.ipa")); e != nil {
+		t.Fatal(e)
+	}
+	systemFixtureWrite(t, filepath.Join(unpacked, folder.BundlePath), SystemPayload+"/Target/Main", []byte("modified target"))
+	rejected := filepath.Join(root, "rejected.ipa")
+	if _, e := ArchiveSystemSigning(unpacked, output, rejected); e == nil {
+		t.Fatal("signer changed purchased executable")
+	}
+	if _, e := os.Stat(rejected); !os.IsNotExist(e) {
+		t.Fatal("rejected signed archive remains")
 	}
 }
