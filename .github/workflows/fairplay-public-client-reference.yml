@@ -23,6 +23,7 @@ jobs:
       - name: Acquire pinned public firmware component and selected cache images
         run: bash scripts/acquire-fairplay-public-client.sh "$RUNNER_TEMP/fairplay-public-client"
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: Public-firmware-client-reference-24A446-${{ github.sha }}
           path: ${{ runner.temp }}/fairplay-public-client/artifacts/

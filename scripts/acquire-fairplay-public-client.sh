@@ -51,9 +51,13 @@ hdiutil attach -readonly -nobrowse -mountpoint "$research_dir/mount" "$plain_pat
 mounted=true
 cache_path="$(python3 - "$research_dir/mount" <<'PY'
 import pathlib, sys
-files = list(pathlib.Path(sys.argv[1]).rglob('dyld_shared_cache_arm64e'))
+import json, re
+root = pathlib.Path(sys.argv[1])
+candidates = sorted(p for p in root.rglob('dyld_shared_cache*') if p.is_file())
+print(json.dumps({'cache_candidates': [str(p.relative_to(root)) for p in candidates]}, indent=2), file=sys.stderr)
+files = [p for p in candidates if re.fullmatch(r'dyld_shared_cache_arm64e(?:\.x[0-9]+)?', p.name)]
 if len(files) != 1:
-    raise SystemExit('Expected one arm64e shared-cache root')
+    raise SystemExit('Expected one unambiguous arm64e / arm64e.xN shared-cache root')
 print(files[0])
 PY
 )"
