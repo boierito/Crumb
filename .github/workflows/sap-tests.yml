@@ -50,6 +50,12 @@ jobs:
         run: |
           swiftc WaffleStore/DownloadRecord.swift scripts/test-download-record.swift -o /tmp/waffle-download-record-tests
           /tmp/waffle-download-record-tests
+      - name: Compile native FairPlay reader for a real iPhone architecture
+        run: |
+          xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.4 -std=c11 -Wall -Wextra -Werror \
+            -c WaffleStore/MapleSyrup/Native/CrumbSystemFairPlay.c -o /tmp/crumb-system-fairplay.o
+          xcrun otool -tvV /tmp/crumb-system-fairplay.o > /tmp/crumb-system-fairplay.asm
+          rg 'svc.*0x80' /tmp/crumb-system-fairplay.asm
       - name: Test iPhone-only FairPlay local recovery result gate
         run: |
           swiftc WaffleStore/App/FairPlayLocalRecoveryGate.swift scripts/test-fairplay-local-recovery-gate.swift -o /tmp/crumb-fairplay-local-gate
@@ -82,6 +88,11 @@ jobs:
         run: go -C MapleSyrup/NativeSAP/mobilelicense test -race ./...
       - name: Verify streaming IPA preparation
         run: go -C MapleSyrup/NativeSAP/packageipa test -race ./...
+      - name: Reject unsupported native FairPlay hosts without fake outputs
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -IWaffleStore/MapleSyrup/Native \
+            scripts/test-system-fairplay.c WaffleStore/MapleSyrup/Native/CrumbSystemFairPlay.c -o /tmp/crumb-system-host
+          /tmp/crumb-system-host
 
   fairplay-portable:
     runs-on: ubuntu-latest

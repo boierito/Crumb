@@ -9,6 +9,7 @@ struct SettingsView: View {
     
     @AppStorage("autoCleanApp") var autoCleanApp: Bool = true
     @State private var fairPlayLab = false
+    @State private var systemFairPlay = false
     @StateObject private var localizationManager = LocalizationManager.shared
     
     private var appVersionString: String {
@@ -21,6 +22,7 @@ struct SettingsView: View {
         NavigationStack {
             List {
                 Section { Button("FairPlay Laboratory") { fairPlayLab = true } }
+                Section { Button("FairPlay on iPhone") { systemFairPlay = true } }
                 Section(header: HeaderLabel(text: "About".localized, icon: "info.circle")) {
                     VStack(alignment: .leading, spacing: 10) {
                         AppInfoCell()
@@ -76,6 +78,7 @@ struct SettingsView: View {
                 }
             }
             .sheet(isPresented: $fairPlayLab) { FairPlayLabView() }
+            .sheet(isPresented: $systemFairPlay) { SystemFairPlayView() }
             .navigationTitle("Settings".localized)
             .toolbar {
                 if !embedded { ToolbarItem(placement: .topBarTrailing) {

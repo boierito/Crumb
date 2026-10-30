@@ -30,6 +30,8 @@ cp "$ROOT/MapleSyrup/NativeSAP/fairplaymobilecompat_test.go" "$WORK/test/interna
 mkdir -p "$WORK/test/internal/fairplay/testdata" "$WORK/test/wafflebridge/mobilelicense"
 cp "$ROOT/MapleSyrup/NativeSAP/mobilelicense/testdata/reference.json" "$WORK/test/internal/fairplay/testdata/mobile-reference.json"
 cp "$ROOT/MapleSyrup/NativeSAP/mobilelicense/core.go" "$ROOT/MapleSyrup/NativeSAP/mobilelicense/license.go" "$WORK/test/wafflebridge/mobilelicense/"
+mkdir -p "$WORK/test/wafflebridge/packageipa"
+cp "$ROOT/MapleSyrup/NativeSAP/packageipa/"*.go "$WORK/test/wafflebridge/packageipa/"
 
 python3 "$ROOT/scripts/prepare-fairplay-portable.py" "$SOURCE/tools/fairplay-recovery" "$WORK/test/wafflebridge/recovery"
 bash "$ROOT/scripts/fetch-fairplay-raw.sh" "$WORK/test/wafflebridge/recovery/rawsource"
