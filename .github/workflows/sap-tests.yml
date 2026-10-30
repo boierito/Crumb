@@ -81,6 +81,10 @@ jobs:
             -c WaffleStore/MapleSyrup/Native/CrumbSystemFairPlay.c -o /tmp/crumb-system-fairplay.o
           xcrun otool -tvV /tmp/crumb-system-fairplay.o > /tmp/crumb-system-fairplay.asm
           python3 -c 'import pathlib,re; assert re.search(r"svc\s+#0x80", pathlib.Path("/tmp/crumb-system-fairplay.asm").read_text())'
+      - name: Verify unattempted, mapping and native-remap failures remain distinct
+        run: |
+          swiftc WaffleStore/App/SystemNativeFailureStage.swift scripts/test-system-native-failure.swift -o /tmp/crumb-native-failure-contracts
+          /tmp/crumb-native-failure-contracts
       - name: Test iPhone-only FairPlay local recovery result gate
         run: |
           swiftc WaffleStore/App/FairPlayLocalRecoveryGate.swift scripts/test-fairplay-local-recovery-gate.swift -o /tmp/crumb-fairplay-local-gate

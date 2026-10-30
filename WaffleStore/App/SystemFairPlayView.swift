@@ -54,6 +54,9 @@ nonisolated private enum SystemNativeProcessor {
                       result.pages_read == result.pages_total, result.pages_changed == result.pages_total else {
                     throw NSError(domain: "Crumb.SystemFairPlay", code: Int(result.remap_errno != 0 ? result.remap_errno : result.read_error), userInfo: [
                         "native_remap_return": result.remap_result, "native_remap_errno": result.remap_errno,
+                        "native_mapping_attempted": result.mapping_attempted != 0,
+                        "native_mapping_errno": result.mapping_errno,
+                        "native_remap_attempted": result.remap_attempted != 0,
                         "native_read_error": result.read_error, "pages_total": result.pages_total,
                         "pages_read": result.pages_read, "pages_changed": result.pages_changed])
                 }
@@ -69,8 +72,8 @@ nonisolated private enum SystemNativeProcessor {
     static func safeFailure(_ error: Error, route: String) -> [String: Any] {
         let native = error as NSError
         var result: [String: Any] = ["route": route, "code": native.code,
-            "stage": native.domain == "Crumb.SystemFairPlay" ? "native_pages" : "preparation_or_validation"]
-        for key in ["native_remap_return", "native_remap_errno", "native_read_error", "pages_total", "pages_read", "pages_changed"] {
+            "stage": native.domain == "Crumb.SystemFairPlay" ? SystemNativeFailureStage.classify(native.userInfo) : "preparation_or_validation"]
+        for key in ["native_remap_return", "native_remap_errno", "native_read_error", "native_mapping_attempted", "native_mapping_errno", "native_remap_attempted", "pages_total", "pages_read", "pages_changed"] {
             if let count = native.userInfo[key] as? NSNumber { result[key] = count }
         }
         return result
@@ -518,13 +521,14 @@ final class SystemFairPlaySession: ObservableObject {
             } catch {
                 phase = "processing_failed"
                 let native = error as NSError
-                var failure: [String: Any] = ["schema": "crumb-system-attempt-v1", "ok": false,
+                var failure: [String: Any] = ["schema": "crumb-system-attempt-v2", "ok": false,
                     "route": localIPA == nil ? "installed_resource" : "data_container", "code": native.code,
-                    "stage": native.domain == "Crumb.SystemFairPlay" ? "native_pages" : "preparation_or_validation",
+                    "stage": native.domain == "Crumb.SystemLocations" ? "native_attempts" :
+                        (native.domain == "Crumb.SystemFairPlay" ? SystemNativeFailureStage.classify(native.userInfo) : "preparation_or_validation"),
                     "signing_requested": false, "installation_requested": false,
                     "authorized_shared_locations": sharedWorkspaces.count]
                 if let attempts = native.userInfo["attempts"] as? [[String: Any]] { failure["attempts"] = attempts }
-                for key in ["native_remap_return", "native_remap_errno", "native_read_error", "pages_total", "pages_read", "pages_changed"] {
+                for key in ["native_remap_return", "native_remap_errno", "native_read_error", "native_mapping_attempted", "native_mapping_errno", "native_remap_attempted", "pages_total", "pages_read", "pages_changed"] {
                     if let count = native.userInfo[key] as? NSNumber { failure[key] = count }
                 }
                 if let data = try? JSONSerialization.data(withJSONObject: failure, options: [.sortedKeys, .prettyPrinted]) {
