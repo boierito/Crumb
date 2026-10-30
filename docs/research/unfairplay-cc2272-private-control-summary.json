@@ -1,0 +1,28 @@
+{
+  "schema": "crumb-upstream-compatibility-summary-v1",
+  "control": "retained-control-A",
+  "upstream_commit": "cc2272b3cdd81321080da553ac68ec6bb849a145",
+  "recovery_backend": "typed-go",
+  "original_sinf_ipa_member_equality_checked": true,
+  "retained_sidb_and_virtual_identity_used": true,
+  "production_algorithms_modified": false,
+  "upstream_preceding_checks_passed_by_control_flow": [
+    "signed-keyfile-validation",
+    "sidb-container-footer-check",
+    "decoded-tree-parse",
+    "exact-selector-route"
+  ],
+  "selected_registry_count": 1,
+  "selected_record_count": 1,
+  "selected_window_count": 1,
+  "sinf_checks_completed": 1,
+  "sinf_checks_total": 1,
+  "last_phase": "search-sinf",
+  "failure_class": "no-authenticated-class-precursor",
+  "budget_exhausted": false,
+  "model_recovered": false,
+  "sinf_validated": false,
+  "ipa_decrypted": false,
+  "private_values_included": false,
+  "result_generalizes_to_other_controls": false
+}
