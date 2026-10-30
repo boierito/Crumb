@@ -1,0 +1,45 @@
+name: FairPlayed system helper (public code only)
+on:
+  push:
+    branches: [research/fairplayed-system-helper]
+    paths:
+      - .github/workflows/fairplayed-system-helper.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  helper:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: morzelowski/fairplayed
+          ref: bad7df138839b5e0ac8b9f20cc4689140b8436fb
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.0'
+      - name: Build unsigned reference helper without any target IPA or license
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = bad7df138839b5e0ac8b9f20cc4689140b8436fb
+          test ! -d FairPlayed/payload
+          mkdir -p artifacts
+          xcodebuild -project FairPlayed/FairPlayed.xcodeproj -target FairPlayed \
+            -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
+            CONFIGURATION_BUILD_DIR="$PWD/build" \
+            PRODUCT_BUNDLE_IDENTIFIER=com.boierito.crumb.systemfairplay \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
+            build > artifacts/build.log 2>&1
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName Crumb FP System Test' build/FairPlayed.app/Info.plist
+          mkdir -p package/Payload
+          ditto build/FairPlayed.app package/Payload/FairPlayed.app
+          (cd package && zip -qry ../artifacts/FairPlayed-public-helper.ipa Payload)
+          shasum -a 256 artifacts/FairPlayed-public-helper.ipa > artifacts/SHA256SUMS.txt
+          printf '%s\n' bad7df138839b5e0ac8b9f20cc4689140b8436fb > artifacts/upstream-commit.txt
+          lipo -archs build/FairPlayed.app/FairPlayed > artifacts/architectures.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: FairPlayed-public-helper
+          path: artifacts/
+          if-no-files-found: error
