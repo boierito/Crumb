@@ -1,0 +1,30 @@
+name: FairPlay public client reference
+on:
+  push:
+    branches: ['research/fairplay-coreml-contract']
+    paths:
+      - '.github/workflows/fairplay-public-client-reference.yml'
+      - 'scripts/acquire-fairplay-public-client.sh'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: fairplay-public-client-reference
+  cancel-in-progress: false
+jobs:
+  reference:
+    name: Extract original public firmware client for ABI research
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Acquire pinned public firmware component and selected cache images
+        run: bash scripts/acquire-fairplay-public-client.sh "$RUNNER_TEMP/fairplay-public-client"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Public-firmware-client-reference-24A446-${{ github.sha }}
+          path: ${{ runner.temp }}/fairplay-public-client/artifacts/
+          if-no-files-found: error
+          retention-days: 1
