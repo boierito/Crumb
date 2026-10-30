@@ -1,0 +1,155 @@
+{
+  "schema": "crumb-fairplayd-mig-research-v1",
+  "firmware_build": "24A446",
+  "daemon_sha256": "94d32a82fdc2a80c46b7734b20895a935836a676a34b1c3e863cdb479a68cb01",
+  "derived_fixups_sha256": "6c5549d2cf4ec6cc7ba0beb841e4c05bf852caa8cc8d5582ac62e88c89a718a8",
+  "raw_fixup_words_checked": 56540,
+  "device_service_executed": false,
+  "private_user_inputs_used": false,
+  "security_framework_results_measured": false,
+  "sinf_validated": false,
+  "ipa_decrypted": false,
+  "pac_authenticated": false,
+  "image_page_protection_enforced": false,
+  "native_initializer": {
+    "entry": "0x10073a790",
+    "instructions": 6302431,
+    "returned": true,
+    "return_value_interpreted_as_status": false,
+    "complete_daemon_started": false,
+    "callback_slot": "0x1011320f8",
+    "slot_nonzero_after_original_initializer": true,
+    "host_models": {
+      "_sysconf": 1,
+      "_mmap": 3,
+      "_arc4random": 3,
+      "_gettimeofday": 1,
+      "_pthread_rwlock_init": 9,
+      "_malloc": 3
+    }
+  },
+  "request_500_initialized": {
+    "entry": "0x1000029e0",
+    "total_instructions": 6305256,
+    "caller_pid": 123,
+    "worker_status": -42049,
+    "handler_returned": true,
+    "pid_branch_target": "0x1008f5410"
+  },
+  "request_500_counterfactual": {
+    "caller_pid_fixture": 0,
+    "kernel_identity_obtained": false,
+    "pid_branch_target": "0x100965eb0",
+    "stopped_at_unmodeled_import": "_pthread_self",
+    "worker_success_observed": false
+  },
+  "request_1000_initialized": {
+    "entry": "0x10000255c",
+    "total_instructions": 6318980,
+    "caller_pid_fixture": 123,
+    "fairplay_client_fixture": "absent",
+    "application_identifier_fixture": "TESTTEAM01.com.certlium.crumb",
+    "identifier_is_real_signing_identity": false,
+    "observed_entitlement_queries": [
+      "fairplay-client",
+      "application-identifier"
+    ],
+    "input": "deliberately invalid 32-byte non-license buffer",
+    "worker_status": 8,
+    "handler_returned": false,
+    "stopped_at_unmodeled_import": "_mig_deallocate",
+    "useful_operation_authorization_established": false,
+    "valid_client_request_produced": false,
+    "client_inout_word_fixture": 32,
+    "client_inout_word_is_ool_count": false,
+    "word_producer_resolved": false,
+    "complete_request_trace_boundaries": 16549,
+    "trace_truncated": false,
+    "native_ool_input_reads": 0,
+    "status_8_interpretation": "invalid in/out-word fixture path, not a SINF or measured authorization rejection",
+    "word_copy_pc": "0x100005b9c",
+    "word_bit_test_pc": "0x10083e770",
+    "encoded_status_definition_pc": "0x10083e79c",
+    "encoded_status_store_pc": "0x1007faa98",
+    "outer_status_decode_pc": "0x100005d28",
+    "encoded_status": "0xc802ee72",
+    "status_xor": "0xc802ee7a",
+    "research_builder_corrected": "separate in/out word from OOL count; refuse unlabelled invalid request"
+  },
+  "original_handler_controls": [
+    {
+      "case": "pid-1",
+      "status": -42049,
+      "instructions": 2825
+    },
+    {
+      "case": "pid-123",
+      "status": -42049,
+      "instructions": 2825
+    },
+    {
+      "case": "pid-501",
+      "status": -42049,
+      "instructions": 2825
+    },
+    {
+      "case": "pid-1000",
+      "status": -42049,
+      "instructions": 2825
+    },
+    {
+      "case": "500-size",
+      "status": -304,
+      "instructions": 16
+    },
+    {
+      "case": "500-ool-type",
+      "status": -300,
+      "instructions": 19
+    },
+    {
+      "case": "500-ool-count",
+      "status": -300,
+      "instructions": 23
+    },
+    {
+      "case": "500-trailer",
+      "status": -309,
+      "instructions": 35
+    },
+    {
+      "case": "1000-size",
+      "status": -304,
+      "instructions": 16
+    },
+    {
+      "case": "1000-ool-type",
+      "status": -300,
+      "instructions": 19
+    },
+    {
+      "case": "1000-ool-count",
+      "status": -300,
+      "instructions": 23
+    },
+    {
+      "case": "1000-trailer",
+      "status": -309,
+      "instructions": 37
+    }
+  ],
+  "input_rejection_controls": [
+    {
+      "case": "changed-daemon-python-optimized",
+      "rejected": true
+    },
+    {
+      "case": "changed-fixups-python-optimized",
+      "rejected": true
+    },
+    {
+      "case": "unlabelled-kernel-token",
+      "rejected": true
+    }
+  ]
+}

@@ -71,6 +71,12 @@ names, operations and authorization consequences are **not resolved**. These
 helpers must not be described as a demonstrated SINF-service entitlement gate,
 nor exposed in Crumb as though an accepted IPC contract had been found.
 
+Follow-up: the [bounded original-code MIG replay](FAIRPLAY_MIG_DISPATCH_RESEARCH.md)
+now traces both helpers from the request-1000 worker: `fairplay-client`, then
+`application-identifier` when the former is modeled as absent. This refines the
+unresolved static inventory above; it does not establish acceptance of a SINF
+or measure Security.framework on the phone.
+
 ## Background Assets: dynamic manifest, existing app-group requirement
 
 The SDK does provide dynamic manifests. It would be incorrect to dismiss this
@@ -138,8 +144,9 @@ separate from the original daemon and launchd hashes.
 The unresolved system-path boundary is still the actual crypter/service failure
 for the imported backing vnode. Neither a successful mmap, a generic ENOMEM,
 nor the profile's default allow identifies that failure. The next native reverse
-engineering step is to resolve the service dispatch and indirect callers above,
-and determine whether a legitimate caller-supplied file/license handoff exists.
+engineering step is to identify a matching client-side request encoder and a
+license-consuming operation on the now-partially-traced dispatch path, and
+determine whether a legitimate caller-supplied file/license handoff exists.
 Its contract must include caller authorization and actual license consumption;
 a service name or an untested path is insufficient. There is no new functional
 decryption correction to put in a phone IPA from this investigation yet.
