@@ -13,7 +13,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: systemipa prepare|plan|export [options]")
+		fmt.Fprintln(os.Stderr, "usage: systemipa prepare|unpack|archive-signed|plan|export [options]")
 		os.Exit(2)
 	}
 	flags := flag.NewFlagSet(os.Args[1], flag.ExitOnError)
@@ -28,6 +28,10 @@ func main() {
 	switch os.Args[1] {
 	case "prepare":
 		result, err = packageipa.PrepareSystemHelper(*source, *ipa, *output)
+	case "unpack":
+		result, err = packageipa.UnpackSystemSigning(*source, *output)
+	case "archive-signed":
+		result, err = packageipa.ArchiveSystemSigning(*source, *ipa, *output)
 	case "plan":
 		result, err = packageipa.PlanSystemTarget(*source)
 	case "export":

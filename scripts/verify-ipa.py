@@ -29,6 +29,8 @@ with zipfile.ZipFile(ipa) as archive:
     executable = archive.read(root + info["CFBundleExecutable"])
     assert struct.unpack("<II", executable[:8]) == (0xFEEDFACF, 0x0100000C), "Expected arm64 Mach-O"
     assert not any(n.endswith("embedded.mobileprovision") for n in archive.namelist()), "IPA must be resignable"
+    assert not any("/CrumbSystemPayload/" in n or "/EmbeddedPayload/" in n for n in archive.namelist()), "Public IPA includes a private target"
+    assert not any(n.lower().endswith((".p12", ".sinf", ".sidb", ".sidd")) for n in archive.namelist()), "Public IPA contains private identity/license files"
     notices = [n for n in archive.namelist() if n.endswith(("ThirdPartyNotices.txt", "UNICORN-COPYING", "GoThirdPartyNotices.txt"))]
     assert len(notices) == 3, "Linked code license notices missing"
     assert b"MIT License" in archive.read(root + "ThirdPartyNotices.txt"), "ipatool MIT notice missing"

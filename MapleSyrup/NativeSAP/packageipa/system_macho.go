@@ -151,6 +151,40 @@ func systemMachO(r io.ReaderAt, size int64) (*systemImage, error) {
 				if o > uint64(s.size) || l > uint64(s.size)-o {
 					return nil, errors.New("segment exceeds slice")
 				}
+				sections := little.Uint32(header[pos+64:])
+				if uint64(cs) != 72+uint64(sections)*80 {
+					return nil, errors.New("invalid segment section table")
+				}
+				for k := uint32(0); k < sections; k++ {
+					q := pos + 72 + int(k)*80
+					length := little.Uint64(header[q+40:])
+					offset := uint64(little.Uint32(header[q+48:]))
+					kind := little.Uint32(header[q+64:]) & 0xff
+					if kind != 1 && kind != 12 && kind != 18 && (offset > uint64(s.size) || length > uint64(s.size)-offset) {
+						return nil, errors.New("section exceeds slice")
+					}
+				}
+			case 0x1:
+				if cs < 56 {
+					return nil, errors.New("invalid 32-bit segment")
+				}
+				o, l := uint64(little.Uint32(header[pos+32:])), uint64(little.Uint32(header[pos+36:]))
+				if o > uint64(s.size) || l > uint64(s.size)-o {
+					return nil, errors.New("32-bit segment exceeds slice")
+				}
+				sections := little.Uint32(header[pos+48:])
+				if uint64(cs) != 56+uint64(sections)*68 {
+					return nil, errors.New("invalid 32-bit section table")
+				}
+				for k := uint32(0); k < sections; k++ {
+					q := pos + 56 + int(k)*68
+					length := uint64(little.Uint32(header[q+36:]))
+					offset := uint64(little.Uint32(header[q+40:]))
+					kind := little.Uint32(header[q+56:]) & 0xff
+					if kind != 1 && kind != 12 && kind != 18 && (offset > uint64(s.size) || length > uint64(s.size)-offset) {
+						return nil, errors.New("32-bit section exceeds slice")
+					}
+				}
 			}
 			pos += cs
 		}

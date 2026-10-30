@@ -2,6 +2,7 @@ package packageipa
 
 import (
 	"archive/zip"
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -17,6 +18,8 @@ import (
 )
 
 const SystemPayload = "CrumbSystemPayload"
+
+var ErrSystemLicenseMapping = errors.New("ambiguous or incomplete original license mapping")
 
 type SystemJob struct {
 	Schema           string `json:"schema"`
@@ -188,12 +191,28 @@ func PrepareSystemHelper(bundleDirectory, original, destination string) (job Sys
 	if _, err = plist.Unmarshal(data, &manifest); err != nil || len(manifest.SinfPaths) == 0 || len(manifest.SinfReplicationPaths) > 4096 {
 		return job, errors.New("invalid license manifest")
 	}
-	if !systemSafe(manifest.SinfPaths[0]) || files[root+manifest.SinfPaths[0]] == nil {
-		return job, errors.New("original SINF missing")
+	var primary []byte
+	identicalLicenses := true
+	for i, p := range manifest.SinfPaths {
+		if !systemSafe(p) || files[root+p] == nil {
+			return job, ErrSystemLicenseMapping
+		}
+		blob, e := readSmall(files[root+p])
+		if e != nil {
+			return job, e
+		}
+		if i == 0 {
+			primary = blob
+		} else if !bytes.Equal(primary, blob) {
+			identicalLicenses = false
+		}
 	}
 	for _, p := range manifest.SinfReplicationPaths {
 		if !systemSafe(p) || strings.HasSuffix(p, "/") {
 			return job, errors.New("invalid SINF replication path")
+		}
+		if files[root+p] == nil && !identicalLicenses {
+			return job, ErrSystemLicenseMapping
 		}
 	}
 	var nonce [16]byte

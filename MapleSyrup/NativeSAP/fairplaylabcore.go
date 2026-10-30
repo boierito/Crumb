@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/majd/ipatool/v2/internal/fairplay"
 	"github.com/majd/ipatool/v2/wafflebridge/packageipa"
@@ -29,7 +30,11 @@ var legacyProducerProbe func(labRequest) (any, error)
 func labRun(r labRequest) (any, error) {
 	switch r.Operation {
 	case "prepare-system-helper":
-		return packageipa.PrepareSystemHelper(r.Source, r.IPA, r.Destination)
+		job, err := packageipa.PrepareSystemHelper(r.Source, r.IPA, r.Destination)
+		if errors.Is(err, packageipa.ErrSystemLicenseMapping) {
+			return nil, recoveryFailure("system-preparation", "ambiguous_original_license_mapping", err)
+		}
+		return job, err
 	case "unpack-system-helper":
 		return packageipa.UnpackSystemSigning(r.Source, r.Destination)
 	case "archive-system-helper":

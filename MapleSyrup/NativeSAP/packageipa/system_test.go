@@ -348,3 +348,83 @@ func TestSystemPrepareSnapshotsOwnBundleAndRetainsOriginalLicense(t *testing.T) 
 		t.Fatal("rejected signed archive remains")
 	}
 }
+
+func TestSystemDoesNotGuessBetweenDistinctOriginalLicenses(t *testing.T) {
+	root := t.TempDir()
+	bundle := filepath.Join(root, "Crumb.app")
+	info, _ := plist.Marshal(Info{BundleID: "com.certlium.crumb", Version: "1", Executable: "Crumb"}, plist.BinaryFormat)
+	systemFixtureWrite(t, bundle, "Info.plist", info)
+	systemFixtureWrite(t, bundle, "Crumb", []byte("helper"))
+	for _, kind := range []string{"ambiguous", "existing", "identical"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			input, _ := fixture(t, dir, false)
+			// The shared fixture has one SINF and no manifest. Add a second domain
+			// without replacing or altering either original license.
+			f, e := os.OpenFile(input, os.O_RDWR, 0600)
+			if e != nil {
+				t.Fatal(e)
+			}
+			old, e := zip.NewReader(f, mustSystemSize(t, f))
+			if e != nil {
+				t.Fatal(e)
+			}
+			all := map[string][]byte{}
+			for _, entry := range old.File {
+				r, e := entry.Open()
+				if e != nil {
+					t.Fatal(e)
+				}
+				all[entry.Name], e = io.ReadAll(r)
+				_ = r.Close()
+				if e != nil {
+					t.Fatal(e)
+				}
+			}
+			_ = f.Close()
+			_ = os.Remove(input)
+			second := []byte("different original license")
+			if kind == "identical" {
+				second = all["Payload/Test.app/SC_Info/Test.sinf"]
+			}
+			all["Payload/Test.app/SC_Info/Second.sinf"] = second
+			if kind == "existing" {
+				all["Payload/Test.app/PlugIns/Share.appex/SC_Info/Share.sinf"] = second
+			}
+			all["Payload/Test.app/SC_Info/Manifest.plist"], _ = plist.Marshal(map[string]any{
+				"SinfPaths":            []string{"SC_Info/Test.sinf", "SC_Info/Second.sinf"},
+				"SinfReplicationPaths": []string{"PlugIns/Share.appex/SC_Info/Share.sinf"}}, plist.BinaryFormat)
+			if e := systemZIP(input, func(z *zip.Writer) error {
+				for name, data := range all {
+					if e := systemPut(z, name, 0600, bytes.NewReader(data)); e != nil {
+						return e
+					}
+				}
+				return nil
+			}); e != nil {
+				t.Fatal(e)
+			}
+			output := filepath.Join(dir, "prepared.ipa")
+			_, e = PrepareSystemHelper(bundle, input, output)
+			if kind == "ambiguous" {
+				if e != ErrSystemLicenseMapping {
+					t.Fatalf("ambiguous mapping: %v", e)
+				}
+				if _, e := os.Stat(output); !os.IsNotExist(e) {
+					t.Fatal("ambiguous output remains")
+				}
+			} else if e != nil {
+				t.Fatal(e)
+			}
+		})
+	}
+}
+
+func mustSystemSize(t *testing.T, f *os.File) int64 {
+	t.Helper()
+	s, e := f.Stat()
+	if e != nil {
+		t.Fatal(e)
+	}
+	return s.Size()
+}
