@@ -26,6 +26,8 @@ nonisolated private struct SystemNativePlan: Decodable {
 final class SystemFairPlaySession: ObservableObject {
     static let shared = SystemFairPlaySession()
     @Published var showIdentity = false
+    @Published var failureMessage = ""
+    @Published var requestedRecordID = ""
     @Published var signingPassword = ""
     @Published var identityStatus = "Not checked"
     @Published var identityValidated = false
@@ -63,25 +65,49 @@ final class SystemFairPlaySession: ObservableObject {
         default: return "Signing could not finish (code \(code)). The original IPA is retained."
         }
     }
-    func begin(_ record: DownloadRecord, install: Bool) {
-        guard !busy, let original = record.fileURL else { return }
-        installAfterDecryption = install
+    // The view exposes one action; the coordinator chooses the next real step.
+    func continueDecryption(record: DownloadRecord?, identifiers: [String]) -> Bool {
+        guard !busy else { return false }
+        failureMessage = ""
+        installAfterDecryption = false
+        if let record, requestedRecordID != record.id {
+            requestedRecordID = record.id
+            helper = nil; signedHelper = nil; output = nil; signedOutput = nil
+            pendingJobID = ""; report = ""; reportFile = nil; phase = "idle"
+            try? save()
+        }
+        let boundInstalledJob = !pendingJobID.isEmpty && pendingJobID == (installedIdentity?["job_id"] as? String)
+        if boundInstalledJob && matchesInstalledTarget(record) && installedTarget != nil {
+            if output == nil { decrypt(identifiers: identifiers) }
+            return false
+        }
+        // Native decryption has no certificate input. Signing is required only
+        // because this system route must install the selected target in Crumb.
+        guard hasCertificate && hasProfile else { return true }
+        if signedHelper != nil { return false }
+        if helper != nil { sign(password: signingPassword); return false }
+        guard let original = record?.fileURL else {
+            failureMessage = "Select an app in Downloads to decrypt it."
+            return false
+        }
         automaticSigning = true
         prepare(original)
+        return false
     }
-    func validateIdentity() {
+    func validateIdentity(completion: (() -> Void)? = nil) {
         guard !busy, hasCertificate, hasProfile else { return }
         busy = true
         let password = signingPassword
         Task {
-            defer { busy = false }
+            var validated = false
+            defer { busy = false; if validated { completion?() } }
             do {
                 let directory = try signingStorage(), team = try currentTeam(), bundle = currentBundleID
                 let code = await Task.detached {
                     CrumbValidateSigningIdentity(directory.appendingPathComponent("Identity.p12").path,
                         directory.appendingPathComponent("Profile.mobileprovision").path, password, bundle, team)
                 }.value
-                identityValidated = code == 0
+                identityValidated = code == 0; validated = code == 0
                 identityStatus = code == 0 ? "Certificate and profile match Crumb. iOS still checks trust, revocation and device eligibility during installation." : Self.signingError(Int(code))
             } catch { identityValidated = false; identityStatus = Self.signingError((error as NSError).code) }
         }
@@ -191,12 +217,16 @@ final class SystemFairPlaySession: ObservableObject {
                 hasCertificate = FileManager.default.fileExists(atPath: directory.appendingPathComponent("Identity.p12").path)
                 hasProfile = FileManager.default.fileExists(atPath: directory.appendingPathComponent("Profile.mobileprovision").path)
                 message = "Signing file stored in protected, backup-excluded local storage. The private key is not packaged. Signed Crumb updates include the public certificate, profile and target license; keep those updates private."
-            } catch { message = "Could not import the signing file. No private error text was logged." }
+            } catch {
+                identityValidated = false
+                identityStatus = "Could not import this file. Choose it again, or use Share → Crumb from Files."
+                message = identityStatus
+            }
         }
     }
     func sign(password: String) {
         guard !busy, let helper, hasCertificate, hasProfile else { return }
-        busy = true; message = "Signing the prepared Crumb package locally…"
+        busy = true; phase = "signing_helper"; failureMessage = ""; message = "Signing the prepared Crumb package locally…"
         Task {
             defer { busy = false }
             do {
@@ -232,8 +262,9 @@ final class SystemFairPlaySession: ObservableObject {
                 try save()
                 message = "Local signature created and purchased payload verified unchanged. Request installation below; iOS decides whether the identity and provisioning profile are accepted."
             } catch {
-                identityValidated = false
-                message = Self.signingError((error as NSError).code)
+                identityValidated = false; phase = "signing_failed"
+                failureMessage = Self.signingError((error as NSError).code)
+                message = failureMessage
             }
         }
     }
@@ -256,6 +287,7 @@ final class SystemFairPlaySession: ObservableObject {
             let url = root.appendingPathComponent(path)
             return FileManager.default.fileExists(atPath: url.path) ? url : nil
         }
+        requestedRecordID = saved["record_id"] ?? ""
         helper = item("helper"); output = item("output"); signedHelper = item("signed"); signedOutput = item("signed_output")
         pendingJobID = saved["job_id"] ?? ""; phase = saved["phase"] ?? "idle"
         installAfterDecryption = saved["install_after"] == "true"
@@ -273,6 +305,7 @@ final class SystemFairPlaySession: ObservableObject {
         if let output { value["output"] = relative(output) }
         if let signedHelper { value["signed"] = relative(signedHelper) }
         if let signedOutput { value["signed_output"] = relative(signedOutput) }
+        value["record_id"] = requestedRecordID
         value["job_id"] = pendingJobID; value["phase"] = phase
         value["install_after"] = installAfterDecryption ? "true" : "false"
         value["output_bundle"] = outputBundleID; value["output_version"] = outputVersion
@@ -283,7 +316,7 @@ final class SystemFairPlaySession: ObservableObject {
         try FairPlayNative.privateWrite(JSONEncoder().encode(value), to: storage().appendingPathComponent("latest.json"))
     }
     func prepare(_ original: URL) {
-        guard !busy else { return }; busy = true; message = "Preparing a private Crumb package on this iPhone…"
+        guard !busy else { return }; busy = true; phase = "preparing"; failureMessage = ""; message = "Preparing a private Crumb package on this iPhone…"
         Task {
             var continueSigning = false
             defer { busy = false; if continueSigning { sign(password: signingPassword) } }
@@ -311,7 +344,9 @@ final class SystemFairPlaySession: ObservableObject {
                 automaticSigning = false
                 message = "Package ready. Configure your local signing identity, sign it, and request installation. Then open Settings → FairPlay on iPhone. The prepared package includes this app's private license; keep it private."
             } catch {
-                message = "Preparation failed. No successful package was accepted; the original download is retained."
+                automaticSigning = false; phase = "preparation_failed"
+                failureMessage = "Could not prepare this app for decryption. Your original IPA is saved in Downloads."
+                message = failureMessage
             }
         }
     }
@@ -373,7 +408,8 @@ final class SystemFairPlaySession: ObservableObject {
                 message = "Native page processing and export checks passed. Known licensing metadata and embedded signatures were removed. Sign the output before installation. Unknown app-defined account data and plaintext authentication are not certified."
             } catch {
                 phase = "processing_failed"; try? save()
-                message = "Native processing or export validation failed (code \((error as NSError).code)). No partial IPA was accepted. The installed target remains available for a retry."
+                failureMessage = "Could not decrypt this app on this iPhone. Your original IPA is saved in Downloads."
+                message = failureMessage
             }
         }
     }
@@ -419,185 +455,145 @@ struct SystemFairPlayView: View {
     @EnvironmentObject var appData: AppData
     @Environment(\.dismiss) private var dismiss
     @StateObject private var session = SystemFairPlaySession.shared
-    @State private var picker = false
     @State private var identity = false
     @State private var installing = false
-    @State private var installingOutput = false
     @State private var started = false
     private var identifiers: [String] {
         guard let account = appData.ipaTool?.account else { return [] }
         return [account.email, account.name, account.dsid, account.guid, account.passwordToken]
             .filter { $0.utf8.count >= 6 && $0.utf8.count <= 4096 }
     }
+    private var progressTitle: String {
+        switch session.phase {
+        case "preparing": return "Preparing your app…"
+        case "signing_helper": return "Preparing authorization…"
+        case "processing": return "Decrypting your app…"
+        default: return "Working…"
+        }
+    }
+    private func proceed() {
+        identity = session.continueDecryption(record: record, identifiers: identifiers)
+        if !identity && !session.busy && session.signedHelper != nil && session.phase == "awaiting_installation" {
+            installing = true
+        }
+    }
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Label("On this iPhone", systemImage: "iphone.gen3.radiowaves.left.and.right")
-                            .font(.caption.weight(.semibold)).foregroundStyle(.tint)
-                        Text(record?.appName ?? "Your next decrypted IPA")
-                            .font(.system(.title2, design: .rounded, weight: .bold))
-                        Text(record.map { "Version \($0.version)" } ?? session.installedDescription)
-                            .font(.subheadline).foregroundStyle(.secondary)
-                        Text("Prepare → Install Crumb update → Decrypt")
-                            .font(.footnote.weight(.medium)).foregroundStyle(.secondary)
-                    }.padding(.vertical, 8)
-                }
-                Section("Signing") {
-                    Button { identity = true } label: {
-                        Label(session.hasCertificate && session.hasProfile ? "Manage signing identity" : "Set up certificate and profile", systemImage: "signature")
+            VStack(spacing: 24) {
+                Spacer()
+                Image(systemName: session.output != nil ? "checkmark.circle.fill" : "lock.open")
+                    .font(.system(size: 56, weight: .light))
+                    .foregroundStyle(session.output != nil ? Color.green : Color.accentColor)
+                    .accessibilityHidden(true)
+                Text(record?.appName ?? "Decrypt app")
+                    .font(.system(.title2, design: .rounded, weight: .bold))
+                    .multilineTextAlignment(.center)
+                if session.busy {
+                    ProgressView()
+                    Text(progressTitle).font(.headline)
+                    Text("Keep Crumb open.").foregroundStyle(.secondary)
+                } else if let output = session.output {
+                    Text("Your decrypted IPA is ready.").foregroundStyle(.secondary)
+                    ShareLink(item: output) { Label("Save IPA", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity, minHeight: 36) }
+                        .buttonStyle(.borderedProminent)
+                } else if !session.failureMessage.isEmpty {
+                    Text(session.failureMessage).multilineTextAlignment(.center).foregroundStyle(.secondary)
+                    Button("Try again", action: proceed).buttonStyle(.borderedProminent)
+                    if session.phase == "signing_failed" {
+                        Button("Change certificate") { identity = true }
                     }
-                    Text("The profile must allow \(session.currentBundleID) and use the same team as this installed Crumb.")
-                        .font(.footnote).foregroundStyle(.secondary).textSelection(.enabled)
+                } else if session.phase == "awaiting_installation" {
+                    Text("Accept the iOS installation prompt, then reopen Crumb. Decryption will continue automatically.")
+                        .multilineTextAlignment(.center).foregroundStyle(.secondary)
+                    Button("Continue", action: proceed).buttonStyle(.borderedProminent)
+                } else {
+                    Text("Crumb will process the app and check the result before saving it.")
+                        .multilineTextAlignment(.center).foregroundStyle(.secondary)
+                    Button("Decrypt", action: proceed).buttonStyle(.borderedProminent)
                 }
-                Section("Prepare") {
-                    if let original = record?.fileURL {
-                        Button { session.prepare(original) } label: { Label("Prepare this download", systemImage: "shippingbox") }
-                    }
-                    Button { picker = true } label: { Label("Choose encrypted IPA", systemImage: "folder") }
-                    if session.helper != nil {
-                        Text(session.preparedDescription).font(.caption).foregroundStyle(.secondary)
-                        Button("Sign Crumb update") { session.sign(password: session.signingPassword) }
-                            .disabled(!session.hasCertificate || !session.hasProfile)
-                    }
-                    if session.signedHelper != nil {
-                        Button { installing = true } label: { Label("Install Crumb update", systemImage: "arrow.down.app.fill") }
-                            .buttonStyle(.borderedProminent)
-                        Text("Accept iOS’s installation prompt, then reopen Crumb. Keep this screen open during transfer. Do not uninstall Crumb.")
-                            .font(.footnote).foregroundStyle(.secondary)
-                    }
-                }
-                if session.installedTarget != nil {
-                    Section("Decrypt") {
-                        Text(session.installedDescription).font(.caption).foregroundStyle(.secondary)
-                        Button { session.decrypt(identifiers: identifiers) } label: { Label("Decrypt and verify all executables", systemImage: "lock.open") }
-                            .disabled(!session.matchesInstalledTarget(record))
-                        if !session.matchesInstalledTarget(record) {
-                            Text("Prepare and install this download first. A different app is currently installed for processing.").font(.footnote)
-                        }
-                    }
-                }
-                if let output = session.output {
-                    Section("Decrypted IPA") {
-                        Label(session.exportDescription, systemImage: "checkmark.seal.fill").font(.caption)
-                        ShareLink(item: output) { Label("Save decrypted IPA", systemImage: "square.and.arrow.up") }
-                        Button { session.signExport() } label: { Label("Sign for installation", systemImage: "signature") }
-                            .disabled(!session.hasCertificate || !session.hasProfile)
-                        if session.installAfterDecryption {
-                            Text("To finish Decrypt & install, sign this app using a profile that allows its bundle ID. Re-enter the P12 password in Signing if needed.")
-                                .font(.footnote).foregroundStyle(.secondary)
-                        }
-                        Text("Known license and purchase metadata are removed. Arbitrary app-defined identifiers and plaintext authenticity are not certified.")
-                            .font(.footnote).foregroundStyle(.secondary)
-                    }
-                }
-                if session.signedOutput != nil {
-                    Section("Installation copy") {
-                        Button { installingOutput = true } label: { Label("Install decrypted app", systemImage: "arrow.down.app.fill") }
-                            .buttonStyle(.borderedProminent)
-                        Text("This private copy contains your signing profile. Use the unsigned decrypted IPA when exporting without signing metadata.")
-                            .font(.footnote).foregroundStyle(.secondary)
-                    }
-                }
-                if !session.message.isEmpty { Section { Text(session.message).font(.subheadline).textSelection(.enabled) } }
-                if !session.report.isEmpty {
-                    Section { DisclosureGroup("Verification report") {
-                        Text(session.report).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-                    } }
-                }
+                Spacer()
             }
-            .disabled(session.busy)
-            .overlay { if session.busy { VStack(spacing: 12) {
-                ProgressView(); Text("Keep Crumb open").font(.footnote)
-            }.padding(24).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20)) } }
-            .navigationTitle("Decrypt app")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() }.disabled(session.busy) } }
+            .padding(28).frame(maxWidth: .infinity)
+            .navigationTitle("Decrypt").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.disabled(session.busy) } }
             .interactiveDismissDisabled(session.busy)
             .task {
                 guard !started else { return }; started = true
                 session.restore()
-                if session.canResume { session.resume(identifiers: identifiers) }
-                else if let action = startAction { session.begin(action.record, install: action.install) }
+                if session.canResume && (record == nil || session.requestedRecordID == record?.id) {
+                    session.resume(identifiers: identifiers)
+                } else if startAction != nil { proceed() }
             }
             .onChange(of: session.signedHelper) { package in
                 if package != nil && session.phase == "awaiting_installation" { installing = true }
             }
-            .onChange(of: session.signedOutput) { package in
-                if package != nil && session.installAfterDecryption { installingOutput = true }
+            .sheet(isPresented: $identity) {
+                SigningIdentityView(continuation: {
+                    identity = false
+                    // Continue after the configuration sheet has dismissed.
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(350))
+                        proceed()
+                    }
+                })
             }
-            .sheet(isPresented: $picker) { SigningFilePicker(selected: { picker = false; session.prepare($0) }, cancelled: { picker = false }) }
-            .sheet(isPresented: $identity) { SigningIdentityView() }
             .sheet(isPresented: $installing) { if let package = session.signedHelper { SystemPackageInstallationView(package: package) } }
-            .sheet(isPresented: $installingOutput) {
-                if let package = session.signedOutput {
-                    SystemPackageInstallationView(package: package, bundleID: session.outputBundleID,
-                        appName: "Decrypted app", version: session.outputVersion)
-                }
-            }
         }
     }
 }
 
 struct SigningIdentityView: View {
+    var continuation: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @StateObject private var session = SystemFairPlaySession.shared
     @State private var picking = false
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    Label("Your signature stays on your iPhone", systemImage: "key.fill").font(.headline)
-                    Text("Import a P12 containing your private key and its matching provisioning profile. Your Apple Account password is not used for signing.")
-                        .font(.subheadline).foregroundStyle(.secondary)
+                if continuation != nil {
+                    Section {
+                        Text("This decryption method needs iOS to authorize a private Crumb update. Add your signing files once, accept installation, then reopen Crumb.")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
                 }
-                Section("Certificate") {
-                    importButton(session.hasCertificate ? "Replace P12" : "Import P12", name: "Identity.p12")
+                Section {
+                    Button { session.importName = "Identity.p12"; picking = true } label: {
+                        LabeledContent("P12 certificate", value: session.hasCertificate ? "Added" : "Choose file")
+                    }
+                    Button { session.importName = "Profile.mobileprovision"; picking = true } label: {
+                        LabeledContent("Provisioning profile", value: session.hasProfile ? "Added" : "Choose file")
+                    }
                     SecureField("P12 password", text: $session.signingPassword)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
-                    Text("Password kept in memory only; re-enter after restarting Crumb.").font(.footnote).foregroundStyle(.secondary)
+                } footer: {
+                    Text("Your signing files stay on this iPhone. Use the identity that signed Crumb. The password is kept only while Crumb is open.")
                 }
-                Section("Crumb profile") {
-                    importButton(session.hasProfile ? "Replace Crumb profile" : "Import .mobileprovision", name: "Profile.mobileprovision")
-                    Text(session.currentBundleID).font(.caption.monospaced()).textSelection(.enabled)
-                    Button("Check certificate and profile") { session.validateIdentity() }
-                        .disabled(!session.hasCertificate || !session.hasProfile)
-                    Label(session.identityStatus, systemImage: session.identityValidated ? "checkmark.seal" : "info.circle")
-                        .font(.footnote).foregroundStyle(session.identityValidated ? Color.green : Color.secondary)
+                if session.identityValidated {
+                    Section { Label("Certificate checked", systemImage: "checkmark.circle").foregroundStyle(.green) }
+                } else if session.identityStatus != "Not checked" && session.identityStatus != "Check this identity before continuing" {
+                    Section { Text(session.identityStatus).font(.footnote).foregroundStyle(.secondary) }
                 }
-                Section("Profile for decrypted apps · optional") {
-                    importButton(session.hasOutputProfile ? "Replace app profile" : "Import app profile", name: "App.mobileprovision")
-                    Text("Used only when signing the decrypted app. Without this, Crumb tries the Crumb profile. An appropriate wildcard profile may cover both; extensions also need a compatible profile.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-                Section("If the picker does not open") {
-                    Picker("Import as", selection: $session.importName) {
-                        Text("P12").tag("Identity.p12")
-                        Text("Crumb profile").tag("Profile.mobileprovision")
-                        Text("App profile").tag("App.mobileprovision")
+                Section {
+                    Button(continuation == nil ? "Save" : "Continue") {
+                        session.validateIdentity {
+                            if let continuation { continuation() } else { dismiss() }
+                        }
                     }
-                    Button("Import from Signing Inbox") { session.importInbox() }
-                    Text("In Files → On My iPhone → Crumb → Signing Inbox, copy one P12 or profile. Crumb moves that inbox copy to protected storage after import. Your original file stays where you keep it.")
-                        .font(.footnote).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity).disabled(!session.hasCertificate || !session.hasProfile)
                 }
-                if !session.message.isEmpty { Section { Text(session.message).font(.footnote).textSelection(.enabled) } }
-                Section { Button("Remove signing identity", role: .destructive) { session.removeIdentity() } }
             }
             .disabled(session.busy)
-            .navigationTitle("Signing identity").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.disabled(session.busy) } }
+            .overlay { if session.busy { ProgressView().padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12)) } }
+            .navigationTitle("Certificate").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(session.busy) } }
             .interactiveDismissDisabled(session.busy)
-            .task { session.restore(); if session.importName.isEmpty { session.importName = "Identity.p12" } }
+            .task { session.restore(restoringPackages: false) }
             .sheet(isPresented: $picking) {
                 SigningFilePicker(selected: { file in
                     picking = false
-                    session.importSigningFile(file, certificate: session.importName == "Identity.p12", outputProfile: session.importName == "App.mobileprovision")
+                    session.importSigningFile(file, certificate: session.importName == "Identity.p12")
                 }, cancelled: { picking = false })
             }
         }
-    }
-    private func importButton(_ title: String, name: String) -> some View {
-        Button(title) { session.importName = name; picking = true }
     }
 }

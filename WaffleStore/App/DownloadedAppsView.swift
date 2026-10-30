@@ -66,15 +66,6 @@ struct DownloadedAppsView: View {
                             }
                             Spacer(minLength: 0)
                             Menu {
-                                Button { systemDecryption = DownloadDecryptionAction(record: record, install: false) } label: {
-                                    Label("Decrypt with iPhone FairPlay…", systemImage: "iphone")
-                                }
-                                #if DEBUG
-                                Button { decryption = record } label: {
-                                    Label("FairPlay Laboratory…", systemImage: "lock.open")
-                                }
-                                #endif
-
                                 Button(role: .destructive) { requestDeletion(record) } label: {
                                     Label("Delete IPA", systemImage: "trash")
                                 }

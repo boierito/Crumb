@@ -22,13 +22,6 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("IPAs & signing") {
-                    Button { signingIdentity = true } label: { Label("Signing identity", systemImage: "signature") }
-                    Button { systemFairPlay = true } label: { Label("Continue decryption", systemImage: "lock.open") }
-                }
-                #if DEBUG
-                Section { Button("FairPlay Laboratory") { fairPlayLab = true } }
-                #endif
                 Section(header: HeaderLabel(text: "About".localized, icon: "info.circle")) {
                     VStack(alignment: .leading, spacing: 10) {
                         AppInfoCell()
@@ -50,6 +43,7 @@ struct SettingsView: View {
                 }
                 
                 Section(header: HeaderLabel(text: "Settings".localized, icon: "gearshape")) {
+                    Button { signingIdentity = true } label: { Label("Certificate", systemImage: "signature") }
                     Toggle(isOn: $autoCleanApp) {
                         Text("Auto-Clean App".localized)
                         Text("Auto-Clean Description".localized)
