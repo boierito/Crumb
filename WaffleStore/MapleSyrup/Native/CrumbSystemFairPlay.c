@@ -99,8 +99,10 @@ int CrumbSystemDecryptRange(const char *source,const char *destination,
     if(transfer(input,header,sizeof(header),range.slice_offset,0)||transfer(input,command,sizeof(command),range.cryptid_field-16,0)){
         result->read_error=EIO;goto done;
     }
+    int encryption_command=(little32(command)==0x2c&&little32(command+4)==24)||
+                           (little32(command)==0x21&&little32(command+4)==20);
     if(little32(header)!=0xfeedfacf||little32(header+4)!=range.cpu_type||little32(header+8)!=range.cpu_subtype||
-       little32(command)!=0x2c||little32(command+4)!=24||little32(command+8)!=range.crypt_offset||
+       !encryption_command||little32(command+8)!=range.crypt_offset||
        little32(command+12)!=range.crypt_size||!little32(command+16)){
         result->remap_errno=EINVAL;goto done;
     }

@@ -92,7 +92,7 @@ final class SystemFairPlaySession: ObservableObject {
                 }.value
                 hasCertificate = FileManager.default.fileExists(atPath: directory.appendingPathComponent("Identity.p12").path)
                 hasProfile = FileManager.default.fileExists(atPath: directory.appendingPathComponent("Profile.mobileprovision").path)
-                message = "Signing file stored privately on this iPhone. It is excluded from backup and never included in exported IPAs."
+                message = "Signing file stored in protected, backup-excluded local storage. The private key is not packaged. Signed Crumb updates include the public certificate, profile and target license; keep those updates private."
             } catch { message = "Could not import the signing file. No private error text was logged." }
         }
     }
