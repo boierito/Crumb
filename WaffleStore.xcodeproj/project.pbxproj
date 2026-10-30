@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+ B00200000000000000000001 = {isa = PBXBuildFile; fileRef = B00200000000000000000002; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		B00100000000000000000007 = {isa = PBXBuildFile; fileRef = B00100000000000000000008; };
 		B00100000000000000000009 = {isa = PBXBuildFile; fileRef = B0010000000000000000000A; };
 		B00100000000000000000004 /* UnicornTCI in Frameworks */ = {isa = PBXBuildFile; fileRef = B00100000000000000000005; };
@@ -17,6 +18,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+ B00200000000000000000002 = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; path = third_party/filepicker-fix/FilePickerFix.dylib; sourceTree = SOURCE_ROOT; };
 		B00100000000000000000008 = {isa = PBXFileReference; lastKnownFileType = text; path = build/Native/GoThirdPartyNotices.txt; sourceTree = SOURCE_ROOT; };
 		B0010000000000000000000A = {isa = PBXFileReference; lastKnownFileType = text; path = build/Native/UNICORN-COPYING; sourceTree = SOURCE_ROOT; };
 		B00100000000000000000005 /* libunicorn.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = build/Native/libunicorn.a; sourceTree = SOURCE_ROOT; };
@@ -30,6 +32,10 @@
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+ B00200000000000000000003 = {isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = ""; dstSubfolderSpec = 10; files = (B00200000000000000000001, ); name = "Embed file picker compatibility"; runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		E6F5D41030168FCC00FEEC8A /* Frameworks */ = {
@@ -74,6 +80,7 @@
 				E6F5D40F30168FCC00FEEC8A /* Sources */,
 				E6F5D41030168FCC00FEEC8A /* Frameworks */,
 				E6F5D41130168FCC00FEEC8A /* Resources */,
+ B00200000000000000000003 /* Embed file picker compatibility */,
 			);
 			buildRules = (
 			);
@@ -301,7 +308,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 23054;
+				CURRENT_PROJECT_VERSION = 23055;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -346,7 +353,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 23054;
+				CURRENT_PROJECT_VERSION = 23055;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;

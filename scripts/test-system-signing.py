@@ -27,6 +27,9 @@ def main():
     sign = library.CrumbSignPreparedBundle
     sign.argtypes = [ctypes.c_char_p]*6
     sign.restype = ctypes.c_int
+    validate = library.CrumbValidateSigningIdentity
+    validate.argtypes = [ctypes.c_char_p]*5
+    validate.restype = ctypes.c_int
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         command('openssl', 'req', '-newkey', 'rsa:2048', '-x509', '-days', '1', '-nodes',
@@ -59,6 +62,30 @@ def main():
         snapshot = {p.relative_to(app).as_posix():p.read_bytes() for p in (app/'CrumbSystemPayload').rglob('*') if p.is_file()}
         arguments = [str(app).encode(), str(root/'identity.p12').encode(), str(root/'profile.mobileprovision').encode(),
                      b'fixture-password', b'com.certlium.crumb', b'FIXTURETEAM']
+        # Preflight errors stay distinct and never mutate the installed bundle.
+        checks = arguments[1:]
+        assert validate(*checks) == 0
+        assert validate(*[checks[0],checks[1],b'bad-password',checks[3],checks[4]]) == 11
+        assert validate(*[checks[0],checks[1],checks[2],b'other.bundle',checks[4]]) == 18
+        assert validate(*[checks[0],checks[1],checks[2],checks[3],b'OTHERTEAM']) == 17
+        # Common sideloader export: RC2-40 + SHA1 PKCS#12, needs legacy provider.
+        command('openssl','pkcs12','-export','-legacy','-inkey',str(root/'key.pem'),'-in',str(root/'cert.pem'),
+                '-passout','pass:fixture-password','-out',str(root/'legacy.p12'))
+        assert validate(str(root/'legacy.p12').encode(),*checks[1:]) == 0
+        # Prove profile CMS integrity rather than merely extracting its plist.
+        damaged = bytearray((root/'profile.mobileprovision').read_bytes()); damaged[-1] ^= 1
+        (root/'damaged.mobileprovision').write_bytes(damaged)
+        assert validate(checks[0],str(root/'damaged.mobileprovision').encode(),*checks[2:]) == 14
+        for label,change,expected in [
+            ('expired',{'ExpirationDate':datetime.datetime(2000,1,1)},15),
+            ('membership',{'DeveloperCertificates':[]},16),
+            ('scoped-wildcard',{'Entitlements':{'application-identifier':'FIXTURETEAM.com.certlium.*'}},0),
+            ('wrong-wildcard',{'Entitlements':{'application-identifier':'FIXTURETEAM.com.other.*'}},18)]:
+            altered = dict(profile);altered.update(change)
+            (root/'altered.plist').write_bytes(plistlib.dumps(altered))
+            command('openssl','cms','-sign','-binary','-nodetach','-in',str(root/'altered.plist'),
+                    '-signer',str(root/'cert.pem'),'-inkey',str(root/'key.pem'),'-outform','DER','-out',str(root/'altered.mobileprovision'))
+            assert validate(checks[0],str(root/'altered.mobileprovision').encode(),*checks[2:]) == expected,label
         before = hashlib.sha256(executable.read_bytes()).digest()
         assert sign(*[None]*6) == 1
         assert sign(*[arguments[0],arguments[1],arguments[2],b'wrong-password',arguments[4],arguments[5]]) != 0

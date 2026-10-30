@@ -35,6 +35,10 @@ func labRun(r labRequest) (any, error) {
 			return nil, recoveryFailure("system-preparation", "ambiguous_original_license_mapping", err)
 		}
 		return job, err
+	case "unpack-system-export":
+		return packageipa.UnpackSystemExport(r.Source, r.Destination)
+	case "archive-system-export":
+		return packageipa.ArchiveSystemExport(r.Source, r.IPA, r.Destination)
 	case "unpack-system-helper":
 		return packageipa.UnpackSystemSigning(r.Source, r.Destination)
 	case "archive-system-helper":
