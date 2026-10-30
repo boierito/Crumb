@@ -4,10 +4,21 @@ on:
     branches: [research/fairplayed-system-helper]
     paths:
       - .github/workflows/fairplayed-system-helper.yml
+      - scripts/prepare-fairplayed-private-ipa.py
+      - scripts/test-prepare-fairplayed-private-ipa.py
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test packaging with synthetic public fixtures only
+        run: python3 scripts/test-prepare-fairplayed-private-ipa.py
   helper:
     runs-on: macos-15
     steps:
