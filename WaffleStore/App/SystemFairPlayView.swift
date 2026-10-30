@@ -7,6 +7,7 @@ nonisolated private struct SystemEnvelope<T: Decodable>: Decodable {
     let ok: Bool
     let result: T?
 }
+nonisolated private struct SystemLocalPrepared: Decodable { let schema: String; let requiresSigning: Bool }
 nonisolated private struct SystemSigningFolderResponse: Decodable { let bundlePath, bundleId, version, build: String }
 nonisolated private struct SystemNativePlan: Decodable {
     struct File: Decodable {
@@ -81,17 +82,14 @@ final class SystemFairPlaySession: ObservableObject {
             if output == nil { decrypt(identifiers: identifiers) }
             return false
         }
-        // Native decryption has no certificate input. Signing is required only
-        // because this system route must install the selected target in Crumb.
-        guard hasCertificate && hasProfile else { return true }
-        if signedHelper != nil { return false }
-        if helper != nil { sign(password: signingPassword); return false }
         guard let original = record?.fileURL else {
             failureMessage = "Select an app in Downloads to decrypt it."
             return false
         }
-        automaticSigning = true
-        prepare(original)
+        // No signing, reinstallation or automatic helper fallback is allowed on
+        // this route. A system refusal remains an explicit failed attempt.
+        helper = nil; signedHelper = nil
+        decrypt(identifiers: identifiers, localIPA: original, description: record?.appName)
         return false
     }
     func validateIdentity(completion: (() -> Void)? = nil) {
@@ -350,8 +348,10 @@ final class SystemFairPlaySession: ObservableObject {
             }
         }
     }
-    func decrypt(identifiers: [String]) {
-        guard !busy, let source = installedTarget else { return }
+    func decrypt(identifiers: [String], localIPA: URL? = nil, description: String? = nil) {
+        guard !busy, localIPA != nil || installedTarget != nil else { return }
+        let bundledTarget = installedTarget
+        let label = description ?? installedDescription
         busy = true; readyToSignOutput = false; phase = "processing"; try? save()
         message = "Reading all protected pages through this iPhone's FairPlay…"
         Task {
@@ -361,6 +361,22 @@ final class SystemFairPlaySession: ObservableObject {
                 let directory = try workspace()
                 let destination = directory.appendingPathComponent("App-Unsigned.ipa")
                 let text = try await Task.detached(priority: .userInitiated) {
+                    let extracted = directory.appendingPathComponent("Target.app", isDirectory: true)
+                    defer { if localIPA != nil { try? FileManager.default.removeItem(at: extracted) } }
+                    let source: URL
+                    if let localIPA {
+                        let accessing = localIPA.startAccessingSecurityScopedResource()
+                        defer { if accessing { localIPA.stopAccessingSecurityScopedResource() } }
+                        let preparation = try FairPlayNative.run("prepare-system-local", destination: extracted, ipa: localIPA)
+                        let decoder = JSONDecoder(); decoder.keyDecodingStrategy = .convertFromSnakeCase
+                        let envelope = try decoder.decode(SystemEnvelope<SystemLocalPrepared>.self, from: Data(preparation.utf8))
+                        guard envelope.ok, let target = envelope.result,
+                              target.schema == "crumb-system-fairplay-local-v1", !target.requiresSigning else {
+                            throw CocoaError(.fileReadCorruptFile)
+                        }
+                        source = extracted
+                    } else if let bundledTarget { source = bundledTarget }
+                    else { throw CocoaError(.fileNoSuchFile) }
                     let nativeDirectory = directory.appendingPathComponent("native", isDirectory: true)
                     try FairPlayNative.privateDirectory(nativeDirectory)
                     defer { try? FileManager.default.removeItem(at: nativeDirectory) }
@@ -388,7 +404,10 @@ final class SystemFairPlaySession: ObservableObject {
                             }
                             guard code == 0, result.remap_result == 0, result.pages_total > 0,
                                   result.pages_read == result.pages_total, result.pages_changed == result.pages_total else {
-                                throw NSError(domain: "Crumb.SystemFairPlay", code: Int(result.remap_errno != 0 ? result.remap_errno : result.read_error))
+                                throw NSError(domain: "Crumb.SystemFairPlay", code: Int(result.remap_errno != 0 ? result.remap_errno : result.read_error), userInfo: [
+                                    "native_remap_return": result.remap_result, "native_remap_errno": result.remap_errno,
+                                    "native_read_error": result.read_error, "pages_total": result.pages_total,
+                                    "pages_read": result.pages_read, "pages_changed": result.pages_changed])
                             }
                         }
                     }
@@ -403,11 +422,27 @@ final class SystemFairPlaySession: ObservableObject {
                 output = destination; phase = "exported"
                 readyToSignOutput = installAfterDecryption
                 signNext = installAfterDecryption && !signingPassword.isEmpty
-                exportDescription = installedDescription
+                exportDescription = label
                 try save(reportURL: reportURL)
                 message = "Native page processing and export checks passed. Known licensing metadata and embedded signatures were removed. Sign the output before installation. Unknown app-defined account data and plaintext authentication are not certified."
             } catch {
-                phase = "processing_failed"; try? save()
+                phase = "processing_failed"
+                let native = error as NSError
+                var failure: [String: Any] = ["schema": "crumb-system-attempt-v1", "ok": false,
+                    "route": localIPA == nil ? "installed_resource" : "data_container", "code": native.code,
+                    "stage": native.domain == "Crumb.SystemFairPlay" ? "native_pages" : "preparation_or_validation",
+                    "signing_requested": false, "installation_requested": false]
+                for key in ["native_remap_return", "native_remap_errno", "native_read_error", "pages_total", "pages_read", "pages_changed"] {
+                    if let count = native.userInfo[key] as? NSNumber { failure[key] = count }
+                }
+                if let data = try? JSONSerialization.data(withJSONObject: failure, options: [.sortedKeys, .prettyPrinted]) {
+                    report = String(decoding: data, as: UTF8.self)
+                    if let directory = try? workspace() {
+                        let file = directory.appendingPathComponent("Attempt.json")
+                        try? FairPlayNative.privateWrite(data, to: file)
+                        try? save(reportURL: file)
+                    }
+                }
                 failureMessage = "Could not decrypt this app on this iPhone. Your original IPA is saved in Downloads."
                 message = failureMessage
             }
@@ -455,13 +490,15 @@ struct SystemFairPlayView: View {
     @EnvironmentObject var appData: AppData
     @Environment(\.dismiss) private var dismiss
     @StateObject private var session = SystemFairPlaySession.shared
-    @State private var identity = false
-    @State private var installing = false
     @State private var started = false
     private var identifiers: [String] {
         guard let account = appData.ipaTool?.account else { return [] }
         return [account.email, account.name, account.dsid, account.guid, account.passwordToken]
             .filter { $0.utf8.count >= 6 && $0.utf8.count <= 4096 }
+    }
+    private var visibleOutput: URL? {
+        guard started, record == nil || session.requestedRecordID == record?.id else { return nil }
+        return session.output
     }
     private var progressTitle: String {
         switch session.phase {
@@ -472,18 +509,15 @@ struct SystemFairPlayView: View {
         }
     }
     private func proceed() {
-        identity = session.continueDecryption(record: record, identifiers: identifiers)
-        if !identity && !session.busy && session.signedHelper != nil && session.phase == "awaiting_installation" {
-            installing = true
-        }
+        _ = session.continueDecryption(record: record, identifiers: identifiers)
     }
     var body: some View {
         NavigationStack {
             VStack(spacing: 24) {
                 Spacer()
-                Image(systemName: session.output != nil ? "checkmark.circle.fill" : "lock.open")
+                Image(systemName: visibleOutput != nil ? "checkmark.circle.fill" : "lock.open")
                     .font(.system(size: 56, weight: .light))
-                    .foregroundStyle(session.output != nil ? Color.green : Color.accentColor)
+                    .foregroundStyle(visibleOutput != nil ? Color.green : Color.accentColor)
                     .accessibilityHidden(true)
                 Text(record?.appName ?? "Decrypt app")
                     .font(.system(.title2, design: .rounded, weight: .bold))
@@ -492,20 +526,14 @@ struct SystemFairPlayView: View {
                     ProgressView()
                     Text(progressTitle).font(.headline)
                     Text("Keep Crumb open.").foregroundStyle(.secondary)
-                } else if let output = session.output {
+                } else if let output = visibleOutput {
                     Text("Your decrypted IPA is ready.").foregroundStyle(.secondary)
                     ShareLink(item: output) { Label("Save IPA", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity, minHeight: 36) }
                         .buttonStyle(.borderedProminent)
                 } else if !session.failureMessage.isEmpty {
                     Text(session.failureMessage).multilineTextAlignment(.center).foregroundStyle(.secondary)
                     Button("Try again", action: proceed).buttonStyle(.borderedProminent)
-                    if session.phase == "signing_failed" {
-                        Button("Change certificate") { identity = true }
-                    }
-                } else if session.phase == "awaiting_installation" {
-                    Text("Accept the iOS installation prompt, then reopen Crumb. Decryption will continue automatically.")
-                        .multilineTextAlignment(.center).foregroundStyle(.secondary)
-                    Button("Continue", action: proceed).buttonStyle(.borderedProminent)
+
                 } else {
                     Text("Crumb will process the app and check the result before saving it.")
                         .multilineTextAlignment(.center).foregroundStyle(.secondary)
@@ -524,20 +552,7 @@ struct SystemFairPlayView: View {
                     session.resume(identifiers: identifiers)
                 } else if startAction != nil { proceed() }
             }
-            .onChange(of: session.signedHelper) { package in
-                if package != nil && session.phase == "awaiting_installation" { installing = true }
-            }
-            .sheet(isPresented: $identity) {
-                SigningIdentityView(continuation: {
-                    identity = false
-                    // Continue after the configuration sheet has dismissed.
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(350))
-                        proceed()
-                    }
-                })
-            }
-            .sheet(isPresented: $installing) { if let package = session.signedHelper { SystemPackageInstallationView(package: package) } }
+
         }
     }
 }

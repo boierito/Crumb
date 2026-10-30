@@ -1,0 +1,82 @@
+# Direct runtime route: no per-download Crumb update
+
+Status: research implementation, NOT a demonstrated solution to data-container
+access. No direct-route device decryption has been observed. No installation or
+signing fallback is invoked by the new Download → Decrypt coordinator.
+
+## What actually changed
+
+`PrepareSystemLocal` extracts the original purchased app into a new private data
+directory. Both it and the old embedded-helper preparer now share the same
+`systemLicensePlan`, including exact original SINF mapping and refusal to guess
+between distinct licenses. Original binaries, metadata and licenses are retained
+unchanged for the native call; replication follows the original manifest only.
+
+Swift invokes the same read-only cryptid-2 native reader on these local files,
+then the existing all-executable/all-page export validator. It never asks for a
+certificate or invokes signing, helper packaging or an installer on this route.
+The data tree and partial native outputs are removed after the attempt. A failed
+request records only fixed numeric errors/counts, the route and the stage; no
+path, license bytes or account identifiers are included. Failure cannot generate
+a successful or partial decrypted IPA.
+
+The old engine remains available in source for research and already-installed
+resources; it is not an automatic fallback that reinstalls Crumb.
+
+## Evidence and limits
+
+1. **Observed on the user's phone:** the returned FairPlayed log shows successful
+   reads of 178 protected pages from the installed bundle. It contains no matched
+   experiment on a data-container copy. Do not claim this log independently
+   demonstrates a data-container denial.
+2. **Upstream's claim:** FairPlayed reports System Policy denying fairplayd access
+   to data containers, including symlink variants. Its extraction and path-variant
+   code is inspectable, but our supplied device log does not reproduce those
+   variants. [Pinned upstream](https://github.com/morzelowski/fairplayed/tree/bad7df138839b5e0ac8b9f20cc4689140b8436fb).
+3. **Kernel contract:** Apple's `mremap_encrypted` resolves the backing vnode with
+   `fill_procregioninfo_onlymappedvnodes`, obtains `vn_getpath`, and passes the real
+   filename, CPU and origin to `text_crypter_create`. Both cryptid 1 and 2 choose
+   `com.apple.unfree`. Its syscall arguments do not include an SINF buffer,
+   alternate license path or sandbox-extension token. A string alias, anonymous
+   memory or merely changing cryptid does not establish an alternate license
+   handoff. [Pinned XNU source](https://github.com/apple-oss-distributions/xnu/blob/f6217f891ac0bb64f3d375211650a4c1ff8ca1ea/bsd/kern/kern_mman.c).
+   This source audit is not a claim of exact iOS 27 kernel binary equivalence.
+4. **Direct driver alternative:** the extracted macOS 26A428 FairPlayIOKit
+   `initWithTask` at `0xfffffe000a458e74` calls `copyClientEntitlement` for
+   `com.apple.private.FairPlayIOKitUserClient.access`,
+   `com.apple.private.ProvInfoIOKitUserClient.access` and
+   `com.apple.private.FairPlayIOKitUserClient.Virtual.access`. At
+   `0xfffffe000a458ee4`–`0xfffffe000a458efc`, all-null entitlement results select
+   the rejection path; subsequent code checks the true singleton. This rules
+   out treating this macOS user-client interface as an unrestricted portable
+   crypto service. The exact imported/fixed binary SHA-256 is
+   `61348129cfee02707e036e16bd257cf08426710e57cccd377edc1658a319a706`.
+   It is NOT proof that every iOS service/interface has the same restriction.
+
+No verified service accepting an arbitrary caller-supplied mobile SINF from an
+ordinary iOS app was found in this investigation. No sandbox entitlement, UID key
+or zero-filled substitute is fabricated. Merely issuing a file-provider access
+permission to Crumb would not demonstrate that fairplayd consumes that permission;
+that consumer behavior must be established before claiming it solves the issue.
+
+## Local verification with real DD data
+
+The new direct extractor retained all 57 original DD files byte-for-byte and
+planned its two encrypted ARM64 executables. Go race tests cover extraction,
+license replication, absent license, ZIP corruption, non-overwrite and cleanup;
+the pre-existing multi-license/layout/export suites still pass after sharing the
+mapping implementation.
+
+The 178 device-recovered plaintext pages were replayed through the new local tree
+and existing export gates. For this replay ONLY, original non-encrypted bytes,
+including original signature data, were retained; the prior helper's signature
+changes were not accepted as native decryption. Output: 43 files, two executable
+slices, 178 changed pages, two embedded signatures removed, four known metadata
+entries excluded and one known identifier checked. This is **replay**, not fresh
+system decryption, and does not verify that fairplayd can read the local directory.
+
+A host cannot supply the iPhone's FairPlay daemon, account state or hardware. The
+remaining unknown is the actual native service result for the local source on
+that iPhone, or a verified alternative interface that legitimately accepts the
+license. Until one succeeds, this route is not presented as a working generic
+one-tap decryptor and no new IPA is offered as a solution to that limitation.

@@ -118,6 +118,70 @@ func systemPut(z *zip.Writer, name string, mode fs.FileMode, reader io.Reader) e
 	return e
 }
 
+type systemLicenseCopy struct{ Relative, Source string }
+
+// Both installed-resource packaging and direct extraction use exactly the same
+// original-license mapping. This never manufactures a license or credential.
+func systemLicensePlan(files map[string]*zip.File, root string) (app Info, copies []systemLicenseCopy, err error) {
+	data, err := readSmall(files[root+"Info.plist"])
+	if err != nil {
+		return app, nil, err
+	}
+	if _, err = plist.Unmarshal(data, &app); err != nil || app.BundleID == "" || app.Version == "" || !systemSafe(app.Executable) || strings.Contains(app.Executable, "/") {
+		return app, nil, errors.New("invalid app identity")
+	}
+	if files[root+app.Executable] == nil {
+		return app, nil, errors.New("app executable missing")
+	}
+	m := files[root+"SC_Info/Manifest.plist"]
+	if m == nil {
+		return app, nil, errors.New("license manifest missing")
+	}
+	data, err = readSmall(m)
+	if err != nil {
+		return app, nil, err
+	}
+	var manifest struct {
+		SinfPaths            []string
+		SinfReplicationPaths []string
+	}
+	if _, err = plist.Unmarshal(data, &manifest); err != nil || len(manifest.SinfPaths) == 0 || len(manifest.SinfReplicationPaths) > 4096 {
+		return app, nil, errors.New("invalid license manifest")
+	}
+	var primary []byte
+	identicalLicenses := true
+	for i, p := range manifest.SinfPaths {
+		if !systemSafe(p) || files[root+p] == nil {
+			return app, nil, ErrSystemLicenseMapping
+		}
+		blob, e := readSmall(files[root+p])
+		if e != nil {
+			return app, nil, e
+		}
+		if i == 0 {
+			primary = blob
+		} else if !bytes.Equal(primary, blob) {
+			identicalLicenses = false
+		}
+	}
+	for _, p := range manifest.SinfReplicationPaths {
+		if !systemSafe(p) || strings.HasSuffix(p, "/") {
+			return app, nil, errors.New("invalid SINF replication path")
+		}
+		if files[root+p] == nil && !identicalLicenses {
+			return app, nil, ErrSystemLicenseMapping
+		}
+	}
+	seen := map[string]bool{}
+	for _, name := range manifest.SinfReplicationPaths {
+		if files[root+name] == nil && !seen[name] {
+			copies = append(copies, systemLicenseCopy{name, root + manifest.SinfPaths[0]})
+			seen[name] = true
+		}
+	}
+	return app, copies, nil
+}
+
 // PrepareSystemHelper snapshots this app's installed, readable bundle and adds
 // one purchased IPA. It uses no developer account, signing key or server.
 // iOS must accept a NEW signature and installation before the payload is usable.
@@ -165,55 +229,9 @@ func PrepareSystemHelper(bundleDirectory, original, destination string) (job Sys
 	if err != nil {
 		return job, err
 	}
-	data, err := readSmall(files[root+"Info.plist"])
+	app, copies, err := systemLicensePlan(files, root)
 	if err != nil {
 		return job, err
-	}
-	var app Info
-	if _, err = plist.Unmarshal(data, &app); err != nil || app.BundleID == "" || app.Version == "" || !systemSafe(app.Executable) || strings.Contains(app.Executable, "/") {
-		return job, errors.New("invalid app identity")
-	}
-	if files[root+app.Executable] == nil {
-		return job, errors.New("app executable missing")
-	}
-	m := files[root+"SC_Info/Manifest.plist"]
-	if m == nil {
-		return job, errors.New("license manifest missing")
-	}
-	data, err = readSmall(m)
-	if err != nil {
-		return job, err
-	}
-	var manifest struct {
-		SinfPaths            []string
-		SinfReplicationPaths []string
-	}
-	if _, err = plist.Unmarshal(data, &manifest); err != nil || len(manifest.SinfPaths) == 0 || len(manifest.SinfReplicationPaths) > 4096 {
-		return job, errors.New("invalid license manifest")
-	}
-	var primary []byte
-	identicalLicenses := true
-	for i, p := range manifest.SinfPaths {
-		if !systemSafe(p) || files[root+p] == nil {
-			return job, ErrSystemLicenseMapping
-		}
-		blob, e := readSmall(files[root+p])
-		if e != nil {
-			return job, e
-		}
-		if i == 0 {
-			primary = blob
-		} else if !bytes.Equal(primary, blob) {
-			identicalLicenses = false
-		}
-	}
-	for _, p := range manifest.SinfReplicationPaths {
-		if !systemSafe(p) || strings.HasSuffix(p, "/") {
-			return job, errors.New("invalid SINF replication path")
-		}
-		if files[root+p] == nil && !identicalLicenses {
-			return job, ErrSystemLicenseMapping
-		}
 	}
 	var nonce [16]byte
 	if _, err = rand.Read(nonce[:]); err != nil {
@@ -277,21 +295,16 @@ func PrepareSystemHelper(bundleDirectory, original, destination string) (job Sys
 			}
 			job.Files++
 		}
-		for _, relative := range manifest.SinfReplicationPaths {
-			if files[root+relative] != nil {
-				continue
-			}
-			r, e := files[root+manifest.SinfPaths[0]].Open()
+		for _, copy := range copies {
+			r, e := files[copy.Source].Open()
 			if e != nil {
 				return e
 			}
-			e = systemPut(z, target+relative, 0600, r)
+			e = systemPut(z, target+copy.Relative, 0600, r)
 			_ = r.Close()
 			if e != nil {
 				return e
 			}
-			// Count a replicated path only once; duplicate manifest entries fail.
-			files[root+relative] = files[root+manifest.SinfPaths[0]]
 		}
 		b, e := json.Marshal(job)
 		if e != nil {

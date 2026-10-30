@@ -43,7 +43,6 @@ struct SettingsView: View {
                 }
                 
                 Section(header: HeaderLabel(text: "Settings".localized, icon: "gearshape")) {
-                    Button { signingIdentity = true } label: { Label("Certificate", systemImage: "signature") }
                     Toggle(isOn: $autoCleanApp) {
                         Text("Auto-Clean App".localized)
                         Text("Auto-Clean Description".localized)
