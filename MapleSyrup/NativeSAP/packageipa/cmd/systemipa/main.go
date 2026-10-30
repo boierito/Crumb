@@ -28,6 +28,10 @@ func main() {
 	switch os.Args[1] {
 	case "prepare":
 		result, err = packageipa.PrepareSystemHelper(*source, *ipa, *output)
+	case "unpack-export":
+		result, err = packageipa.UnpackSystemExport(*source, *output)
+	case "archive-export":
+		result, err = packageipa.ArchiveSystemExport(*source, *ipa, *output)
 	case "unpack":
 		result, err = packageipa.UnpackSystemSigning(*source, *output)
 	case "archive-signed":

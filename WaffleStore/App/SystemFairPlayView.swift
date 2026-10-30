@@ -25,11 +25,13 @@ nonisolated private struct SystemNativePlan: Decodable {
 @MainActor
 final class SystemFairPlaySession: ObservableObject {
     static let shared = SystemFairPlaySession()
+    @Published var showIdentity = false
     @Published var signingPassword = ""
     @Published var identityStatus = "Not checked"
     @Published var identityValidated = false
     @Published var installAfterDecryption = false
     @Published var signedOutput: URL?
+    @Published var readyToSignOutput = false
     @Published var outputBundleID = ""
     @Published var outputVersion = ""
     @Published var hasOutputProfile = false
@@ -57,6 +59,7 @@ final class SystemFairPlaySession: ObservableObject {
         case 16: return "This certificate is not listed in the provisioning profile. Import a matching pair."
         case 17: return "This profile belongs to a different signing team. Updating Crumb requires its current team."
         case 18: return "The profile does not allow this bundle ID. Use a matching profile or an appropriate wildcard profile."
+        case 19: return "The profile does not cover every app extension. Use a profile with a compatible wildcard; Crumb will not silently remove extensions."
         default: return "Signing could not finish (code \(code)). The original IPA is retained."
         }
     }
@@ -178,7 +181,11 @@ final class SystemFairPlaySession: ObservableObject {
                           let size = values.fileSize, size > 0, size <= 8 << 20 else { throw CocoaError(.fileReadTooLarge) }
                     try FairPlayNative.privateWrite(Data(contentsOf: selected), to: destination)
                 }.value
-                if removeInboxCopy { try? FileManager.default.removeItem(at: selected) }
+                let temporary = FileManager.default.temporaryDirectory.standardizedFileURL.path + "/"
+                let choco = NSHomeDirectory() + "/Documents/ChocoFilePickerFixFolder/"
+                if removeInboxCopy || selected.standardizedFileURL.path.hasPrefix(temporary) || selected.standardizedFileURL.path.hasPrefix(choco) {
+                    try? FileManager.default.removeItem(at: selected)
+                }
                 identityValidated = false; identityStatus = "Check this identity before continuing"
                 hasOutputProfile = FileManager.default.fileExists(atPath: directory.appendingPathComponent("App.mobileprovision").path)
                 hasCertificate = FileManager.default.fileExists(atPath: directory.appendingPathComponent("Identity.p12").path)
@@ -237,6 +244,9 @@ final class SystemFairPlaySession: ObservableObject {
             hasProfile = FileManager.default.fileExists(atPath: directory.appendingPathComponent("Profile.mobileprovision").path)
             hasOutputProfile = FileManager.default.fileExists(atPath: directory.appendingPathComponent("App.mobileprovision").path)
         }
+        if let docs = try? FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true) {
+            try? FairPlayNative.privateDirectory(docs.appendingPathComponent("Signing Inbox", isDirectory: true))
+        }
         guard restoringPackages,
               let data = try? Data(contentsOf: root.appendingPathComponent("latest.json")),
               let saved = try? JSONSerialization.jsonObject(with: data) as? [String: String] else { return }
@@ -249,6 +259,7 @@ final class SystemFairPlaySession: ObservableObject {
         helper = item("helper"); output = item("output"); signedHelper = item("signed"); signedOutput = item("signed_output")
         pendingJobID = saved["job_id"] ?? ""; phase = saved["phase"] ?? "idle"
         installAfterDecryption = saved["install_after"] == "true"
+        readyToSignOutput = output != nil && signedOutput == nil && installAfterDecryption
         outputBundleID = saved["output_bundle"] ?? ""; outputVersion = saved["output_version"] ?? ""
         preparedDescription = saved["prepared_description"] ?? "Previously prepared target"
         exportDescription = saved["export_description"] ?? "Previously processed target"
@@ -306,10 +317,11 @@ final class SystemFairPlaySession: ObservableObject {
     }
     func decrypt(identifiers: [String]) {
         guard !busy, let source = installedTarget else { return }
-        busy = true; phase = "processing"; try? save()
+        busy = true; readyToSignOutput = false; phase = "processing"; try? save()
         message = "Reading all protected pages through this iPhone's FairPlay…"
         Task {
-            defer { busy = false }
+            var signNext = false
+            defer { busy = false; if signNext { signExport() } }
             do {
                 let directory = try workspace()
                 let destination = directory.appendingPathComponent("App-Unsigned.ipa")
@@ -354,6 +366,8 @@ final class SystemFairPlaySession: ObservableObject {
                 let reportURL = directory.appendingPathComponent("Export-report.json")
                 try FairPlayNative.privateWrite(Data(text.utf8), to: reportURL)
                 output = destination; phase = "exported"
+                readyToSignOutput = installAfterDecryption
+                signNext = installAfterDecryption && !signingPassword.isEmpty
                 exportDescription = installedDescription
                 try save(reportURL: reportURL)
                 message = "Native page processing and export checks passed. Known licensing metadata and embedded signatures were removed. Sign the output before installation. Unknown app-defined account data and plaintext authentication are not certified."
@@ -392,7 +406,7 @@ final class SystemFairPlaySession: ObservableObject {
                     outputBundleID = info["bundle_id"] as? String ?? ""
                     outputVersion = info["build"] as? String ?? ""
                 }
-                signedOutput = destination; phase = "signed_export"; try save()
+                signedOutput = destination; readyToSignOutput = false; phase = "signed_export"; try save()
                 message = "Installation copy signed. iOS must still accept it. Your unsigned export stays separate from this copy, which contains your public certificate and profile."
             } catch { message = Self.signingError((error as NSError).code) }
         }

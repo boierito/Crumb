@@ -27,6 +27,15 @@ struct CrumbApp: App {
                     }
                 }
                 .onOpenURL { schemedURL in
+                    if schemedURL.isFileURL {
+                        let ext = schemedURL.pathExtension.lowercased()
+                        if ["p12", "pfx", "mobileprovision"].contains(ext) {
+                            let session = SystemFairPlaySession.shared
+                            session.showIdentity = true
+                            session.importSigningFile(schemedURL, certificate: ext != "mobileprovision")
+                        }
+                        return
+                    }
                     let rawURL = schemedURL.absoluteString.replacingOccurrences(of: "crumb:", with: "")
                     if let appLink = rawURL.removingPercentEncoding {
                         appData.openAppSelection(appLink)

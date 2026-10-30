@@ -31,6 +31,8 @@ UIDocumentPicker copy mode. The supplied FilePickerFix ARM64 binary is pinned,
 embedded and loaded before the picker; see its third_party README for bounded
 inspection and unresolved redistribution licensing.
 
+From Files, Share → Crumb also accepts P12/profile files without opening a picker.
+
 Files → On My iPhone → Crumb → Signing Inbox is an alternative: copy one .p12
 or .mobileprovision there and select its role in Settings. On successful private
 storage, only the inbox copy is deleted. Other selected original files are not
@@ -48,3 +50,12 @@ Private license-bearing helpers, signing identities, final signed copies and
 unsigned cleaned exports remain distinct. Unknown app-defined identifiers and
 independent plaintext authenticity are not certified. The unsigned export's
 existing all-page checks remain mandatory.
+
+## Verification in this change
+
+The shared unpack/sign/archive path was also run locally on DD’s real returned
+plaintext, using a temporary self-signed fixture identity with its CA chain and
+a legacy P12. Its main executable and extension were signed; original resources
+and bundle identity were verified unchanged and no encrypted Mach-O accepted.
+The temporary identity/output were deleted. This checks real-sized packaging,
+not Apple trust, iOS installation, or a fresh native decryption.

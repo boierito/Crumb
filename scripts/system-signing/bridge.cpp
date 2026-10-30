@@ -4,6 +4,8 @@
 #include <ctime>
 #include <memory>
 #include <fstream>
+#include <dirent.h>
+#include <sys/stat.h>
 #include <openssl/crypto.h>
 #include <openssl/err.h>
 #include <openssl/provider.h>
@@ -82,6 +84,29 @@ extern "C" int CrumbValidateSigningIdentity(const char* p12,const char* profile,
     std::lock_guard<std::mutex> lock(signing_lock);
     try { return validate(p12,profile,password,bundleID,teamID); } catch (...) { ERR_clear_error(); return 14; }
 }
+// A single profile may sign multiple bundles only when it actually covers
+// each app/extension. Reject before changing any executable, not at installation.
+static bool nestedPermitted(const std::string& folder,const std::string& pattern) {
+    DIR* directory=opendir(folder.c_str()); if (!directory) return false;
+    bool ok=true; struct dirent* entry;
+    while (ok && (entry=readdir(directory))) {
+        std::string name(entry->d_name);
+        if (name=="." || name==".." || name=="CrumbSystemPayload") continue;
+        const std::string path=folder+"/"+name; struct stat st;
+        if (lstat(path.c_str(),&st)!=0 || S_ISLNK(st.st_mode)) {ok=false;break;}
+        if (!S_ISDIR(st.st_mode)) continue;
+        if ((name.size()>4 && name.compare(name.size()-4,4,".app")==0) ||
+            (name.size()>6 && name.compare(name.size()-6,6,".appex")==0)) {
+            jvalue info;
+            if (!info.read_plist_from_file("%s/Info.plist",path.c_str())) {ok=false;break;}
+            const std::string bundle=info["CFBundleIdentifier"].as_string();
+            const size_t dot=pattern.find('.');
+            if (bundle.empty() || dot==std::string::npos || !permits(pattern,pattern.substr(0,dot+1)+bundle)) {ok=false;break;}
+        }
+        if (!nestedPermitted(path,pattern)) ok=false;
+    }
+    closedir(directory);return ok;
+}
 // Local CMS signature creation is separate from Apple's installation decision.
 extern "C" int CrumbSignPreparedBundle(const char* folder,const char* p12,const char* profile,const char* password,
                                       const char* expectedBundleID,const char* expectedTeamID) {
@@ -94,6 +119,7 @@ extern "C" int CrumbSignPreparedBundle(const char* folder,const char* p12,const 
         ZSignAsset identity; jvalue info;
         if (!info.read_plist_from_file("%s/Info.plist",folder) || info["CFBundleIdentifier"].as_string()!=expectedBundleID) result=18;
         else if (!identity.Init("",p12,profile,"",secret,false,false,false)) result=2;
+        else if (!nestedPermitted(folder,identity.m_strApplicationId)) result=19;
         else { ZBundle bundle; const std::vector<std::string> empty;
             result=bundle.SignFolder(&identity,folder,"","","",empty,empty,true,false,false,false)?0:4; }
     } catch (...) { result=4; }
