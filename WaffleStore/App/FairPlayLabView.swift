@@ -6,7 +6,8 @@ import CryptoKit
 
 nonisolated enum FairPlayNative {
     static func run(_ operation: String, source: URL? = nil, destination: URL? = nil,
-                    report: URL? = nil, model: URL? = nil, ipa: URL? = nil) throws -> String {
+                    report: URL? = nil, model: URL? = nil, ipa: URL? = nil,
+                    privateIdentifiers: [String] = []) throws -> String {
         var cachePath = ""
         if operation == "probe-legacy-producer" {
             let cache = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask,
@@ -14,8 +15,11 @@ nonisolated enum FairPlayNative {
             try privateDirectory(cache)
             cachePath = cache.path
         }
-        let request = ["Operation": operation, "Cache": cachePath, "Source": source?.path ?? "",
+        var request = ["Operation": operation, "Cache": cachePath, "Source": source?.path ?? "",
                        "Destination": destination?.path ?? "", "Report": report?.path ?? "", "Model": model?.path ?? "", "IPA": ipa?.path ?? ""]
+        if !privateIdentifiers.isEmpty {
+            request["Input"] = try JSONEncoder().encode(privateIdentifiers).base64EncodedString()
+        }
         let data = try JSONEncoder().encode(request)
         let text = String(decoding: data, as: UTF8.self)
         var output: UnsafeMutablePointer<UInt8>?

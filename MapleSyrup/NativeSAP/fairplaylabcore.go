@@ -4,8 +4,11 @@ import (
 	"archive/zip"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/majd/ipatool/v2/internal/fairplay"
+	"github.com/majd/ipatool/v2/wafflebridge/packageipa"
 	"github.com/majd/ipatool/v2/wafflebridge/recovery/frame"
 	"github.com/majd/ipatool/v2/wafflebridge/recovery/rawsource"
 	"github.com/majd/ipatool/v2/wafflebridge/recovery/sidb"
@@ -26,6 +29,26 @@ var legacyProducerProbe func(labRequest) (any, error)
 
 func labRun(r labRequest) (any, error) {
 	switch r.Operation {
+	case "prepare-system-helper":
+		job, err := packageipa.PrepareSystemHelper(r.Source, r.IPA, r.Destination)
+		if errors.Is(err, packageipa.ErrSystemLicenseMapping) {
+			return nil, recoveryFailure("system-preparation", "ambiguous_original_license_mapping", err)
+		}
+		return job, err
+	case "unpack-system-helper":
+		return packageipa.UnpackSystemSigning(r.Source, r.Destination)
+	case "archive-system-helper":
+		return packageipa.ArchiveSystemSigning(r.Source, r.IPA, r.Destination)
+	case "plan-system-target":
+		return packageipa.PlanSystemTarget(r.Source)
+	case "export-system-result":
+		var identifiers []string
+		if len(r.Input) > 0 {
+			if err := json.Unmarshal(r.Input, &identifiers); err != nil {
+				return nil, fmt.Errorf("invalid private identifier request")
+			}
+		}
+		return packageipa.ExportSystemResult(r.Source, r.Model, r.Destination, identifiers)
 	case "probe-legacy-producer":
 		if legacyProducerProbe == nil {
 			return nil, recoveryFailure("producer", "producer_unavailable", nil)

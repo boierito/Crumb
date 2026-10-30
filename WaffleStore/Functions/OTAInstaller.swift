@@ -15,8 +15,11 @@ final class OTAInstaller: ObservableObject {
     private var expiration: Task<Void, Never>?
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     func start(_ record: DownloadRecord) throws {
-        stop()
         guard let source = record.fileURL else { throw CocoaError(.fileNoSuchFile) }
+        try start(source: source, bundleID: record.bundleID, name: record.appName, version: record.build ?? record.version)
+    }
+    func start(source: URL, bundleID: String, name: String, version: String) throws {
+        stop()
         let fm = FileManager.default
         let root = fm.temporaryDirectory.appendingPathComponent("ota-" + UUID().uuidString, isDirectory: true)
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
@@ -30,14 +33,14 @@ final class OTAInstaller: ObservableObject {
             // Same HTTPS generator as upstream. Sends app metadata + loopback
             // address only; never Apple account/session data or uploaded IPA bytes.
             var manifest = URLComponents(string: "https://api.palera.in/genPlist")!
-            manifest.queryItems = [URLQueryItem(name: "bundleid", value: record.bundleID),
-                URLQueryItem(name: "name", value: record.appName),
-                URLQueryItem(name: "version", value: record.build ?? record.version),
+            manifest.queryItems = [URLQueryItem(name: "bundleid", value: bundleID),
+                URLQueryItem(name: "name", value: name),
+                URLQueryItem(name: "version", value: version),
                 URLQueryItem(name: "fetchurl", value: fetch)]
             var install = URLComponents(string: "itms-services://")!
             install.queryItems = [URLQueryItem(name: "action", value: "download-manifest"),
                 URLQueryItem(name: "url", value: manifest.url!.absoluteString)]
-            let html = try InstallationPage.html(name: record.appName, version: record.version, target: install.url!)
+            let html = try InstallationPage.html(name: name, version: version, target: install.url!)
             let server = Server()
             server.concurrency = 2
             let fileHandler: HTTPRequest.Handler = { request in
@@ -79,6 +82,28 @@ final class OTAInstaller: ObservableObject {
         server?.stop(immediately: true); server = nil
         if let directory { try? FileManager.default.removeItem(at: directory) }
         directory = nil; pageURL = nil
+    }
+}
+struct SystemPackageInstallationView: View {
+    let package: URL
+    @StateObject private var installer = OTAInstaller()
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let url = installer.pageURL { InstallationSafari(url: url) }
+                else { Text(installer.status.isEmpty ? "Preparing local installation…" : installer.status).padding() }
+            }
+            .navigationTitle("Install prepared Crumb")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { installer.stop(); dismiss() } } }
+            .task {
+                do {
+                    try installer.start(source: package, bundleID: Bundle.main.bundleIdentifier ?? "",
+                        name: "Crumb", version: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "")
+                } catch { installer.status = "Could not start local installation. The signed package was retained." }
+            }
+            .onDisappear { installer.stop() }
+        }
     }
 }
 struct OTAInstallationView: View {

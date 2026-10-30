@@ -45,7 +45,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/Native
-          key: crumb-native-macos15-xcode26-go125-${{ hashFiles('scripts/*.sh', 'scripts/*.py', 'MapleSyrup/NativeSAP/**/*.go', 'third_party/archives/*.tar.gz', 'third_party/unfairplay-generic/**', 'third_party/fairplay-immutable-image/**') }}
+          key: crumb-native-macos15-xcode26-go125-${{ hashFiles('scripts/*.sh', 'scripts/*.py', 'scripts/system-signing/**', 'MapleSyrup/NativeSAP/**/*.go', 'third_party/archives/*.tar.gz', 'third_party/unfairplay-generic/**', 'third_party/fairplay-immutable-image/**') }}
       - name: Build and verify native library fingerprint
         run: bash scripts/ensure-native.sh
       - name: Share compiled native libraries across configurations
@@ -109,6 +109,8 @@ jobs:
             cp build/Native/ipatool-sap-corresponding-source.tar.gz artifacts/
             cp build/Native/IPATOOL-LICENSE artifacts/
           fi
+          cp build/Native/system-signing-corresponding-source.tar.gz artifacts/
+          cp build/Native/ZSIGN-LICENSE build/Native/OPENSSL-LICENSE artifacts/
       - uses: actions/upload-artifact@v4
         if: always()
         with:
