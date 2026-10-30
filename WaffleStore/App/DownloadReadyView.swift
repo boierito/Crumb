@@ -22,7 +22,7 @@ struct DownloadReadyView: View {
                         decryption = DownloadDecryptionAction(record: record, install: $0)
                     })
                 } footer: {
-                    Text("Your original IPA stays in Downloads. Decryption uses this iPhone’s FairPlay and requires a signed Crumb update. Installation requires a compatible certificate and profile.")
+                    Text("Your original IPA stays in Downloads.")
                 }
             }
             .navigationTitle("Choose what’s next").navigationBarTitleDisplayMode(.inline)

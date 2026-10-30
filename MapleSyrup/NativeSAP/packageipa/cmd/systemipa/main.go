@@ -26,6 +26,8 @@ func main() {
 	var result any
 	var err error
 	switch os.Args[1] {
+	case "prepare-local":
+		result, err = packageipa.PrepareSystemLocal(*ipa, *output)
 	case "prepare":
 		result, err = packageipa.PrepareSystemHelper(*source, *ipa, *output)
 	case "unpack-export":

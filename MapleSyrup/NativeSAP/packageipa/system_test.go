@@ -497,3 +497,105 @@ func TestSystemDecryptedInstallPackagingRejectsReintroducedProtectionAndChangedR
 		})
 	}
 }
+
+func TestSystemLocalExtractsExactLicenseWithoutHelperOrSignature(t *testing.T) {
+	root := t.TempDir()
+	input := filepath.Join(root, "source.ipa")
+	cipher, _ := systemFixtureMachO(true, 0)
+	info, _ := plist.Marshal(Info{BundleID: "local.test", Version: "2", Executable: "Main"}, plist.BinaryFormat)
+	manifest, _ := plist.Marshal(map[string]any{"SinfPaths": []string{"SC_Info/Main.sinf"}, "SinfReplicationPaths": []string{"PlugIns/Test.appex/SC_Info/Share.sinf"}}, plist.BinaryFormat)
+	original := map[string][]byte{"Info.plist": info, "Main": cipher, "SC_Info/Main.sinf": []byte("synthetic license"), "SC_Info/Manifest.plist": manifest, "resource.txt": []byte("unchanged")}
+	if e := systemZIP(input, func(z *zip.Writer) error {
+		for n, b := range original {
+			if e := systemPut(z, "Payload/Original.app/"+n, 0600, bytes.NewReader(b)); e != nil {
+				return e
+			}
+		}
+		return nil
+	}); e != nil {
+		t.Fatal(e)
+	}
+	target := filepath.Join(root, "Target.app")
+	job, e := PrepareSystemLocal(input, target)
+	if e != nil || job.RequiresSigning || job.LicenseValidated || job.Schema != "crumb-system-fairplay-local-v1" || job.BundleID != "local.test" || job.Files != len(original) {
+		t.Fatalf("local result %+v %v", job, e)
+	}
+	for n, b := range original {
+		got, e := os.ReadFile(filepath.Join(target, n))
+		if e != nil || !bytes.Equal(got, b) {
+			t.Fatalf("original changed: %s %v", n, e)
+		}
+	}
+	replica, e := os.ReadFile(filepath.Join(target, "PlugIns/Test.appex/SC_Info/Share.sinf"))
+	if e != nil || !bytes.Equal(replica, original["SC_Info/Main.sinf"]) {
+		t.Fatal("license replication changed")
+	}
+	if _, e = os.Stat(filepath.Join(target, SystemPayload)); !os.IsNotExist(e) {
+		t.Fatal("helper was prepared")
+	}
+	if _, e = PlanSystemTarget(target); e != nil {
+		t.Fatal(e)
+	}
+	systemFixtureWrite(t, target, "keep", []byte("retain"))
+	if _, e = PrepareSystemLocal(input, target); e == nil {
+		t.Fatal("overwrote existing target")
+	}
+	if got, _ := os.ReadFile(filepath.Join(target, "keep")); string(got) != "retain" {
+		t.Fatal("existing target removed")
+	}
+}
+
+func TestSystemLocalRejectsMissingLicenseAndCleansFailedExtraction(t *testing.T) {
+	root := t.TempDir()
+	info, _ := plist.Marshal(Info{BundleID: "local.test", Version: "1", Executable: "Main"}, plist.BinaryFormat)
+	cipher, _ := systemFixtureMachO(true, 0)
+	manifest, _ := plist.Marshal(map[string]any{"SinfPaths": []string{"SC_Info/Main.sinf"}}, plist.BinaryFormat)
+	for _, kind := range []string{"missing", "corrupt"} {
+		t.Run(kind, func(t *testing.T) {
+			input := filepath.Join(root, kind+".ipa")
+			target := filepath.Join(root, kind)
+			if e := systemZIP(input, func(z *zip.Writer) error {
+				names := []string{"Info.plist", "Main", "SC_Info/Manifest.plist"}
+				data := [][]byte{info, cipher, manifest}
+				if kind == "corrupt" {
+					names = append(names, "SC_Info/Main.sinf")
+					data = append(data, []byte("synthetic license"))
+				}
+				for i, n := range names {
+					if e := systemPut(z, "Payload/X.app/"+n, 0600, bytes.NewReader(data[i])); e != nil {
+						return e
+					}
+				}
+				return nil
+			}); e != nil {
+				t.Fatal(e)
+			}
+			if kind == "corrupt" {
+				z, e := zip.OpenReader(input)
+				if e != nil {
+					t.Fatal(e)
+				}
+				offset, e := z.File[1].DataOffset()
+				z.Close()
+				if e != nil {
+					t.Fatal(e)
+				}
+				file, e := os.OpenFile(input, os.O_RDWR, 0600)
+				if e != nil {
+					t.Fatal(e)
+				}
+				var b [1]byte
+				file.ReadAt(b[:], offset)
+				b[0] ^= 0xff
+				file.WriteAt(b[:], offset)
+				file.Close()
+			}
+			if _, e := PrepareSystemLocal(input, target); e == nil {
+				t.Fatal("invalid original accepted")
+			}
+			if _, e := os.Stat(target); !os.IsNotExist(e) {
+				t.Fatal("failed target retained")
+			}
+		})
+	}
+}

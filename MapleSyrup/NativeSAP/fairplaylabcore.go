@@ -29,6 +29,8 @@ var legacyProducerProbe func(labRequest) (any, error)
 
 func labRun(r labRequest) (any, error) {
 	switch r.Operation {
+	case "prepare-system-local":
+		return packageipa.PrepareSystemLocal(r.IPA, r.Destination)
 	case "prepare-system-helper":
 		job, err := packageipa.PrepareSystemHelper(r.Source, r.IPA, r.Destination)
 		if errors.Is(err, packageipa.ErrSystemLicenseMapping) {
