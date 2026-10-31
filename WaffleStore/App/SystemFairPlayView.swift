@@ -715,6 +715,8 @@ struct SystemFairPlayView: View {
     @StateObject private var session = SystemFairPlaySession.shared
     @State private var started = false
     @State private var showingIPAImporter = false
+    @State private var showingHelperIdentity = false
+    @State private var showingHelperInstall = false
     @State private var coreMediaRunning = false
     @State private var coreMediaSummary = ""
     private var identifiers: [String] {
@@ -789,6 +791,50 @@ struct SystemFairPlayView: View {
                     Button("Decrypt", action: proceed).buttonStyle(.borderedProminent)
                 }
                 if let localIPA = record?.fileURL ?? (importMode ? session.importedIPA : nil) {
+                    if visibleOutput == nil {
+                        VStack(spacing: 8) {
+                            Divider()
+                            Text("Alternative: separate FairPlay helper")
+                                .font(.headline)
+                            Text("Install a separate helper containing this IPA. Crumb will not be replaced. Requires a signing profile that covers a second app ID.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                            Button("Prepare separate helper") { session.prepareSeparateHelper(localIPA) }
+                                .buttonStyle(.bordered)
+                                .disabled(session.busy)
+                            if !session.helperAppID.isEmpty, session.helper != nil {
+                                Button("Configure signing identity") { showingHelperIdentity = true }
+                                    .buttonStyle(.bordered)
+                                    .disabled(session.busy)
+                                if session.signedHelper == nil {
+                                    Button("Sign separate helper") {
+                                        session.sign(password: session.signingPassword)
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .disabled(session.busy || !session.hasCertificate ||
+                                        !session.hasProfile || session.signingPassword.isEmpty)
+                                } else {
+                                    Button("Install Crumb FP Helper") { showingHelperInstall = true }
+                                        .buttonStyle(.borderedProminent)
+                                        .disabled(session.busy)
+                                    if let signed = session.signedHelper {
+                                        ShareLink(item: signed) {
+                                            Label("Share signed helper IPA", systemImage: "square.and.arrow.up")
+                                        }
+                                    }
+                                }
+                                Text("Helper identifier: " + session.helperAppID)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
+                            if !session.message.isEmpty {
+                                Text(session.message).font(.footnote).foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                        }
+                    }
                     VStack(spacing: 8) {
                         Button(coreMediaRunning ? "Checking CoreMedia…" : "Test CoreMedia file access") {
                             guard !coreMediaRunning else { return }
@@ -827,6 +873,15 @@ struct SystemFairPlayView: View {
                     showingIPAImporter = false
                     session.importPickedIPA(selected)
                 }, cancelled: { showingIPAImporter = false })
+            }
+            .sheet(isPresented: $showingHelperIdentity) {
+                SigningIdentityView()
+            }
+            .sheet(isPresented: $showingHelperInstall) {
+                if let package = session.signedHelper, !session.helperAppID.isEmpty {
+                    SystemPackageInstallationView(package: package, bundleID: session.helperAppID,
+                        appName: "Crumb FP Helper", version: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String)
+                }
             }
             .task {
                 guard !started else { return }; started = true
