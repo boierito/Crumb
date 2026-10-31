@@ -14,7 +14,7 @@
 | CVE-2026-112706 | CoreMedia | App may access sensitive user data; permissions fixed | A real bytestream FD primitive with public PoC; demonstrated outside-sandbox coverage was limited to iTunes_Control/iTunes, not arbitrary bundles |
 | CVE-2026-113896 | FileProvider | App may access sensitive user data; race condition | Potential file-access investigation, no verified public FairPlay or app-bundle capability |
 | CVE-2026-112618 | Files | App may access sensitive user data; access issue | Generic access weakness, no verified public app-bundle/FairPlay capability |
-| CVE-2026-112628 | Spotlight | App may access sensitive user data; data restriction | Metadata/data access not necessarily an executable file descriptor |
+| CVE-2026-112628 | Shortcuts | App may access sensitive user data; authorization issue | No demonstrated ability to write to an installed signed app bundle or grant FairPlay access |
 | CVE-2026-113914 | App Store | App may access sensitive user data; authorization state | Authorization wording does not demonstrate ability to supply FairPlay license credentials |
 | CVE-2026-112612 | Accounts | Physical attacker with previously trust-paired device may read/write arbitrary files | Excluded from on-device-only architecture; depends on trust-paired external device |
 

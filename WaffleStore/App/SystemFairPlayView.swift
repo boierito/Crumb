@@ -84,6 +84,8 @@ nonisolated private enum SystemNativeProcessor {
 final class SystemFairPlaySession: ObservableObject {
     static let shared = SystemFairPlaySession()
     @Published var showIdentity = false
+    @Published var importedIPA: URL?
+    @Published var importedDisplayName = ""
     @Published var failureMessage = ""
     @Published var requestedRecordID = ""
     @Published var signingPassword = ""
@@ -150,6 +152,67 @@ final class SystemFairPlaySession: ObservableObject {
         decrypt(identifiers: identifiers, localIPA: original, description: record?.appName)
         return false
     }
+    // Runtime import does not alter the installed Crumb bundle. The normal
+    // direct FairPlay path runs on this encrypted copy after user confirmation.
+    func importPickedIPA(_ selected: URL) {
+        guard !busy else { return }
+        busy = true
+        phase = "preparing"
+        failureMessage = ""
+        message = "Importing encrypted IPA into protected Crumb storage…"
+        Task {
+            defer { busy = false }
+            do {
+                let privateRoot = try storage().appendingPathComponent("ImportedIPAs", isDirectory: true)
+                let imported = try await Task.detached(priority: .userInitiated) {
+                    try RuntimeIPAImport.copyPickedIPA(selected, into: privateRoot)
+                }.value
+                if let previous = importedIPA, previous != imported,
+                   previous.deletingLastPathComponent().standardizedFileURL.path == privateRoot.standardizedFileURL.path {
+                    try? FileManager.default.removeItem(at: previous)
+                }
+                importedIPA = imported
+                importedDisplayName = selected.lastPathComponent
+                requestedRecordID = ""
+                pendingJobID = ""
+                helper = nil; signedHelper = nil; output = nil; signedOutput = nil
+                report = ""; reportFile = nil; phase = "imported"
+                installAfterDecryption = false
+                readyToSignOutput = false
+                try save()
+                message = "IPA imported without installing it or changing Crumb. You can attempt the direct system FairPlay route; iOS may still refuse access to its data container."
+            } catch {
+                phase = "import_failed"
+                let type = error as? RuntimeIPAImport.ImportFailure
+                switch type {
+                case .invalidInput:
+                    failureMessage = "Choose a regular .ipa file smaller than 4 GiB."
+                case .invalidArchive:
+                    failureMessage = "The selected file is not a valid IPA ZIP header."
+                default:
+                    failureMessage = "Could not import this IPA from Files. Choose a local copy and try again."
+                }
+                message = failureMessage
+            }
+        }
+    }
+
+    func decryptImportedIPA(identifiers: [String]) {
+        guard !busy, let original = importedIPA else {
+            failureMessage = "Import an IPA from Files first."
+            return
+        }
+        failureMessage = ""
+        requestedRecordID = ""
+        pendingJobID = ""
+        helper = nil; signedHelper = nil; output = nil; signedOutput = nil
+        report = ""; reportFile = nil
+        installAfterDecryption = false
+        readyToSignOutput = false
+        phase = "idle"
+        decrypt(identifiers: identifiers, localIPA: original, description: importedDisplayName)
+    }
+
     func validateIdentity(completion: (() -> Void)? = nil) {
         guard !busy, hasCertificate, hasProfile else { return }
         busy = true
@@ -345,6 +408,8 @@ final class SystemFairPlaySession: ObservableObject {
             return FileManager.default.fileExists(atPath: url.path) ? url : nil
         }
         requestedRecordID = saved["record_id"] ?? ""
+        importedIPA = item("imported")
+        importedDisplayName = importedIPA == nil ? "" : (saved["imported_name"] ?? "Imported IPA")
         helper = item("helper"); output = item("output"); signedHelper = item("signed"); signedOutput = item("signed_output")
         pendingJobID = saved["job_id"] ?? ""; phase = saved["phase"] ?? "idle"
         installAfterDecryption = saved["install_after"] == "true"
@@ -358,6 +423,8 @@ final class SystemFairPlaySession: ObservableObject {
     private func save(reportURL: URL? = nil) throws {
         func relative(_ url: URL) -> String { url.deletingLastPathComponent().lastPathComponent + "/" + url.lastPathComponent }
         var value = [String: String]()
+        if let importedIPA { value["imported"] = relative(importedIPA) }
+        if !importedDisplayName.isEmpty { value["imported_name"] = importedDisplayName }
         if let helper { value["helper"] = relative(helper) }
         if let output { value["output"] = relative(output) }
         if let signedHelper { value["signed"] = relative(signedHelper) }
@@ -583,10 +650,12 @@ final class SystemFairPlaySession: ObservableObject {
 struct SystemFairPlayView: View {
     var record: DownloadRecord? = nil
     var startAction: DownloadDecryptionAction? = nil
+    var importMode = false
     @EnvironmentObject var appData: AppData
     @Environment(\.dismiss) private var dismiss
     @StateObject private var session = SystemFairPlaySession.shared
     @State private var started = false
+    @State private var showingIPAImporter = false
     @State private var coreMediaRunning = false
     @State private var coreMediaSummary = ""
     private var identifiers: [String] {
@@ -595,7 +664,14 @@ struct SystemFairPlayView: View {
             .filter { $0.utf8.count >= 6 && $0.utf8.count <= 4096 }
     }
     private var visibleOutput: URL? {
-        guard started, record == nil || session.requestedRecordID == record?.id else { return nil }
+        guard started else { return nil }
+        if let record {
+            guard session.requestedRecordID == record.id else { return nil }
+        } else if importMode {
+            guard session.importedIPA != nil, session.requestedRecordID.isEmpty else { return nil }
+        } else if session.installedTarget == nil {
+            return nil
+        }
         return session.output
     }
     private var progressTitle: String {
@@ -607,7 +683,11 @@ struct SystemFairPlayView: View {
         }
     }
     private func proceed() {
-        _ = session.continueDecryption(record: record, identifiers: identifiers)
+        if importMode {
+            session.decryptImportedIPA(identifiers: identifiers)
+        } else {
+            _ = session.continueDecryption(record: record, identifiers: identifiers)
+        }
     }
     var body: some View {
         NavigationStack {
@@ -617,9 +697,16 @@ struct SystemFairPlayView: View {
                     .font(.system(size: 56, weight: .light))
                     .foregroundStyle(visibleOutput != nil ? Color.green : Color.accentColor)
                     .accessibilityHidden(true)
-                Text(record?.appName ?? "Decrypt app")
+                Text(record?.appName ?? (importMode ? (session.importedDisplayName.isEmpty ? "Import encrypted IPA" : session.importedDisplayName) : (session.installedDescription.isEmpty ? "Decrypt app" : session.installedDescription)))
                     .font(.system(.title2, design: .rounded, weight: .bold))
                     .multilineTextAlignment(.center)
+                if importMode {
+                    Button(session.importedIPA == nil ? "Import IPA from Files" : "Import another IPA") {
+                        showingIPAImporter = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(session.busy)
+                }
                 if session.busy {
                     ProgressView()
                     Text(progressTitle).font(.headline)
@@ -634,12 +721,15 @@ struct SystemFairPlayView: View {
                     if !session.report.isEmpty {
                         ShareLink(item: session.report) { Label("Share error details", systemImage: "square.and.arrow.up") }
                     }
+                } else if importMode && session.importedIPA == nil {
+                    Text("Select an encrypted IPA. Crumb will attempt decryption without rebuilding or reinstalling itself.")
+                        .multilineTextAlignment(.center).foregroundStyle(.secondary)
                 } else {
                     Text("Crumb will process the app and check the result before saving it.")
                         .multilineTextAlignment(.center).foregroundStyle(.secondary)
                     Button("Decrypt", action: proceed).buttonStyle(.borderedProminent)
                 }
-                if let localIPA = record?.fileURL {
+                if let localIPA = record?.fileURL ?? (importMode ? session.importedIPA : nil) {
                     VStack(spacing: 8) {
                         Button(coreMediaRunning ? "Checking CoreMedia…" : "Test CoreMedia file access") {
                             guard !coreMediaRunning else { return }
@@ -673,10 +763,16 @@ struct SystemFairPlayView: View {
             .navigationTitle("Decrypt").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.disabled(session.busy) } }
             .interactiveDismissDisabled(session.busy)
+            .sheet(isPresented: $showingIPAImporter) {
+                SigningFilePicker(selected: { selected in
+                    showingIPAImporter = false
+                    session.importPickedIPA(selected)
+                }, cancelled: { showingIPAImporter = false })
+            }
             .task {
                 guard !started else { return }; started = true
                 session.restore()
-                if session.canResume && (record == nil || session.requestedRecordID == record?.id) {
+                if !importMode && session.canResume && (record == nil || session.requestedRecordID == record?.id) {
                     session.resume(identifiers: identifiers)
                 } else if startAction != nil { proceed() }
             }
