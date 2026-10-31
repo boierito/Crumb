@@ -81,6 +81,13 @@ jobs:
             -c WaffleStore/MapleSyrup/Native/CrumbSystemFairPlay.c -o /tmp/crumb-system-fairplay.o
           xcrun otool -tvV /tmp/crumb-system-fairplay.o > /tmp/crumb-system-fairplay.asm
           python3 -c 'import pathlib,re; assert re.search(r"svc\s+#0x80", pathlib.Path("/tmp/crumb-system-fairplay.asm").read_text())'
+      - name: Validate CoreMedia local-IPA-only probe contract
+        run: |
+          swiftc WaffleStore/App/CoreMediaLocalProbe.swift scripts/test-coremedia-local-probe.swift -o /tmp/crumb-coremedia-local-probe
+          /tmp/crumb-coremedia-local-probe
+      - name: Typecheck iOS CoreMedia bytestream adapter
+        run: |
+          xcrun --sdk iphoneos swiftc -target arm64-apple-ios16.4 -sdk "$(xcrun --sdk iphoneos --show-sdk-path)" -parse-as-library -typecheck WaffleStore/App/CoreMediaLocalProbe.swift
       - name: Verify unattempted, mapping and native-remap failures remain distinct
         run: |
           swiftc WaffleStore/App/SystemNativeFailureStage.swift scripts/test-system-native-failure.swift -o /tmp/crumb-native-failure-contracts
