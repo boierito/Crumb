@@ -408,6 +408,8 @@ final class SystemFairPlaySession: ObservableObject {
             return FileManager.default.fileExists(atPath: url.path) ? url : nil
         }
         requestedRecordID = saved["record_id"] ?? ""
+        importedIPA = item("imported")
+        importedDisplayName = importedIPA == nil ? "" : (saved["imported_name"] ?? "Imported IPA")
         helper = item("helper"); output = item("output"); signedHelper = item("signed"); signedOutput = item("signed_output")
         pendingJobID = saved["job_id"] ?? ""; phase = saved["phase"] ?? "idle"
         installAfterDecryption = saved["install_after"] == "true"
@@ -421,6 +423,8 @@ final class SystemFairPlaySession: ObservableObject {
     private func save(reportURL: URL? = nil) throws {
         func relative(_ url: URL) -> String { url.deletingLastPathComponent().lastPathComponent + "/" + url.lastPathComponent }
         var value = [String: String]()
+        if let importedIPA { value["imported"] = relative(importedIPA) }
+        if !importedDisplayName.isEmpty { value["imported_name"] = importedDisplayName }
         if let helper { value["helper"] = relative(helper) }
         if let output { value["output"] = relative(output) }
         if let signedHelper { value["signed"] = relative(signedHelper) }
@@ -662,7 +666,9 @@ struct SystemFairPlayView: View {
         guard started else { return nil }
         if let record {
             guard session.requestedRecordID == record.id else { return nil }
-        } else if session.importedIPA == nil && session.installedTarget == nil {
+        } else if session.importedIPA != nil {
+            guard session.requestedRecordID.isEmpty else { return nil }
+        } else if session.installedTarget == nil {
             return nil
         }
         return session.output
