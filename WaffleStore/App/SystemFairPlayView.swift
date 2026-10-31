@@ -98,6 +98,7 @@ final class SystemFairPlaySession: ObservableObject {
     @Published var outputVersion = ""
     @Published var hasOutputProfile = false
     @Published var pendingJobID = ""
+    @Published var helperAppID = ""
     @Published var phase = "idle"
     @Published var importName = ""
     private var automaticSigning = false
@@ -211,6 +212,56 @@ final class SystemFairPlaySession: ObservableObject {
         readyToSignOutput = false
         phase = "idle"
         decrypt(identifiers: identifiers, localIPA: original, description: importedDisplayName)
+    }
+
+    // Optional working-reference fallback: a *separate* installable helper
+    // with a different bundle identifier. Crumb itself is never replaced.
+    func prepareSeparateHelper(_ selected: URL) {
+        guard !busy else { return }
+        busy = true
+        phase = "preparing_separate_helper"
+        failureMessage = ""
+        message = "Preparing a separate FairPlay helper. Crumb will not be reinstalled."
+        Task {
+            defer { busy = false }
+            do {
+                guard let currentID = Bundle.main.bundleIdentifier, !currentID.isEmpty else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                let newHelperID = currentID + ".fphelper"
+                let directory = try workspace()
+                let destination = directory.appendingPathComponent("Crumb-FP-Helper-Prepared.ipa")
+                let sourceBundle = Bundle.main.bundleURL
+                let preparation = try await Task.detached(priority: .userInitiated) {
+                    let access = selected.startAccessingSecurityScopedResource()
+                    defer { if access { selected.stopAccessingSecurityScopedResource() } }
+                    return try FairPlayNative.run("prepare-system-separate-helper",
+                        source: sourceBundle, destination: destination,
+                        model: URL(fileURLWithPath: newHelperID), ipa: selected)
+                }.value
+                guard let data = preparation.data(using: .utf8),
+                      let response = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      response["ok"] as? Bool == true else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                helper = destination
+                helperAppID = newHelperID
+                signedHelper = nil
+                output = nil
+                signedOutput = nil
+                report = ""
+                reportFile = nil
+                pendingJobID = (response["result"] as? [String: Any])?["job_id"] as? String ?? ""
+                phase = "prepared_separate_helper"
+                try save()
+                message = "Separate helper ready. Sign it with a profile covering " + newHelperID +
+                    ", install the helper, then open Crumb FP Helper to decrypt its embedded IPA."
+            } catch {
+                phase = "helper_preparation_failed"
+                failureMessage = "Could not prepare the separate helper. The encrypted IPA was retained."
+                message = failureMessage
+            }
+        }
     }
 
     func validateIdentity(completion: (() -> Void)? = nil) {
@@ -345,13 +396,16 @@ final class SystemFairPlaySession: ObservableObject {
     }
     func sign(password: String) {
         guard !busy, let helper, hasCertificate, hasProfile else { return }
-        busy = true; phase = "signing_helper"; failureMessage = ""; message = "Signing the prepared Crumb package locally…"
+        let separate = !helperAppID.isEmpty
+        let expectedID = separate ? helperAppID : currentBundleID
+        busy = true; phase = "signing_helper"; failureMessage = ""
+        message = separate ? "Signing a separate FairPlay helper locally…" : "Signing the prepared Crumb package locally…"
         Task {
             defer { busy = false }
             do {
                 let directory = try workspace(), identityDirectory = try signingStorage()
                 let destination = directory.appendingPathComponent("Crumb-Signed.ipa")
-                let bundleID = Bundle.main.bundleIdentifier ?? ""
+                let bundleID = expectedID
                 let teamID = try currentTeam()
                 let text = try await Task.detached(priority: .userInitiated) {
                     let unpacked = directory.appendingPathComponent("Unpacked", isDirectory: true)
@@ -376,10 +430,12 @@ final class SystemFairPlaySession: ObservableObject {
                 let object = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any]
                 guard object?["ok"] as? Bool == true else { throw CocoaError(.fileReadCorruptFile) }
                 signedHelper = destination
-                phase = "awaiting_installation"
+                phase = separate ? "separate_helper_signed" : "awaiting_installation"
                 identityValidated = true
                 try save()
-                message = "Local signature created and purchased payload verified unchanged. Request installation below; iOS decides whether the identity and provisioning profile are accepted."
+                message = separate
+                    ? "Helper signed. Install Crumb FP Helper separately; Crumb itself stays installed and unchanged."
+                    : "Local signature created and purchased payload verified unchanged. Request installation below; iOS decides whether the identity and provisioning profile are accepted."
             } catch {
                 identityValidated = false; phase = "signing_failed"
                 failureMessage = Self.signingError((error as NSError).code)
@@ -411,7 +467,8 @@ final class SystemFairPlaySession: ObservableObject {
         importedIPA = item("imported")
         importedDisplayName = importedIPA == nil ? "" : (saved["imported_name"] ?? "Imported IPA")
         helper = item("helper"); output = item("output"); signedHelper = item("signed"); signedOutput = item("signed_output")
-        pendingJobID = saved["job_id"] ?? ""; phase = saved["phase"] ?? "idle"
+        pendingJobID = saved["job_id"] ?? ""; helperAppID = saved["helper_app_id"] ?? ""
+        phase = saved["phase"] ?? "idle"
         installAfterDecryption = saved["install_after"] == "true"
         readyToSignOutput = output != nil && signedOutput == nil && installAfterDecryption
         outputBundleID = saved["output_bundle"] ?? ""; outputVersion = saved["output_version"] ?? ""
@@ -431,6 +488,7 @@ final class SystemFairPlaySession: ObservableObject {
         if let signedOutput { value["signed_output"] = relative(signedOutput) }
         value["record_id"] = requestedRecordID
         value["job_id"] = pendingJobID; value["phase"] = phase
+        if !helperAppID.isEmpty { value["helper_app_id"] = helperAppID }
         value["install_after"] = installAfterDecryption ? "true" : "false"
         value["output_bundle"] = outputBundleID; value["output_version"] = outputVersion
         value["prepared_description"] = preparedDescription
@@ -456,6 +514,7 @@ final class SystemFairPlaySession: ObservableObject {
                 let object = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any]
                 guard object?["ok"] as? Bool == true else { throw CocoaError(.fileReadCorruptFile) }
                 helper = destination
+                helperAppID = ""
                 signedHelper = nil; output = nil; signedOutput = nil; report = ""; reportFile = nil; phase = "prepared"
                 if let job = object?["result"] as? [String: Any] {
                     pendingJobID = job["job_id"] as? String ?? ""
