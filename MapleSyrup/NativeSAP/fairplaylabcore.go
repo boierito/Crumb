@@ -20,7 +20,7 @@ import (
 )
 
 type labRequest struct {
-	Operation, Source, Destination, Report, Model, IPA, Cache string
+	Operation, Source, Destination, Report, Model, IPA, Cache, HelperBundleID string
 	Input, Frame                                              []byte
 }
 
@@ -38,7 +38,7 @@ func labRun(r labRequest) (any, error) {
 		}
 		return job, err
 	case "prepare-system-separate-helper":
-		job, err := packageipa.PrepareSystemSeparateHelper(r.Source, r.IPA, r.Destination, r.Model)
+		job, err := packageipa.PrepareSystemSeparateHelper(r.Source, r.IPA, r.Destination, r.HelperBundleID)
 		if errors.Is(err, packageipa.ErrSystemLicenseMapping) {
 			return nil, recoveryFailure("system-preparation", "ambiguous_original_license_mapping", err)
 		}
