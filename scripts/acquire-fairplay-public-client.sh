@@ -65,9 +65,10 @@ print(files[0])
 PY
 )"
 "$ipsw_tool" --no-color dyld info --dylibs "$cache_path" > "$research_dir/artifacts/cache-images.txt"
-for framework in CoreML MediaToolbox StoreServices; do
+for framework in CoreML MediaToolbox StoreServices MobileGestalt; do
   case "$framework" in
     CoreML|MediaToolbox) image="/System/Library/Frameworks/$framework.framework/$framework" ;;
+    MobileGestalt) image="/usr/lib/libMobileGestalt.dylib" ;;
     StoreServices) image="/System/Library/PrivateFrameworks/$framework.framework/$framework" ;;
   esac
   if ! python3 - "$research_dir/artifacts/cache-images.txt" "$image" <<'PY'

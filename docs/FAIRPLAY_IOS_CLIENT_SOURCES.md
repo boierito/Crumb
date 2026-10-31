@@ -143,3 +143,44 @@ explicit `F_ADDFILESIGS_RETURN` call. It does not establish the absence of
 preexisting vnode/signature context created during installation, or that
 registering an original signature would repair a data-container remap. No
 runtime change or cause attribution follows from this observation alone.
+
+The bounded acquisition completed successfully in
+[run 41204663634](https://github.com/boierito/Crumb/actions/runs/41204663634)
+(commit `30ec620a2b96d72300f2c598af44672b5a40d6ce`). Its downloaded artifact
+ZIP SHA-256 was
+`6d4d198482b0121103df07068375845cbcc3bf8140641d1879676e9fa9474a66`.
+The seven original stubs are retained in
+[the bounded call-target report](research/storeservices-client-stubs-24A446.json).
+Five use direct `ADRP; ADD; BR` islands; two load authenticated pointers. The
+collector initially kept the direct form unresolved. The local decoder was
+extended for that exact form and compared its destinations to independent,
+image-scoped symbol lookups:
+
+| StoreServices call island | Exact destination | Independent symbol |
+| --- | --- | --- |
+| `0x1d0154a30` | `0x1af9ebfa8` | `MGCopyAnswer` |
+| `0x1d0161e30` | `0x18069d748` | `CFStringGetSystemEncoding` |
+| `0x1d015cb80` | `0x18066c7b0` | `CFStringCreateExternalRepresentation` |
+| `0x1d015b5a0` | `0x18061ff80` | `CFDataGetBytePtr` |
+| `0x1d015b5c0` | `0x18061ff28` | `CFDataGetLength` |
+| `0x1d015c650` | `0x18053a98c` | `pthread_mutex_lock` |
+| `0x1d015c660` | `0x18053af40` | `pthread_mutex_unlock` |
+
+All seven destinations matched. A mutated branch register was rejected by the
+direct decoder; a changed code digest was rejected by report resolution.
+These checks establish the call identities, not successful hardware queries.
+
+The `UniqueDeviceID` answer is converted to external CFString data, then passed
+as bytes and length to internal `0x1cf956cdc`, with the caller's hardware-info
+output pointer as argument 3. The wrapper checks the first output word against
+1..20 at `0x1cfa1dfd8`–`0x1cfa1dfe8`. The producer's once block at
+`0x1cfa1e53c`, referenced by the original global block at `0x1eef130d8`,
+initializes its own hardware-info object via the same wrapper. This identifies
+the origin of that context; it does not connect it to the request-1000 word or
+decode the internal transformation.
+
+The acquisition is extended to include the original `libMobileGestalt.dylib`
+for inspecting this specific query's path. Whether the actual Crumb process
+can obtain the required answer remains unmeasured. A failure of that query
+would describe this native producer route, not establish that every portable
+or kernel-assisted decryption route is impossible.

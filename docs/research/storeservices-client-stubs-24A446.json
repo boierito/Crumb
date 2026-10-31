@@ -1,0 +1,138 @@
+{
+  "schema": "crumb-public-client-stubs-v1",
+  "build": "24A446",
+  "service_executed": false,
+  "sinf_validated": false,
+  "stubs": [
+    {
+      "address": "0x1d0154a30",
+      "code_hex": "b0c4eff010a23e9100021fd6200020d4",
+      "sha256": "16ece749031feddbc1ad6a8ece580c92d3bb54de05956dac6eb2aa2782a8c073",
+      "target": "0x1af9ebfa8",
+      "target_kind": "direct_branch",
+      "exact_symbol_matches": [
+        {
+          "image": "libMobileGestalt.dylib",
+          "symbol": "_MGCopyAnswer"
+        }
+      ]
+    },
+    {
+      "address": "0x1d0161e30",
+      "code_hex": "f029d89010221d9100021fd6200020d4",
+      "sha256": "28b4a8bddcb92ac178ea1741c42f521fd7bbe1f9381bf0dc96333a35c3ae62f3",
+      "target": "0x18069d748",
+      "target_kind": "direct_branch",
+      "exact_symbol_matches": [
+        {
+          "image": "CoreFoundation",
+          "symbol": "_CFStringGetSystemEncoding"
+        }
+      ]
+    },
+    {
+      "address": "0x1d015cb80",
+      "code_hex": "9028d89010c21e9100021fd6200020d4",
+      "sha256": "7cc2f0e2ad7465431bf74f9de3e6c256e4986ebfd7bd695316d219b6d140036e",
+      "target": "0x18066c7b0",
+      "target_kind": "direct_branch",
+      "exact_symbol_matches": [
+        {
+          "image": "CoreFoundation",
+          "symbol": "_CFStringCreateExternalRepresentation"
+        }
+      ]
+    },
+    {
+      "address": "0x1d015b5a0",
+      "code_hex": "3026d89010023e9100021fd6200020d4",
+      "sha256": "5d72e68f155013650d77ca34579b281ff4af56bd87fa4e8427597539109dfc76",
+      "target": "0x18061ff80",
+      "target_kind": "direct_branch",
+      "exact_symbol_matches": [
+        {
+          "image": "CoreFoundation",
+          "symbol": "_CFDataGetBytePtr"
+        }
+      ]
+    },
+    {
+      "address": "0x1d015b5c0",
+      "code_hex": "3026d89010a23c9100021fd6200020d4",
+      "sha256": "2a1c1d3dadf547b7b91de20d9d0a712cb58aadba500b7494a8fddaa2df9000aa",
+      "target": "0x18061ff28",
+      "target_kind": "direct_branch",
+      "exact_symbol_matches": [
+        {
+          "image": "CoreFoundation",
+          "symbol": "_CFDataGetLength"
+        }
+      ]
+    },
+    {
+      "address": "0x1d015c650",
+      "code_hex": "b15d0cf031421d91300240f9110a1fd7",
+      "sha256": "0675273dfed4d4d0122965f8e65a7466981f2a9417084341c27af7c895d52efe",
+      "pointer_slot": "0x1e8d13750",
+      "pointer_raw_hex": "8ca9530000001480",
+      "target": "0x18053a98c",
+      "exact_symbol_matches": [
+        {
+          "image": "libsystem_pthread.dylib",
+          "symbol": "_pthread_mutex_lock"
+        }
+      ]
+    },
+    {
+      "address": "0x1d015c660",
+      "code_hex": "b15d0cf031621d91300240f9110a1fd7",
+      "sha256": "a8334e142c32bf698f6e7d1a4f201a461da7148d0d9c53f2543c115851365a90",
+      "pointer_slot": "0x1e8d13758",
+      "pointer_raw_hex": "40af530000001480",
+      "target": "0x18053af40",
+      "exact_symbol_matches": [
+        {
+          "image": "libsystem_pthread.dylib",
+          "symbol": "_pthread_mutex_unlock"
+        }
+      ]
+    }
+  ],
+  "symbol_lookups": [
+    {
+      "image": "libMobileGestalt.dylib",
+      "symbol": "_MGCopyAnswer",
+      "tool_output": "0x1af9ebfa8:\t(export|regular)\t_MGCopyAnswer\tlibMobileGestalt.dylib"
+    },
+    {
+      "image": "CoreFoundation",
+      "symbol": "_CFStringGetSystemEncoding",
+      "tool_output": "0x18069d748:\t(symtab|external|__TEXT.__text)\t_CFStringGetSystemEncoding\tCoreFoundation"
+    },
+    {
+      "image": "CoreFoundation",
+      "symbol": "_CFStringCreateExternalRepresentation",
+      "tool_output": "0x18066c7b0:\t(export|regular)\t_CFStringCreateExternalRepresentation\tCoreFoundation"
+    },
+    {
+      "image": "CoreFoundation",
+      "symbol": "_CFDataGetBytePtr",
+      "tool_output": "0x18061ff80:\t(symtab|external|__TEXT.__text)\t_CFDataGetBytePtr\tCoreFoundation"
+    },
+    {
+      "image": "CoreFoundation",
+      "symbol": "_CFDataGetLength",
+      "tool_output": "0x18061ff28:\t(symtab|external|__TEXT.__text)\t_CFDataGetLength\tCoreFoundation"
+    },
+    {
+      "image": "libsystem_pthread.dylib",
+      "symbol": "_pthread_mutex_lock",
+      "tool_output": "0x18053a98c:\t(symtab|external|__TEXT.__text)\t_pthread_mutex_lock\tlibsystem_pthread.dylib"
+    },
+    {
+      "image": "libsystem_pthread.dylib",
+      "symbol": "_pthread_mutex_unlock",
+      "tool_output": "0x18053af40:\t(export|regular)\t_pthread_mutex_unlock\tlibsystem_pthread.dylib"
+    }
+  ]
+}
