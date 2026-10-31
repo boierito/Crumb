@@ -650,6 +650,7 @@ final class SystemFairPlaySession: ObservableObject {
 struct SystemFairPlayView: View {
     var record: DownloadRecord? = nil
     var startAction: DownloadDecryptionAction? = nil
+    var importMode = false
     @EnvironmentObject var appData: AppData
     @Environment(\.dismiss) private var dismiss
     @StateObject private var session = SystemFairPlaySession.shared
@@ -666,8 +667,8 @@ struct SystemFairPlayView: View {
         guard started else { return nil }
         if let record {
             guard session.requestedRecordID == record.id else { return nil }
-        } else if session.importedIPA != nil {
-            guard session.requestedRecordID.isEmpty else { return nil }
+        } else if importMode {
+            guard session.importedIPA != nil, session.requestedRecordID.isEmpty else { return nil }
         } else if session.installedTarget == nil {
             return nil
         }
@@ -682,7 +683,7 @@ struct SystemFairPlayView: View {
         }
     }
     private func proceed() {
-        if record == nil && session.importedIPA != nil {
+        if importMode {
             session.decryptImportedIPA(identifiers: identifiers)
         } else {
             _ = session.continueDecryption(record: record, identifiers: identifiers)
@@ -696,10 +697,10 @@ struct SystemFairPlayView: View {
                     .font(.system(size: 56, weight: .light))
                     .foregroundStyle(visibleOutput != nil ? Color.green : Color.accentColor)
                     .accessibilityHidden(true)
-                Text(record?.appName ?? (session.importedDisplayName.isEmpty ? "Import encrypted IPA" : session.importedDisplayName))
+                Text(record?.appName ?? (importMode ? (session.importedDisplayName.isEmpty ? "Import encrypted IPA" : session.importedDisplayName) : (session.installedDescription.isEmpty ? "Decrypt app" : session.installedDescription)))
                     .font(.system(.title2, design: .rounded, weight: .bold))
                     .multilineTextAlignment(.center)
-                if record == nil {
+                if importMode {
                     Button(session.importedIPA == nil ? "Import IPA from Files" : "Import another IPA") {
                         showingIPAImporter = true
                     }
@@ -720,7 +721,7 @@ struct SystemFairPlayView: View {
                     if !session.report.isEmpty {
                         ShareLink(item: session.report) { Label("Share error details", systemImage: "square.and.arrow.up") }
                     }
-                } else if record == nil && session.importedIPA == nil && session.installedTarget == nil {
+                } else if importMode && session.importedIPA == nil {
                     Text("Select an encrypted IPA. Crumb will attempt decryption without rebuilding or reinstalling itself.")
                         .multilineTextAlignment(.center).foregroundStyle(.secondary)
                 } else {
@@ -728,7 +729,7 @@ struct SystemFairPlayView: View {
                         .multilineTextAlignment(.center).foregroundStyle(.secondary)
                     Button("Decrypt", action: proceed).buttonStyle(.borderedProminent)
                 }
-                if let localIPA = record?.fileURL ?? session.importedIPA {
+                if let localIPA = record?.fileURL ?? (importMode ? session.importedIPA : nil) {
                     VStack(spacing: 8) {
                         Button(coreMediaRunning ? "Checking CoreMedia…" : "Test CoreMedia file access") {
                             guard !coreMediaRunning else { return }
@@ -771,7 +772,7 @@ struct SystemFairPlayView: View {
             .task {
                 guard !started else { return }; started = true
                 session.restore()
-                if session.canResume && (record == nil || session.requestedRecordID == record?.id) {
+                if !importMode && session.canResume && (record == nil || session.requestedRecordID == record?.id) {
                     session.resume(identifiers: identifiers)
                 } else if startAction != nil { proceed() }
             }
