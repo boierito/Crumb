@@ -30,7 +30,10 @@ struct ContentView: View {
             appData.restoreStoreAccount(); appData.restoreDownloadedIPA()
             let session = SystemFairPlaySession.shared
             session.restore()
-            resumeDecryption = session.canResume
+            // An independently installed helper opens its embedded target
+            // directly. The original Crumb data container remains untouched.
+            let separateHelper = (Bundle.main.bundleIdentifier ?? "").hasSuffix(".fphelper")
+            resumeDecryption = (separateHelper && session.installedTarget != nil) || session.canResume
         }
         .onChange(of: appData.isAuthenticated) { authenticated in
             if authenticated, appData.openVersionsAfterLogin {
