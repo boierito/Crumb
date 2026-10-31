@@ -8,6 +8,7 @@ struct DownloadedAppsView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var decryption: DownloadRecord?
     @State private var systemDecryption: DownloadDecryptionAction?
+    @State private var importedDecryption = false
     @State private var installation: DownloadRecord?
     @State private var deletion: DownloadRecord?
     @State private var confirmDeleteAll = false
@@ -48,6 +49,15 @@ struct DownloadedAppsView: View {
                     }
                 }
 
+                Section {
+                    Button {
+                        importedDecryption = true
+                    } label: {
+                        Label("Import encrypted IPA from Files", systemImage: "square.and.arrow.down.on.square")
+                    }
+                } footer: {
+                    Text("Import an existing IPA without rebuilding or reinstalling Crumb. System FairPlay may still refuse the data-container location.")
+                }
                 if appData.completedDownloads.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Label("No downloads yet", systemImage: "square.and.arrow.down")
@@ -113,6 +123,7 @@ struct DownloadedAppsView: View {
             }
             .sheet(item: $decryption) { FairPlayLabView(record: $0) }
             .sheet(item: $systemDecryption) { SystemFairPlayView(record: $0.record, startAction: $0) }
+            .sheet(isPresented: $importedDecryption) { SystemFairPlayView() }
             .sheet(item: $installation) { OTAInstallationView(record: $0, startImmediately: true) }
             .alert("Delete downloaded IPA?", isPresented: $confirmDeletion) {
                 if let record = deletion {
