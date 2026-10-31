@@ -30,12 +30,39 @@ nonisolated enum CoreMediaLocalProbe {
         return resolved.hasPrefix(sandbox + "/")
     }
 
+    nonisolated static func isEligibleOwnExecutable(_ url: URL, bundleURL: URL, executableURL: URL) -> Bool {
+        guard url.isFileURL, executableURL.isFileURL, bundleURL.isFileURL,
+              url.standardizedFileURL == executableURL.standardizedFileURL,
+              (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true,
+              (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink != true else {
+            return false
+        }
+        let resolved = url.standardizedFileURL.resolvingSymlinksInPath().path
+        let root = bundleURL.standardizedFileURL.resolvingSymlinksInPath().path
+        return resolved.hasPrefix(root + "/")
+    }
+
     nonisolated static func run(input: URL) -> Outcome {
         guard isEligible(input, home: URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)) else {
             return Outcome(stage: "blocked", detail: "requires a regular IPA within Crumb's own container", comparedBytes: 0)
         }
         #if os(iOS)
         return probe(input)
+        #else
+        return Outcome(stage: "unsupported", detail: "requires an actual iOS device", comparedBytes: 0)
+        #endif
+    }
+
+    /// Independent comparison target: Crumb's own installed executable.
+    /// This exact-identity allowlist does not include other installed apps.
+    nonisolated static func runOwnExecutable() -> Outcome {
+        let bundle = Bundle.main
+        guard let executable = bundle.executableURL,
+              isEligibleOwnExecutable(executable, bundleURL: bundle.bundleURL, executableURL: executable) else {
+            return Outcome(stage: "blocked", detail: "own installed executable unavailable", comparedBytes: 0)
+        }
+        #if os(iOS)
+        return probe(executable)
         #else
         return Outcome(stage: "unsupported", detail: "requires an actual iOS device", comparedBytes: 0)
         #endif
