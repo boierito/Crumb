@@ -84,6 +84,8 @@ nonisolated private enum SystemNativeProcessor {
 final class SystemFairPlaySession: ObservableObject {
     static let shared = SystemFairPlaySession()
     @Published var showIdentity = false
+    @Published var importedIPA: URL?
+    @Published var importedDisplayName = ""
     @Published var failureMessage = ""
     @Published var requestedRecordID = ""
     @Published var signingPassword = ""
@@ -150,6 +152,67 @@ final class SystemFairPlaySession: ObservableObject {
         decrypt(identifiers: identifiers, localIPA: original, description: record?.appName)
         return false
     }
+    // Runtime import does not alter the installed Crumb bundle. The normal
+    // direct FairPlay path runs on this encrypted copy after user confirmation.
+    func importPickedIPA(_ selected: URL) {
+        guard !busy else { return }
+        busy = true
+        phase = "preparing"
+        failureMessage = ""
+        message = "Importing encrypted IPA into protected Crumb storage…"
+        Task {
+            defer { busy = false }
+            do {
+                let privateRoot = try storage().appendingPathComponent("ImportedIPAs", isDirectory: true)
+                let imported = try await Task.detached(priority: .userInitiated) {
+                    try RuntimeIPAImport.copyPickedIPA(selected, into: privateRoot)
+                }.value
+                if let previous = importedIPA, previous != imported,
+                   previous.deletingLastPathComponent().standardizedFileURL == privateRoot.standardizedFileURL {
+                    try? FileManager.default.removeItem(at: previous)
+                }
+                importedIPA = imported
+                importedDisplayName = selected.lastPathComponent
+                requestedRecordID = ""
+                pendingJobID = ""
+                helper = nil; signedHelper = nil; output = nil; signedOutput = nil
+                report = ""; reportFile = nil; phase = "imported"
+                installAfterDecryption = false
+                readyToSignOutput = false
+                try save()
+                message = "IPA imported without installing it or changing Crumb. You can attempt the direct system FairPlay route; iOS may still refuse access to its data container."
+            } catch {
+                phase = "import_failed"
+                let type = error as? RuntimeIPAImport.ImportFailure
+                switch type {
+                case .invalidInput:
+                    failureMessage = "Choose a regular .ipa file smaller than 4 GiB."
+                case .invalidArchive:
+                    failureMessage = "The selected file is not a valid IPA ZIP header."
+                default:
+                    failureMessage = "Could not import this IPA from Files. Choose a local copy and try again."
+                }
+                message = failureMessage
+            }
+        }
+    }
+
+    func decryptImportedIPA(identifiers: [String]) {
+        guard !busy, let original = importedIPA else {
+            failureMessage = "Import an IPA from Files first."
+            return
+        }
+        failureMessage = ""
+        requestedRecordID = ""
+        pendingJobID = ""
+        helper = nil; signedHelper = nil; output = nil; signedOutput = nil
+        report = ""; reportFile = nil
+        installAfterDecryption = false
+        readyToSignOutput = false
+        phase = "idle"
+        decrypt(identifiers: identifiers, localIPA: original, description: importedDisplayName)
+    }
+
     func validateIdentity(completion: (() -> Void)? = nil) {
         guard !busy, hasCertificate, hasProfile else { return }
         busy = true
