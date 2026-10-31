@@ -650,6 +650,7 @@ struct SystemFairPlayView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var session = SystemFairPlaySession.shared
     @State private var started = false
+    @State private var showingIPAImporter = false
     @State private var coreMediaRunning = false
     @State private var coreMediaSummary = ""
     private var identifiers: [String] {
@@ -658,7 +659,12 @@ struct SystemFairPlayView: View {
             .filter { $0.utf8.count >= 6 && $0.utf8.count <= 4096 }
     }
     private var visibleOutput: URL? {
-        guard started, record == nil || session.requestedRecordID == record?.id else { return nil }
+        guard started else { return nil }
+        if let record {
+            guard session.requestedRecordID == record.id else { return nil }
+        } else if session.importedIPA == nil && session.installedTarget == nil {
+            return nil
+        }
         return session.output
     }
     private var progressTitle: String {
@@ -670,7 +676,11 @@ struct SystemFairPlayView: View {
         }
     }
     private func proceed() {
-        _ = session.continueDecryption(record: record, identifiers: identifiers)
+        if record == nil && session.importedIPA != nil {
+            session.decryptImportedIPA(identifiers: identifiers)
+        } else {
+            _ = session.continueDecryption(record: record, identifiers: identifiers)
+        }
     }
     var body: some View {
         NavigationStack {
@@ -680,9 +690,16 @@ struct SystemFairPlayView: View {
                     .font(.system(size: 56, weight: .light))
                     .foregroundStyle(visibleOutput != nil ? Color.green : Color.accentColor)
                     .accessibilityHidden(true)
-                Text(record?.appName ?? "Decrypt app")
+                Text(record?.appName ?? (session.importedDisplayName.isEmpty ? "Import encrypted IPA" : session.importedDisplayName))
                     .font(.system(.title2, design: .rounded, weight: .bold))
                     .multilineTextAlignment(.center)
+                if record == nil {
+                    Button(session.importedIPA == nil ? "Import IPA from Files" : "Import another IPA") {
+                        showingIPAImporter = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(session.busy)
+                }
                 if session.busy {
                     ProgressView()
                     Text(progressTitle).font(.headline)
@@ -697,12 +714,15 @@ struct SystemFairPlayView: View {
                     if !session.report.isEmpty {
                         ShareLink(item: session.report) { Label("Share error details", systemImage: "square.and.arrow.up") }
                     }
+                } else if record == nil && session.importedIPA == nil && session.installedTarget == nil {
+                    Text("Select an encrypted IPA. Crumb will attempt decryption without rebuilding or reinstalling itself.")
+                        .multilineTextAlignment(.center).foregroundStyle(.secondary)
                 } else {
                     Text("Crumb will process the app and check the result before saving it.")
                         .multilineTextAlignment(.center).foregroundStyle(.secondary)
                     Button("Decrypt", action: proceed).buttonStyle(.borderedProminent)
                 }
-                if let localIPA = record?.fileURL {
+                if let localIPA = record?.fileURL ?? session.importedIPA {
                     VStack(spacing: 8) {
                         Button(coreMediaRunning ? "Checking CoreMedia…" : "Test CoreMedia file access") {
                             guard !coreMediaRunning else { return }
@@ -736,6 +756,12 @@ struct SystemFairPlayView: View {
             .navigationTitle("Decrypt").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.disabled(session.busy) } }
             .interactiveDismissDisabled(session.busy)
+            .sheet(isPresented: $showingIPAImporter) {
+                SigningFilePicker(selected: { selected in
+                    showingIPAImporter = false
+                    session.importPickedIPA(selected)
+                }, cancelled: { showingIPAImporter = false })
+            }
             .task {
                 guard !started else { return }; started = true
                 session.restore()
