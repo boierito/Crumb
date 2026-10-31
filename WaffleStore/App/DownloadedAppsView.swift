@@ -123,7 +123,7 @@ struct DownloadedAppsView: View {
             }
             .sheet(item: $decryption) { FairPlayLabView(record: $0) }
             .sheet(item: $systemDecryption) { SystemFairPlayView(record: $0.record, startAction: $0) }
-            .sheet(isPresented: $importedDecryption) { SystemFairPlayView() }
+            .sheet(isPresented: $importedDecryption) { SystemFairPlayView(importMode: true) }
             .sheet(item: $installation) { OTAInstallationView(record: $0, startImmediately: true) }
             .alert("Delete downloaded IPA?", isPresented: $confirmDeletion) {
                 if let record = deletion {
