@@ -31,10 +31,33 @@ struct CoreMediaLocalProbeTests {
         precondition(!CoreMediaLocalProbe.isEligible(URL(string: "https://example.test/app.ipa")!, home: home),
                      "reject remote URLs")
 
+        // A second diagnostic target is allowed only if it is exactly
+        // Crumb's own executable, not an arbitrary app bundle or file.
+        let bundle = parent.appendingPathComponent("Crumb.app", isDirectory: true)
+        try fm.createDirectory(at: bundle, withIntermediateDirectories: true)
+        let ownExecutable = bundle.appendingPathComponent("Crumb")
+        try Data(repeating: 0xAA, count: 64).write(to: ownExecutable)
+        precondition(CoreMediaLocalProbe.isEligibleOwnExecutable(ownExecutable, bundleURL: bundle,
+                                                               executableURL: ownExecutable),
+                     "own installed executable accepted")
+        precondition(!CoreMediaLocalProbe.isEligibleOwnExecutable(outside, bundleURL: bundle,
+                                                                executableURL: ownExecutable),
+                     "reject external executable")
+        let linkedExecutable = bundle.appendingPathComponent("LinkedCrumb")
+        try fm.createSymbolicLink(at: linkedExecutable, withDestinationURL: outside)
+        precondition(!CoreMediaLocalProbe.isEligibleOwnExecutable(linkedExecutable, bundleURL: bundle,
+                                                                  executableURL: linkedExecutable),
+                     "reject symbolic executable")
+        let nonExecutable = bundle.appendingPathComponent("Other")
+        try Data(repeating: 0xAA, count: 64).write(to: nonExecutable)
+        precondition(!CoreMediaLocalProbe.isEligibleOwnExecutable(nonExecutable, bundleURL: bundle,
+                                                                executableURL: ownExecutable),
+                     "reject non-identity matched resource")
+
         // Host builds must not report a successful CoreMedia or FairPlay read.
         let host = CoreMediaLocalProbe.run(input: outside)
         precondition(host.stage == "blocked" && host.comparedBytes == 0, "fail closed")
         precondition(!host.summary.contains(outside.path), "redact filesystem paths")
-        print("CoreMedia local diagnostics: 7 checks passed; no exploit or decryption claimed.")
+        print("CoreMedia local diagnostics: 11 checks passed; no exploit or decryption claimed.")
     }
 }
