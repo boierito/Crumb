@@ -587,6 +587,8 @@ struct SystemFairPlayView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var session = SystemFairPlaySession.shared
     @State private var started = false
+    @State private var coreMediaRunning = false
+    @State private var coreMediaSummary = ""
     private var identifiers: [String] {
         guard let account = appData.ipaTool?.account else { return [] }
         return [account.email, account.name, account.dsid, account.guid, account.passwordToken]
@@ -636,6 +638,34 @@ struct SystemFairPlayView: View {
                     Text("Crumb will process the app and check the result before saving it.")
                         .multilineTextAlignment(.center).foregroundStyle(.secondary)
                     Button("Decrypt", action: proceed).buttonStyle(.borderedProminent)
+                }
+                if let localIPA = record?.fileURL {
+                    VStack(spacing: 8) {
+                        Button(coreMediaRunning ? "Checking CoreMedia…" : "Test CoreMedia file access") {
+                            guard !coreMediaRunning else { return }
+                            coreMediaRunning = true
+                            coreMediaSummary = ""
+                            Task {
+                                let summaries = await Task.detached(priority: .utility) {
+                                    let downloaded = CoreMediaLocalProbe.run(input: localIPA)
+                                    let installed = CoreMediaLocalProbe.runOwnExecutable()
+                                    return "Downloaded IPA: " + downloaded.summary + "\n\n" +
+                                        "Crumb installed executable: " + installed.summary
+                                }.value
+                                coreMediaSummary = summaries
+                                coreMediaRunning = false
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(coreMediaRunning || session.busy)
+                        if !coreMediaSummary.isEmpty {
+                            Text(coreMediaSummary)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                                .textSelection(.enabled)
+                        }
+                    }
                 }
                 Spacer()
             }
