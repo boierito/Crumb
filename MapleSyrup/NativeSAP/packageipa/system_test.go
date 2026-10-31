@@ -599,3 +599,91 @@ func TestSystemLocalRejectsMissingLicenseAndCleansFailedExtraction(t *testing.T)
 		})
 	}
 }
+
+func TestSystemSeparateHelperKeepsCrumbIdentityAndPreservesLicensedPayload(t *testing.T) {
+	root := t.TempDir()
+	bundle := filepath.Join(root, "Crumb.app")
+	info, err := plist.Marshal(map[string]any{
+		"CFBundleIdentifier": "com.example.crumb",
+		"CFBundleExecutable": "Crumb",
+		"CFBundleVersion": "1",
+		"CFBundleShortVersionString": "1",
+		"CFBundleURLTypes": []map[string]any{{"CFBundleURLSchemes": []string{"crumb-original"}}},
+	}, plist.BinaryFormat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	systemFixtureWrite(t, bundle, "Info.plist", info)
+	systemFixtureWrite(t, bundle, "Crumb", []byte("original helper binary"))
+	ipaInfo, _ := plist.Marshal(Info{BundleID: "com.example.purchased", Version: "1", Executable: "Main"}, plist.BinaryFormat)
+	manifest, _ := plist.Marshal(map[string]any{"SinfPaths": []string{"SC_Info/Main.sinf"}}, plist.BinaryFormat)
+	originalMain, _ := systemFixtureMachO(true, 0)
+	input := filepath.Join(root, "original.ipa")
+	err = systemZIP(input, func(z *zip.Writer) error {
+		for name, data := range map[string][]byte{
+			"Info.plist": ipaInfo,
+			"Main": originalMain,
+			"SC_Info/Manifest.plist": manifest,
+			"SC_Info/Main.sinf": []byte("original customer license"),
+		} {
+			if err := systemPut(z, "Payload/Original.app/"+name, 0600, bytes.NewReader(data)); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(root, "separate.ipa")
+	if _, err = PrepareSystemSeparateHelper(bundle, input, output, "com.another.app"); err == nil {
+		t.Fatal("accepted unrelated bundle identifier")
+	}
+	if _, err = os.Stat(output); !os.IsNotExist(err) {
+		t.Fatal("unexpected output for disallowed identity")
+	}
+	job, err := PrepareSystemSeparateHelper(bundle, input, output, "com.example.crumb.fphelper")
+	if err != nil || !job.RequiresSigning || job.LicenseValidated {
+		t.Fatalf("separate helper preparation failed: %+v %v", job, err)
+	}
+	z, err := zip.OpenReader(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer z.Close()
+	check := func(name string) []byte {
+		t.Helper()
+		for _, f := range z.File {
+			if f.Name != name {
+				continue
+			}
+			r, err := f.Open()
+			if err != nil { t.Fatal(err) }
+			out, err := io.ReadAll(r)
+			r.Close()
+			if err != nil { t.Fatal(err) }
+			return out
+		}
+		t.Fatalf("missing entry %s", name)
+		return nil
+	}
+	var helper map[string]any
+	if _, err := plist.Unmarshal(check("Payload/Crumb.app/Info.plist"), &helper); err != nil {
+		t.Fatal(err)
+	}
+	if helper["CFBundleIdentifier"] != "com.example.crumb.fphelper" {
+		t.Fatal("separate helper ID not applied")
+	}
+	if _, ok := helper["CFBundleURLTypes"]; ok {
+		t.Fatal("helper retained colliding URL schemes")
+	}
+	if !bytes.Equal(check("Payload/Crumb.app/Crumb"), []byte("original helper binary")) ||
+		!bytes.Equal(check("Payload/Crumb.app/CrumbSystemPayload/Target/Main"), originalMain) ||
+		!bytes.Equal(check("Payload/Crumb.app/CrumbSystemPayload/Target/SC_Info/Main.sinf"), []byte("original customer license")) {
+		t.Fatal("helper preparation changed target bytes")
+	}
+	originalInfo, err := os.ReadFile(filepath.Join(bundle, "Info.plist"))
+	if err != nil || !bytes.Equal(originalInfo, info) {
+		t.Fatal("installed Crumb.app modified")
+	}
+}
