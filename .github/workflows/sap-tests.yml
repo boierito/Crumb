@@ -85,6 +85,13 @@ jobs:
         run: |
           swiftc WaffleStore/App/CoreMediaLocalProbe.swift scripts/test-coremedia-local-probe.swift -o /tmp/crumb-coremedia-local-probe
           /tmp/crumb-coremedia-local-probe
+      - name: Test dynamic IPA import and preservation of the original
+        run: |
+          swiftc WaffleStore/App/RuntimeIPAImport.swift scripts/test-runtime-ipa-import.swift -o /tmp/crumb-runtime-ipa-import
+          /tmp/crumb-runtime-ipa-import
+      - name: Typecheck iOS IPA importer
+        run: |
+          xcrun --sdk iphoneos swiftc -target arm64-apple-ios16.4 -sdk "$(xcrun --sdk iphoneos --show-sdk-path)" -parse-as-library -typecheck WaffleStore/App/RuntimeIPAImport.swift
       - name: Typecheck iOS CoreMedia bytestream adapter
         run: |
           xcrun --sdk iphoneos swiftc -target arm64-apple-ios16.4 -sdk "$(xcrun --sdk iphoneos --show-sdk-path)" -parse-as-library -typecheck WaffleStore/App/CoreMediaLocalProbe.swift
