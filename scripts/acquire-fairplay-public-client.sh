@@ -78,8 +78,9 @@ PY
     echo "Reference image not listed: $framework" >> "$research_dir/artifacts/absent-images.txt"
     continue
   fi
-  "$ipsw_tool" --no-color dyld extract --slide --stubs \
-    --cache "$research_dir/tool/cache.a2s" \
+  # Local symbols are exported by default. Global stub-island analysis builds
+  # an index of the entire OS cache and is unnecessary for this acquisition.
+  "$ipsw_tool" --no-color dyld extract --slide \
     --output "$research_dir/artifacts/macho" "$cache_path" "$image"
 done
 python3 - "$research_dir/artifacts" <<'PY'
@@ -100,7 +101,7 @@ if sum(i['bytes'] for i in images) > 512 * 1024 * 1024:
     raise SystemExit('Reference artifact size exceeds its bounded scope')
 report = {'schema': 'crumb-public-client-reference-v1', 'build': '24A446',
           'component': '043-69419-713.dmg.aea', 'ipsw_version': '3.1.739',
-          'extraction': 'original cache image with ipsw slide/stub normalization',
+          'extraction': 'original cache image with ipsw slide normalization and local symbols',
           'account_inputs_used': False, 'license_inputs_used': False,
           'device_service_executed': False, 'sinf_validated': False,
           'crumb_runtime_dependency': False, 'images': images}
