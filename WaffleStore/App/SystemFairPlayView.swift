@@ -646,10 +646,13 @@ struct SystemFairPlayView: View {
                             coreMediaRunning = true
                             coreMediaSummary = ""
                             Task {
-                                let result = await Task.detached(priority: .utility) {
-                                    CoreMediaLocalProbe.run(input: localIPA)
+                                let summaries = await Task.detached(priority: .utility) {
+                                    let downloaded = CoreMediaLocalProbe.run(input: localIPA)
+                                    let installed = CoreMediaLocalProbe.runOwnExecutable()
+                                    return "Downloaded IPA: " + downloaded.summary + "\n\n" +
+                                        "Crumb installed executable: " + installed.summary
                                 }.value
-                                coreMediaSummary = result.summary
+                                coreMediaSummary = summaries
                                 coreMediaRunning = false
                             }
                         }
