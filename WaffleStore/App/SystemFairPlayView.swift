@@ -237,7 +237,7 @@ final class SystemFairPlaySession: ObservableObject {
                     defer { if access { selected.stopAccessingSecurityScopedResource() } }
                     return try FairPlayNative.run("prepare-system-separate-helper",
                         source: sourceBundle, destination: destination,
-                        model: URL(fileURLWithPath: newHelperID), ipa: selected)
+                        ipa: selected, helperBundleID: newHelperID)
                 }.value
                 guard let data = preparation.data(using: .utf8),
                       let response = try JSONSerialization.jsonObject(with: data) as? [String: Any],
