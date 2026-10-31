@@ -184,3 +184,40 @@ for inspecting this specific query's path. Whether the actual Crumb process
 can obtain the required answer remains unmeasured. A failure of that query
 would describe this native producer route, not establish that every portable
 or kernel-assisted decryption route is impossible.
+
+## Hardware-query reference and remaining boundary
+
+The extended acquisition passed in
+[run 41204951924](https://github.com/boierito/Crumb/actions/runs/41204951924)
+(commit `1c34b275f15bf85902035e791936b3d2e74e0583`). The downloaded ZIP
+SHA-256 was `6142a175b5004e39387fc591799b7d95a96cf5c4d76dc50600f2dd58a906c9cd`.
+The normalized MobileGestalt image is 1,042,696 bytes, SHA-256
+`73e327d8d64410c4542f56717fb3a9d9a2b094b7851621ec44251a937dd9d8b6`.
+
+`scripts/audit-mobilegestalt-identity.py --image <normalized image>` pins that
+input and verifies original call edges and the registry callbacks. Its
+[bounded result](research/mobilegestalt-identity-24A446.json) deliberately keeps
+query execution, full permission replay and SINF validation false.
+
+The public lookup spelling for UniqueDeviceID,
+`re6Zb+zwFKJNlkQTUeT+/w`, matches the native registry row at `0x1ec27b560`.
+That row contains getter `0x1af9f0d30`, permission callback `0x1af9eea44`,
+permission-report callback `0x1af9f0a4c`, flags byte `0x20`, cache index -1
+and type 9. Native conversion of the query name to that lookup spelling has
+not yet been replayed; this inventory does not substitute a forged query.
+
+The permission callback delegates to `0x1af9eea6c`. Its code uses original
+strings `system-info` and `net.link.addr`. The registry's report callback
+leads to `0x1af9f0a60`, where a dynamically obtained callback is invoked with
+the original string `com.apple.private.MobileGestalt.AllowedProtectedKeys` at
+`0x1af9f0ad8`. The subsequent code checks the returned object's type and
+membership, including a secondary matcher. The dynamic callback and external
+sandbox-call island are not independently resolved by this audit. Thus it
+would be premature to identify the exact missing entitlement in Crumb, claim
+that adding a self-signed entitlement grants access, or declare that all routes
+are impossible. No entitlement or identity substitution was implemented.
+
+This investigation identifies the next native contract to resolve: the actual
+permission result and identity transformation before native KBSync production.
+It has not obtained a new account credential, validated DD's SINF, repaired
+`-42057`, or repaired the imported-file remap returning errno 12.

@@ -6,6 +6,8 @@ on:
       - '.github/workflows/fairplay-public-client-reference.yml'
       - 'scripts/acquire-fairplay-public-client.sh'
       - 'scripts/collect-fairplay-client-stubs.py'
+      - 'scripts/audit-mobilegestalt-identity.py'
+      - 'scripts/audit-coreml-identity.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -23,6 +25,11 @@ jobs:
           persist-credentials: false
       - name: Acquire pinned public firmware component and selected cache images
         run: bash scripts/acquire-fairplay-public-client.sh "$RUNNER_TEMP/fairplay-public-client"
+      - name: Verify native hardware identity reference contract
+        run: |
+          python3 scripts/audit-mobilegestalt-identity.py \
+            --image "$RUNNER_TEMP/fairplay-public-client/artifacts/macho/libMobileGestalt.dylib" \
+            > "$RUNNER_TEMP/fairplay-public-client/artifacts/mobilegestalt-identity.json"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

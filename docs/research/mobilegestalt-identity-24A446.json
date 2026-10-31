@@ -1,0 +1,34 @@
+{
+  "schema": "crumb-mobilegestalt-identity-reference-v1",
+  "build": "24A446",
+  "normalized_image_sha256": "73e327d8d64410c4542f56717fb3a9d9a2b094b7851621ec44251a937dd9d8b6",
+  "public_query_name": "UniqueDeviceID",
+  "public_registry_key": "re6Zb+zwFKJNlkQTUeT+/w",
+  "native_query_name_to_registry_hash_replayed": false,
+  "registry_record": "0x1ec27b560",
+  "registry_record_sha256": "6d6c05b037e0208c84a8e6ed3cf4b4500a11e28d2736b4641d3186f464110093",
+  "getter": "0x1af9f0d30",
+  "permission_callback": "0x1af9eea44",
+  "permission_report_callback": "0x1af9f0a4c",
+  "record_flags_byte_0x38": 32,
+  "record_cache_index_0x3a": -1,
+  "record_type_0x3c": 9,
+  "entitlement_constant": "com.apple.private.MobileGestalt.AllowedProtectedKeys",
+  "entitlement_string_reference": "0x1af9f0acc",
+  "original_direct_call_edges": [
+    {
+      "site": "0x1af9ebfbc",
+      "target": "0x1af9eb588"
+    },
+    {
+      "site": "0x1af9eea5c",
+      "target": "0x1af9eea6c"
+    }
+  ],
+  "external_sandbox_call_target_independently_resolved": false,
+  "full_permission_callback_replayed": false,
+  "installed_crumb_entitlements_measured": false,
+  "device_query_executed": false,
+  "sinf_validated": false,
+  "generic_decryption_demonstrated": false
+}
