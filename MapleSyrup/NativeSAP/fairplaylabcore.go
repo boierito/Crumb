@@ -37,6 +37,12 @@ func labRun(r labRequest) (any, error) {
 			return nil, recoveryFailure("system-preparation", "ambiguous_original_license_mapping", err)
 		}
 		return job, err
+	case "prepare-system-separate-helper":
+		job, err := packageipa.PrepareSystemSeparateHelper(r.Source, r.IPA, r.Destination, r.Model)
+		if errors.Is(err, packageipa.ErrSystemLicenseMapping) {
+			return nil, recoveryFailure("system-preparation", "ambiguous_original_license_mapping", err)
+		}
+		return job, err
 	case "unpack-system-export":
 		return packageipa.UnpackSystemExport(r.Source, r.Destination)
 	case "archive-system-export":
