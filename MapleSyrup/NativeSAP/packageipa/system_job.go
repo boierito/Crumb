@@ -185,7 +185,18 @@ func systemLicensePlan(files map[string]*zip.File, root string) (app Info, copie
 // PrepareSystemHelper snapshots this app's installed, readable bundle and adds
 // one purchased IPA. It uses no developer account, signing key or server.
 // iOS must accept a NEW signature and installation before the payload is usable.
-func PrepareSystemHelper(bundleDirectory, original, destination string) (job SystemJob, err error) {
+func PrepareSystemHelper(bundleDirectory, original, destination string) (SystemJob, error) {
+	return prepareSystemHelper(bundleDirectory, original, destination, "")
+}
+
+// PrepareSystemSeparateHelper creates an independently installable Crumb helper.
+// It never updates the installed Crumb bundle. The extra app ID must be
+// explicitly provisioned: an exact-ID Crumb profile is not sufficient.
+func PrepareSystemSeparateHelper(bundleDirectory, original, destination, helperBundleID string) (SystemJob, error) {
+	return prepareSystemHelper(bundleDirectory, original, destination, helperBundleID)
+}
+
+func prepareSystemHelper(bundleDirectory, original, destination, helperBundleID string) (job SystemJob, err error) {
 	if filepath.Ext(bundleDirectory) != ".app" {
 		return job, errors.New("invalid helper bundle")
 	}
@@ -205,6 +216,13 @@ func PrepareSystemHelper(bundleDirectory, original, destination string) (job Sys
 	var helperInfo Info
 	if _, e = plist.Unmarshal(helperData, &helperInfo); e != nil || helperInfo.BundleID == "" || helperInfo.Version == "" || !systemSafe(helperInfo.Executable) || strings.Contains(helperInfo.Executable, "/") {
 		return job, errors.New("invalid helper identity")
+	}
+	if helperBundleID != "" {
+		// Disjoint identity avoids overwriting Crumb, and prevents arbitrary
+		// caller-selected bundle identifiers from impersonating other apps.
+		if helperBundleID != helperInfo.BundleID+".fphelper" || len(helperBundleID) > 240 {
+			return job, errors.New("separate helper identity is not authorized")
+		}
 	}
 	if st, e := os.Lstat(filepath.Join(bundleDirectory, helperInfo.Executable)); e != nil || !st.Mode().IsRegular() {
 		return job, errors.New("helper executable missing")
@@ -270,6 +288,22 @@ func PrepareSystemHelper(bundleDirectory, original, destination string) (job Sys
 			}
 			if !stat.Mode().IsRegular() {
 				return errors.New("non-regular helper resource")
+			}
+			if rel == "Info.plist" && helperBundleID != "" {
+				var values map[string]any
+				if _, e := plist.Unmarshal(helperData, &values); e != nil || len(values) == 0 {
+					return errors.New("could not read installed Crumb Info.plist")
+				}
+				values["CFBundleIdentifier"] = helperBundleID
+				values["CFBundleDisplayName"] = "Crumb FP Helper"
+				values["CFBundleName"] = "Crumb FP Helper"
+				// Prevent collisions with Crumb's existing URL schemes.
+				delete(values, "CFBundleURLTypes")
+				changed, e := plist.Marshal(values, plist.BinaryFormat)
+				if e != nil {
+					return e
+				}
+				return systemPut(z, helperRoot+filepath.ToSlash(rel), stat.Mode(), bytes.NewReader(changed))
 			}
 			f, e := os.Open(p)
 			if e != nil {
