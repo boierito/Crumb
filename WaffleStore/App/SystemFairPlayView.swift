@@ -168,7 +168,7 @@ final class SystemFairPlaySession: ObservableObject {
                     try RuntimeIPAImport.copyPickedIPA(selected, into: privateRoot)
                 }.value
                 if let previous = importedIPA, previous != imported,
-                   previous.deletingLastPathComponent().standardizedFileURL == privateRoot.standardizedFileURL {
+                   previous.deletingLastPathComponent().standardizedFileURL.path == privateRoot.standardizedFileURL.path {
                     try? FileManager.default.removeItem(at: previous)
                 }
                 importedIPA = imported
