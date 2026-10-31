@@ -7,7 +7,7 @@ import CryptoKit
 nonisolated enum FairPlayNative {
     static func run(_ operation: String, source: URL? = nil, destination: URL? = nil,
                     report: URL? = nil, model: URL? = nil, ipa: URL? = nil,
-                    privateIdentifiers: [String] = []) throws -> String {
+                    privateIdentifiers: [String] = [], helperBundleID: String = "") throws -> String {
         var cachePath = ""
         if operation == "probe-legacy-producer" {
             let cache = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask,
@@ -16,7 +16,8 @@ nonisolated enum FairPlayNative {
             cachePath = cache.path
         }
         var request = ["Operation": operation, "Cache": cachePath, "Source": source?.path ?? "",
-                       "Destination": destination?.path ?? "", "Report": report?.path ?? "", "Model": model?.path ?? "", "IPA": ipa?.path ?? ""]
+                       "Destination": destination?.path ?? "", "Report": report?.path ?? "", "Model": model?.path ?? "", "IPA": ipa?.path ?? "",
+                       "HelperBundleID": helperBundleID]
         if !privateIdentifiers.isEmpty {
             request["Input"] = try JSONEncoder().encode(privateIdentifiers).base64EncodedString()
         }
