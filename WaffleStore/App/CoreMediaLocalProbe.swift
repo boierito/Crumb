@@ -31,7 +31,7 @@ nonisolated enum CoreMediaLocalProbe {
     }
 
     nonisolated static func run(input: URL) -> Outcome {
-        guard isEligible(input, home: FileManager.default.homeDirectoryForCurrentUser) else {
+        guard isEligible(input, home: URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)) else {
             return Outcome(stage: "blocked", detail: "requires a regular IPA within Crumb's own container", comparedBytes: 0)
         }
         #if os(iOS)
