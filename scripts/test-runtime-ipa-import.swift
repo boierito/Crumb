@@ -15,8 +15,10 @@ struct RuntimeIPAImportTests {
         let second = try RuntimeIPAImport.copyPickedIPA(input, into: importedRoot)
         precondition(first != second, "imports must not overwrite each other")
         precondition(first.deletingLastPathComponent() == importedRoot, "private destination")
-        precondition(try Data(contentsOf: first) == original, "imported bytes must match")
-        precondition(try Data(contentsOf: input) == original, "original must remain unchanged")
+        let copied = try Data(contentsOf: first)
+        let retained = try Data(contentsOf: input)
+        precondition(copied == original, "imported bytes must match")
+        precondition(retained == original, "original must remain unchanged")
 
         let badExtension = scratch.appendingPathComponent("NotAnIPA.zip")
         try original.write(to: badExtension)
