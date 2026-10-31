@@ -83,6 +83,9 @@ PY
   "$ipsw_tool" --no-color dyld extract --slide \
     --output "$research_dir/artifacts/macho" "$cache_path" "$image"
 done
+python3 "$(dirname "$0")/collect-fairplay-client-stubs.py" \
+  --ipsw "$ipsw_tool" --cache "$cache_path" \
+  --output "$research_dir/artifacts/client-stubs.json"
 python3 - "$research_dir/artifacts" <<'PY'
 import hashlib, json, pathlib, struct, sys
 root = pathlib.Path(sys.argv[1])

@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/fairplay-public-client-reference.yml'
       - 'scripts/acquire-fairplay-public-client.sh'
+      - 'scripts/collect-fairplay-client-stubs.py'
   workflow_dispatch:
 permissions:
   contents: read
