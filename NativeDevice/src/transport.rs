@@ -31,6 +31,45 @@ fn device_error(stage: &'static str, error: idevice::IdeviceError) -> anyhow::Er
     }
 }
 
+// VendDocuments keeps the AFC root at the app container. Documents is an
+// accessible child directory, not the root of the returned file service.
+#[derive(Clone, Copy)]
+enum AppDocument {
+    Proof,
+    Manifest,
+    Output,
+}
+impl AppDocument {
+    fn path(self) -> &'static str {
+        match self {
+            Self::Proof => "/Documents/.crumb-device-proof",
+            Self::Manifest => "/Documents/result.json",
+            Self::Output => "/Documents/result.ipa",
+        }
+    }
+    fn stage(self) -> &'static str {
+        match self {
+            Self::Proof => "Device proof file",
+            Self::Manifest => "Helper result manifest",
+            Self::Output => "Helper result IPA",
+        }
+    }
+}
+async fn read_app_document(
+    client: &mut AfcClient,
+    document: AppDocument,
+    limit: usize,
+) -> anyhow::Result<Vec<u8>> {
+    let mut file = client
+        .open(document.path(), AfcFopenMode::RdOnly)
+        .await
+        .map_err(|e| device_error(document.stage(), e))?;
+    let read = file.read_n(limit).await;
+    let close = file.close().await;
+    let bytes = read.map_err(|e| device_error(document.stage(), e))?;
+    close.map_err(|e| device_error("Close app document", e))?;
+    Ok(bytes)
+}
 async fn tunnel(v: &Value) -> anyhow::Result<(AdapterHandle, RsdHandshake)> {
     // Only local device routes. Never accept an arbitrary network host from an IPA.
     let ip: IpAddr = match v["route"].as_str().unwrap_or("10.7.0.1") {
@@ -118,19 +157,11 @@ pub(super) async fn run(job: &Arc<Job>, v: &Value) -> anyhow::Result<Value> {
         .vend_documents(own_id)
         .await
         .map_err(|e| device_error("Crumb documents", e))?;
-    let mut marker = own
-        .open(".crumb-device-proof", AfcFopenMode::RdOnly)
-        .await
-        .map_err(|e| device_error("Device proof file", e))?;
-    let bytes = marker
-        .read_n(64)
-        .await
-        .map_err(|e| device_error("Device proof read", e))?;
+    let bytes = read_app_document(&mut own, AppDocument::Proof, 64).await?;
     anyhow::ensure!(
         bytes == proof.as_bytes(),
         "The connection does not lead to this Crumb installation"
     );
-    drop(marker);
     drop(own);
     match v["operation"].as_str().unwrap_or("") {
         "verify" => Ok(json!({"phase":"connected"})),
@@ -207,15 +238,17 @@ pub(super) async fn run(job: &Arc<Job>, v: &Value) -> anyhow::Result<Value> {
             );
             let client = HouseArrestClient::connect_rsd(&mut adapter, &mut handshake).await?;
             let mut afc = client.vend_documents(id).await?;
-            let manifest_size = afc.get_file_info("result.json").await?.size;
+            let manifest_size = afc
+                .get_file_info(AppDocument::Manifest.path())
+                .await
+                .map_err(|e| device_error("Helper manifest metadata", e))?
+                .size;
             anyhow::ensure!(
                 manifest_size > 0 && manifest_size <= 16 * 1024 * 1024,
                 "Invalid result manifest size"
             );
-            let manifest = {
-                let mut file = afc.open("result.json", AfcFopenMode::RdOnly).await?;
-                file.read_n(manifest_size).await?
-            };
+            let manifest =
+                read_app_document(&mut afc, AppDocument::Manifest, manifest_size).await?;
             anyhow::ensure!(manifest.len() == manifest_size, "Oversized result manifest");
             let manifest: Value = serde_json::from_slice(&manifest)?;
             anyhow::ensure!(
@@ -229,11 +262,18 @@ pub(super) async fn run(job: &Arc<Job>, v: &Value) -> anyhow::Result<Value> {
                 manifest["job_id"] == expected,
                 "Result belongs to a different operation"
             );
-            let size = afc.get_file_info("result.ipa").await?.size;
+            let size = afc
+                .get_file_info(AppDocument::Output.path())
+                .await
+                .map_err(|e| device_error("Helper IPA metadata", e))?
+                .size;
             anyhow::ensure!(size > 0 && size <= 4_000_000_000, "Invalid result size");
             let partial = out.with_extension("partial");
             let mut cleanup = PartialFile(partial.clone());
-            let mut remote = afc.open("result.ipa", AfcFopenMode::RdOnly).await?;
+            let mut remote = afc
+                .open(AppDocument::Output.path(), AfcFopenMode::RdOnly)
+                .await
+                .map_err(|e| device_error("Helper IPA open", e))?;
             let mut local = tokio::fs::File::create(&partial).await?;
             let mut total = 0usize;
             while total < size {
@@ -244,6 +284,10 @@ pub(super) async fn run(job: &Arc<Job>, v: &Value) -> anyhow::Result<Value> {
                 local.write_all(&chunk).await?;
                 job.update(json!({"phase":"fetching", "bytes":total, "total":size}));
             }
+            remote
+                .close()
+                .await
+                .map_err(|e| device_error("Helper IPA close", e))?;
             local.flush().await?;
             drop(local);
             super::package::verify_output(&partial, &manifest)?;
@@ -347,3 +391,7 @@ mod tests {
         assert!(!message.contains("private socket payload"));
     }
 }
+
+#[cfg(test)]
+#[path = "document_tests.rs"]
+mod document_tests;

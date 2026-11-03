@@ -107,3 +107,21 @@ expose numeric library codes; response payloads and credential contents are
 excluded. Tests cover stage/cause retention and private-payload exclusion.
 The routing and pairing protocol are unchanged. This diagnostic change is not
 proof that direct Loopback access is supported on the device.
+
+
+## Build 23025: app Documents paths
+
+Device feedback with LocalDevVPN selected reached AFC and reported
+`afc error: Object not found`. The same-installation check incorrectly opened
+`.crumb-device-proof` at the app-container root: VendDocuments allows access to
+the Documents child without making that child the AFC root. The proof now opens
+`/Documents/.crumb-device-proof`; the helper manifest and IPA retrieval use
+`/Documents/result.json` and `/Documents/result.ipa` for the same reason.
+The fresh nonce comparison remains required. Normal reads explicitly close
+their remote descriptors, including after a failed small-document read.
+
+A regression fixture speaks AFC to the real dependency client, reproduces the
+old ObjectNotFound response, and checks successful reads and descriptor closure
+for all three Documents paths. It is a protocol test, not a physical-device
+acceptance test. Re-test Check authenticated connection with LocalDevVPN enabled;
+helper installation and actual licensed decryption still require device testing.
