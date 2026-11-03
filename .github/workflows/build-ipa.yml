@@ -41,6 +41,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.99.1
         with:
           targets: aarch64-apple-ios
+      - name: Check helper against the iOS SDK
+        run: xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.4 -fobjc-arc -fsyntax-only DecryptHelper/main.m DecryptHelper/CrumbMachO.c
+      - uses: actions/cache/restore@v4
+        id: device-cache
+        with:
+          path: NativeDevice/target
+          key: device-${{ runner.os }}-${{ hashFiles('NativeDevice/Cargo.lock', 'NativeDevice/vendor/**') }}
       - name: Build and package unsigned IPA
         env:
           CONFIGURATION: ${{ matrix.configuration }}
@@ -73,6 +80,11 @@ jobs:
             cp build/Native/ipatool-sap-corresponding-source.tar.gz artifacts/
             cp build/Native/IPATOOL-LICENSE artifacts/
           fi
+      - uses: actions/cache/save@v4
+        if: always() && steps.device-cache.outputs.cache-hit != 'true'
+        with:
+          path: NativeDevice/target
+          key: device-${{ runner.os }}-${{ hashFiles('NativeDevice/Cargo.lock', 'NativeDevice/vendor/**') }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -4,7 +4,6 @@
 #import <dlfcn.h>
 #import <fcntl.h>
 #import <mach/mach.h>
-#import <mach/mach_vm.h>
 #import <math.h>
 #import <stdio.h>
 #import <sys/mman.h>
@@ -131,10 +130,10 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
     ok = NO;
   for (size_t p = 0; ok && p < enc.length; p += pg) {
     size_t len = MIN(pg, enc.length - p);
-    mach_vm_size_t got = 0;
-    kern_return_t kr = mach_vm_read_overwrite(
-        mach_task_self(), (mach_vm_address_t)(map + enc.offset + p), len,
-        (mach_vm_address_t)plain, &got);
+    vm_size_t got = 0;
+    kern_return_t kr = vm_read_overwrite(mach_task_self(),
+                                         (vm_address_t)(map + enc.offset + p),
+                                         len, (vm_address_t)plain, &got);
     if (kr != KERN_SUCCESS || got != len ||
         pread(fd, cipher, len, enc.offset + p) != (ssize_t)len) {
       ok = NO;

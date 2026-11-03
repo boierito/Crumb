@@ -11,7 +11,8 @@ iOS Settings pairing, certificate acceptance or the compiled UIKit helper.
    Pairing is exposed only on iOS 27.0 and 27.0.1 in this first build.
 2. Enable LocalDevVPN and Check authenticated connection. The backend verifies
    the remote pairing and reads a random marker from this installation's own
-   Documents through House Arrest before enabling operations.
+   Documents through House Arrest before enabling operations. Interrupted remote helper uploads are removed from
+   Crumb’s own PublicStaging subdirectory on the next installation attempt.
 3. On iOS 27.0.1 only, import an RSA .p12 signing identity and its matching
    provisioning profile. The profile must permit the chosen helper bundle ID,
    list its signing certificate, be current and permit this device. No signing
@@ -64,7 +65,7 @@ experimental entry conditions, not a claim that Crumb passed a physical test.
   excessive entry counts. First version rejects FAT/32-bit images. Limits are 4 GB
   expanded and 512 MiB per output file. No partial IPA is reported as completed.
 - Decryption uses a read-only map and cryptid=2, reads every encrypted page with
-  mach_vm_read_overwrite, requires changed bytes, lower plaintext entropy and
+  vm_read_overwrite, requires changed bytes, lower plaintext entropy and
   additional arm64 return/authentication instructions. These are conservative
   heuristics, not a proof of application behavior. Sparse encrypted data or small
   images can be rejected even with a valid license.

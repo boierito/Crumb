@@ -1,4 +1,5 @@
 use super::*;
+use idevice::services::afc::AfcClient;
 use idevice::{
     RsdService,
     remote_pairing::{RemotePairingClient, connect_tls_psk_tunnel_native},
@@ -8,7 +9,7 @@ use idevice::{
     tcp::{adapter::Adapter, handle::AdapterHandle},
 };
 use std::net::{IpAddr, SocketAddr};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 async fn tunnel(v: &Value) -> anyhow::Result<(AdapterHandle, RsdHandshake)> {
     // Only local device routes. Never accept an arbitrary network host from an IPA.
@@ -87,13 +88,28 @@ pub(super) async fn run(job: &Arc<Job>, v: &Value) -> anyhow::Result<Value> {
                 "Install requires a prepared helper bundle"
             );
             job.update(json!({"phase":"installing"}));
-            idevice::utils::installation::install_package_rsd(
-                &mut adapter,
-                &mut handshake,
-                path,
-                None,
-            )
-            .await?;
+            let mut afc = AfcClient::connect_rsd(&mut adapter, &mut handshake).await?;
+            // Only Crumb's own staging directory is removed. Interrupted uploads
+            // are reclaimed on the next attempt after same-installation proof.
+            let staging = "PublicStaging/Crumb-DevicePipeline";
+            let _ = afc.mk_dir("PublicStaging").await;
+            if afc.get_file_info(staging).await.is_ok() {
+                afc.remove_all(staging).await?;
+            }
+            afc.mk_dir(staging).await?;
+            let remote = format!("{staging}/CrumbDecrypt.app");
+            let installation = async {
+                upload_helper(job, &mut afc, std::path::Path::new(path), &remote).await?;
+                let mut options = plist::Dictionary::new();
+                options.insert("PackageType".into(), "Developer".into());
+                proxy
+                    .upgrade(&remote, Some(plist::Value::Dictionary(options)))
+                    .await?;
+                Ok::<_, anyhow::Error>(())
+            }
+            .await;
+            let _ = afc.remove_all(staging).await;
+            installation?;
             let id = v["helper_bundle"]
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("Missing helper identity"))?;
@@ -166,6 +182,53 @@ pub(super) async fn run(job: &Arc<Job>, v: &Value) -> anyhow::Result<Value> {
         }
         _ => anyhow::bail!("Unknown device operation"),
     }
+}
+async fn upload_helper(
+    job: &Arc<Job>,
+    afc: &mut AfcClient,
+    local: &std::path::Path,
+    remote: &str,
+) -> anyhow::Result<()> {
+    let mut buffer = vec![0u8; 1024 * 1024];
+    let mut bytes = 0u64;
+    for entry in walkdir::WalkDir::new(local) {
+        anyhow::ensure!(!job.cancelled.load(Ordering::SeqCst), "Cancelled");
+        let entry = entry?;
+        anyhow::ensure!(
+            !entry.file_type().is_symlink(),
+            "Prepared helper contains a link"
+        );
+        let relative = entry.path().strip_prefix(local)?;
+        let target = if relative.as_os_str().is_empty() {
+            remote.to_string()
+        } else {
+            format!(
+                "{remote}/{}",
+                relative
+                    .to_str()
+                    .ok_or_else(|| anyhow::anyhow!("Invalid helper path"))?
+            )
+        };
+        if entry.file_type().is_dir() {
+            afc.mk_dir(&target).await?;
+            continue;
+        }
+        anyhow::ensure!(entry.file_type().is_file(), "Unsupported helper entry");
+        let mut input = tokio::fs::File::open(entry.path()).await?;
+        let mut output = afc.open(&target, AfcFopenMode::WrOnly).await?;
+        loop {
+            anyhow::ensure!(!job.cancelled.load(Ordering::SeqCst), "Cancelled");
+            let n = input.read(&mut buffer).await?;
+            if n == 0 {
+                break;
+            }
+            output.write_entire(&buffer[..n]).await?;
+            bytes += n as u64;
+            job.update(json!({"phase":"installing","bytes":bytes}));
+        }
+        output.close().await?;
+    }
+    Ok(())
 }
 struct PartialFile(std::path::PathBuf);
 impl Drop for PartialFile {
