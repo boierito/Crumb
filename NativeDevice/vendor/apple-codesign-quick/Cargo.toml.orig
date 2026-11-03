@@ -1,0 +1,24 @@
+[package]
+name = "apple-codesign-quick"
+version = "0.1.0"
+description = "A quick and probably quirky crate to codesign Apple application bundles; based on Sideloader's D code"
+edition = "2024"
+repository = "https://github.com/Dadoum/apple-crates"
+license = "LGPL-2.1-or-later"
+
+[dependencies]
+plist.workspace = true
+thiserror.workspace = true
+sha1.workspace = true
+sha2.workspace = true
+byteorder = "1.5"
+cms = { version = "0.2.3", features = ["builder", "rsa", "sha2"] }
+const-oid = { version = "0.9.6", features = ["db"] }
+der = { version = "0.7.10", features = ["alloc", "derive", "std"] }
+memmap2 = "0.9"
+pem-rfc7468 = { version = "0.7", features = ["alloc"] }
+rayon = "1.12"
+rsa = { version = "0.9.9", features = ["sha2"] }
+sha2_010 = { package = "sha2", version = "0.10" }
+spki = "0.7.3"
+x509-cert = "0.2.5"

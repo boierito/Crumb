@@ -6,3 +6,6 @@ artifacts/
 .DS_Store
 __pycache__/
 *.pyc
+
+NativeDevice/target/
+NativeDevice/vendor/apple-codesign-quick/target/

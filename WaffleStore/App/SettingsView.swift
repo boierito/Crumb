@@ -46,6 +46,8 @@ struct SettingsView: View {
                     }
                 }
                 
+                Section { NavigationLink("Device connection") { DeviceSetupView() } }
+
                 Section(header: HeaderLabel(text: "Language".localized, icon: "globe"), footer:
                     Button(action: {
                         openURL(URL(string: "https://poeditor.com/join/project/Ofr2qvyudt")!)

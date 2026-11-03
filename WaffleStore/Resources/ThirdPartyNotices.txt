@@ -56,3 +56,9 @@ source alone does not resolve an incompatible combination or missing upstream
 grant. Apple CommerceKit/CoreFP/StoreAgent binaries have their
 own proprietary terms; downloading them from Apple does not grant a right to
 bundle them in a redistributed IPA. No such binaries have been copied here.
+
+Experimental device connection: jkcoxson/idevice (MIT).
+On-device signing: apple-codesign-quick 0.1.0, LGPL-2.1-or-later;
+modified to seal EmbeddedPayload as resources without re-signing its dylibs.
+Corresponding source, license and rebuild scripts: boierito/Crumb,
+NativeDevice/vendor/apple-codesign-quick. See THIRD_PARTY_NOTICES.md.

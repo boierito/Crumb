@@ -80,6 +80,9 @@ struct DownloadedAppsView: View {
                             }
                         }
                         .buttonStyle(TranslucentButtonStyle())
+                        if DeviceWorkflow.decryptSupported {
+                            NavigationLink("Decrypt on this device") { DeviceDecryptView(record: record) }
+                        }
                         DisclosureGroup("Details") {
                             if let build = record.build { Text("Build \(build)").font(.caption) }
                             Text(record.bundleID).font(.caption).textSelection(.enabled)

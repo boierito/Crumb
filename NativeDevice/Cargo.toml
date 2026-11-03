@@ -1,0 +1,27 @@
+[package]
+name = "crumb-device"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+idevice = { git = "https://github.com/jkcoxson/idevice", rev = "89702099f4d7552f704f93b4526756abda319ceb", default-features = false, features = ["rustcrypto", "remote_pairing", "tunnel_tcp_stack", "rsd", "tcp", "xpc", "afc", "house_arrest", "installation_proxy", "core_device"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync", "macros", "fs"] }
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+base64 = "0.22"
+tracing = { version = "0.1", features = ["max_level_off", "release_max_level_off"] }
+uuid = { version = "1", features = ["v4"] }
+plist = "1"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+walkdir = "2"
+sha2 = "0.10"
+anyhow = "1"
+p12-keystore = "=0.4.1"
+apple-codesign-quick = { path = "vendor/apple-codesign-quick" }
+
+[profile.release]
+opt-level = "s"
+lto = "thin"

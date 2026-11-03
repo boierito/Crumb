@@ -56,3 +56,15 @@ source alone does not resolve an incompatible combination or missing upstream
 grant. Apple CommerceKit/CoreFP/StoreAgent binaries have their
 own proprietary terms; downloading them from Apple does not grant a right to
 bundle them in a redistributed IPA. No such binaries have been copied here.
+
+## Experimental device pipeline
+
+- jkcoxson/idevice: MIT, pinned to 89702099f4d7552f704f93b4526756abda319ceb.
+- apple-codesign-quick 0.1.0 (Dadoum/apple-crates): LGPL-2.1-or-later.
+  Corresponding modified source is in NativeDevice/vendor/apple-codesign-quick,
+  including COPYING.LESSER and CRUMB_CHANGES.md. The change prevents re-signing
+  of EmbeddedPayload dylibs. NativeDevice/Cargo.lock and build scripts permit
+  rebuilding/relinking; CI provides the corresponding source archive.
+- p12-keystore and other native dependencies retain their manifest licenses and
+  exact locked versions. No FairPlayed source code is copied. Its public
+  documentation informed the independent installed-resource experiment.

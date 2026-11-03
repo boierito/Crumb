@@ -35,12 +35,17 @@ jobs:
         with:
           go-version: '1.25.1'
           cache: false
+      - uses: dtolnay/rust-toolchain@1.99.1
+        with:
+          targets: aarch64-apple-ios
       - name: Build and package unsigned IPA
         env:
           CONFIGURATION: ${{ matrix.configuration }}
         run: |
           set -o pipefail
           mkdir -p artifacts
+          cargo test --locked --manifest-path NativeDevice/Cargo.toml
+          python3 scripts/test-device-macho.py
           xcodebuild -version | tee artifacts/toolchain.txt
           xcodebuild -project WaffleStore.xcodeproj -scheme WaffleStore \
             -configuration "$CONFIGURATION" -sdk iphoneos \
@@ -56,6 +61,7 @@ jobs:
           if [ -f scripts/verify-ipa.py ]; then
             python3 scripts/verify-ipa.py "artifacts/Crumb-$CONFIGURATION.ipa" | tee "artifacts/verification-$CONFIGURATION.json"
           fi
+          tar --exclude=target -czf artifacts/crumb-device-corresponding-source.tar.gz NativeDevice DecryptHelper scripts/build-device-native.sh
           if [ -f build/Native/unicorn-tci-corresponding-source.tar.gz ]; then
             cp build/Native/unicorn-tci-corresponding-source.tar.gz artifacts/
             cp build/Native/UNICORN-COPYING artifacts/
