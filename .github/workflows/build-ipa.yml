@@ -15,7 +15,7 @@ on:
         required: false
         default: ''
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 permissions:
   contents: read
@@ -46,8 +46,11 @@ jobs:
       - uses: actions/cache/restore@v4
         id: device-cache
         with:
-          path: NativeDevice/target
-          key: device-${{ runner.os }}-${{ hashFiles('NativeDevice/Cargo.lock', 'NativeDevice/vendor/**') }}
+          path: |
+            NativeDevice/target
+            build/Native
+          key: native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('NativeDevice/Cargo.lock', 'NativeDevice/vendor/**', 'MapleSyrup/NativeSAP/**', 'scripts/build-sap-native.sh', 'scripts/build-unicorn-tci.sh', 'scripts/prepare-unicorn-tci.py') }}
+          restore-keys: device-${{ runner.os }}-${{ hashFiles('NativeDevice/Cargo.lock', 'NativeDevice/vendor/**') }}
       - name: Build and package unsigned IPA
         env:
           CONFIGURATION: ${{ matrix.configuration }}
@@ -83,8 +86,10 @@ jobs:
       - uses: actions/cache/save@v4
         if: always() && steps.device-cache.outputs.cache-hit != 'true'
         with:
-          path: NativeDevice/target
-          key: device-${{ runner.os }}-${{ hashFiles('NativeDevice/Cargo.lock', 'NativeDevice/vendor/**') }}
+          path: |
+            NativeDevice/target
+            build/Native
+          key: native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('NativeDevice/Cargo.lock', 'NativeDevice/vendor/**', 'MapleSyrup/NativeSAP/**', 'scripts/build-sap-native.sh', 'scripts/build-unicorn-tci.sh', 'scripts/prepare-unicorn-tci.py') }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
