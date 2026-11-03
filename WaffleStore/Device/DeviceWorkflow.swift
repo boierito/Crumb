@@ -38,6 +38,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     private var polling: Task<Void, Never>?
     private var background: UIBackgroundTaskIdentifier = .invalid
     private var staged: URL?
+    private var managedHelper: String?
     private var pending: [String: String]?
     private var lastRequest: [String: Any] = [:]
 
@@ -50,6 +51,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
             if let children = try? fm.contentsOfDirectory(at: base, includingPropertiesForKeys: nil) {
                 for child in children where UUID(uuidString: child.lastPathComponent) != nil { try? fm.removeItem(at: child) }
             }
+            if let data = try DeviceKeychain.read("managed-helper") { managedHelper = String(data: data, encoding: .utf8) }
             paired = try DeviceKeychain.read("pairing") != nil
             hasCertificate = try DeviceKeychain.read("p12") != nil
             hasProfile = try DeviceKeychain.read("profile") != nil
@@ -117,7 +119,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
             try Zip.unzipFile(template, destination: unzipped, overwrite: false, password: nil)
             let request: [String: Any] = ["operation":"prepare", "ipa":ipa.path, "template":unzipped.path,
                 "work":root.appendingPathComponent("work").path, "p12":certURL.path, "profile":profileURL.path,
-                "password":password, "helper_bundle":helperBundle, "job_id":id]
+                "password":password, "helper_bundle":helperBundle, "job_id":id, "own_bundle":Bundle.main.bundleIdentifier ?? "com.certlium.crumb"]
             let outputDir = base.appendingPathComponent("Decrypted", isDirectory: true)
             try fm.createDirectory(at: outputDir, withIntermediateDirectories: true)
             pending = ["job_id":id, "helper_bundle":helperBundle, "output":outputDir.appendingPathComponent(id + "-decrypted.ipa").path]
@@ -215,8 +217,10 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
                     try? FileManager.default.removeItem(at: staged.appendingPathComponent("identity.p12"))
                     try? FileManager.default.removeItem(at: staged.appendingPathComponent("helper.mobileprovision"))
                 }
-                deviceOperation("install", extra: ["path":path, "helper_bundle":helperBundle])
+                deviceOperation("install", extra: ["path":path, "helper_bundle":helperBundle, "replace_helper":managedHelper == helperBundle])
             case "installed":
+                try DeviceKeychain.write(Data(helperBundle.utf8), account: "managed-helper")
+                managedHelper = helperBundle
                 helperInstalled = true
                 if let pending { try DeviceKeychain.write(JSONSerialization.data(withJSONObject: pending), account: "pending") }
                 cleanup(); message = "Helper installed. Keep Crumb Decrypt on screen until it finishes."

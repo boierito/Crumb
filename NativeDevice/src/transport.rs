@@ -80,6 +80,20 @@ pub(super) async fn run(job: &Arc<Job>, v: &Value) -> anyhow::Result<Value> {
     match v["operation"].as_str().unwrap_or("") {
         "verify" => Ok(json!({"phase":"connected"})),
         "install" => {
+            let helper_id = v["helper_bundle"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing helper identity"))?;
+            super::package::validate_helper_id(helper_id, own_id)?;
+            let exists = apps.iter().any(|a| {
+                a.as_dictionary()
+                    .and_then(|d| d.get("CFBundleIdentifier"))
+                    .and_then(|v| v.as_string())
+                    .is_some_and(|id| id.eq_ignore_ascii_case(helper_id))
+            });
+            anyhow::ensure!(
+                !exists || v["replace_helper"] == true,
+                "This bundle identifier is already installed and is not a helper managed by Crumb"
+            );
             let path = v["path"]
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("Missing helper"))?;

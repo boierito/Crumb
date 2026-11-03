@@ -67,6 +67,20 @@ fn safe_relative(path: &str) -> Result<&Path> {
     );
     Ok(path)
 }
+pub(super) fn validate_helper_id(bundle: &str, own: &str) -> Result<()> {
+    ensure!(
+        !bundle.eq_ignore_ascii_case(own),
+        "The helper must not replace Crumb"
+    );
+    ensure!(
+        bundle.len() <= 255
+            && bundle.contains('.')
+            && bundle.split('.').all(|part| !part.is_empty()
+                && part.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')),
+        "Invalid helper bundle identifier"
+    );
+    Ok(())
+}
 pub fn prepare(v: &Value) -> Result<String> {
     let work = PathBuf::from(input(v, "work")?);
     // Caller creates an exclusive, disposable per-operation directory.
@@ -88,6 +102,7 @@ pub fn prepare(v: &Value) -> Result<String> {
         );
         let app_info = plist(&source.join("Info.plist"))?;
         let bundle = input(v, "helper_bundle")?;
+        validate_helper_id(bundle, input(v, "own_bundle")?)?;
         let template = Path::new(input(v, "template")?);
         let helper = work.join("CrumbDecrypt.app");
         copy_tree(template, &helper)?;
@@ -418,6 +433,12 @@ mod tests {
             assert!(safe_relative(path).is_err());
         }
         assert!(safe_relative("Frameworks/Foo.framework/SC_Info/Foo.sinf").is_ok());
+    }
+    #[test]
+    fn helper_cannot_replace_crumb_or_use_invalid_identifiers() {
+        assert!(validate_helper_id("COM.CERTLIUM.CRUMB", "com.certlium.crumb").is_err());
+        assert!(validate_helper_id("../Crumb", "com.certlium.crumb").is_err());
+        assert!(validate_helper_id("com.certlium.crumb.decrypt", "com.certlium.crumb").is_ok());
     }
     #[test]
     fn empty_data_is_not_an_encrypted_image() {
