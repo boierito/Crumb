@@ -91,3 +91,19 @@ valid-profile installation, actual licensed FairPlay page reads, failed-license
 behavior, main binary/framework/extension completion, retrieval and independent
 cryptid inspection. A device result is the remaining evidence needed to call
 this a working Crumb decrypter.
+
+
+## Build 23024: connection diagnostics
+
+Device feedback on build 23023 showed stored pairing keys and a failed Loopback
+connection displaying only `device socket io failed`. That screenshot does not
+identify the failing protocol stage or establish whether the LocalDevVPN route
+works. No on-device IPA decryption has been established by this report.
+
+Connection failures now include a fixed stage label (TCP, pairing handshake,
+pairing verification, tunnel, RSD, app listing or same-installation proof).
+Socket errors expose the I/O kind and OS error number. Other protocol errors
+expose numeric library codes; response payloads and credential contents are
+excluded. Tests cover stage/cause retention and private-payload exclusion.
+The routing and pairing protocol are unchanged. This diagnostic change is not
+proof that direct Loopback access is supported on the device.

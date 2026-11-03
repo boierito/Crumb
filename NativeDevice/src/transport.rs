@@ -11,6 +11,26 @@ use idevice::{
 use std::net::{IpAddr, SocketAddr};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+// Fixed stage labels and numeric protocol codes keep credentials and device
+// response payloads out of user-facing errors while preserving socket causes.
+fn device_error(stage: &'static str, error: idevice::IdeviceError) -> anyhow::Error {
+    match error {
+        idevice::IdeviceError::Socket(error) => anyhow::anyhow!(
+            "{stage}: socket {:?} (OS {})",
+            error.kind(),
+            error
+                .raw_os_error()
+                .map(|code| code.to_string())
+                .unwrap_or_else(|| "unavailable".into())
+        ),
+        error => anyhow::anyhow!(
+            "{stage}: device protocol error {}.{}",
+            error.code(),
+            error.sub_code()
+        ),
+    }
+}
+
 async fn tunnel(v: &Value) -> anyhow::Result<(AdapterHandle, RsdHandshake)> {
     // Only local device routes. Never accept an arbitrary network host from an IPA.
     let ip: IpAddr = match v["route"].as_str().unwrap_or("10.7.0.1") {
@@ -24,14 +44,29 @@ async fn tunnel(v: &Value) -> anyhow::Result<(AdapterHandle, RsdHandshake)> {
         Duration::from_secs(10),
         tokio::net::TcpStream::connect(addr),
     )
-    .await??;
+    .await
+    .map_err(|_| anyhow::anyhow!("Pairing TCP: connection timed out after 10 seconds"))?
+    .map_err(|e| device_error("Pairing TCP", e.into()))?;
     let mut client = RemotePairingClient::new(RpPairingSocket::new(stream), "Crumb");
-    client.attempt_pair_verify().await?;
+    client
+        .attempt_pair_verify()
+        .await
+        .map_err(|e| device_error("Pairing handshake", e))?;
     // Never silently fall back to pairing with a dummy PIN.
-    client.validate_pairing(&mut record).await?;
-    let port = client.create_tcp_listener().await?;
-    let stream = tokio::net::TcpStream::connect(SocketAddr::new(ip, port)).await?;
-    let tunnel = connect_tls_psk_tunnel_native(stream, client.encryption_key()).await?;
+    client
+        .validate_pairing(&mut record)
+        .await
+        .map_err(|e| device_error("Pairing verification", e))?;
+    let port = client
+        .create_tcp_listener()
+        .await
+        .map_err(|e| device_error("Tunnel listener", e))?;
+    let stream = tokio::net::TcpStream::connect(SocketAddr::new(ip, port))
+        .await
+        .map_err(|e| device_error("Tunnel TCP", e.into()))?;
+    let tunnel = connect_tls_psk_tunnel_native(stream, client.encryption_key())
+        .await
+        .map_err(|e| device_error("Tunnel TLS", e))?;
     let our_ip = tunnel.info.client_address.parse()?;
     let their_ip = tunnel.info.server_address.parse()?;
     let rsd_port = tunnel.info.server_rsd_port;
@@ -43,14 +78,25 @@ async fn tunnel(v: &Value) -> anyhow::Result<(AdapterHandle, RsdHandshake)> {
     let mut adapter = Adapter::new(Box::new(tunnel.into_inner()), our_ip, their_ip);
     adapter.set_mss(mtu.min(8192) - 60);
     let mut handle = adapter.to_async_handle();
-    let handshake = RsdHandshake::new(handle.connect(rsd_port).await?).await?;
+    let stream = handle
+        .connect(rsd_port)
+        .await
+        .map_err(|e| device_error("RSD TCP", e.into()))?;
+    let handshake = RsdHandshake::new(stream)
+        .await
+        .map_err(|e| device_error("RSD handshake", e))?;
     Ok((handle, handshake))
 }
 pub(super) async fn run(job: &Arc<Job>, v: &Value) -> anyhow::Result<Value> {
     job.update(json!({"phase":"connecting"}));
     let (mut adapter, mut handshake) = tunnel(v).await?;
-    let mut proxy = InstallationProxyClient::connect_rsd(&mut adapter, &mut handshake).await?;
-    let apps = proxy.browse(None).await?;
+    let mut proxy = InstallationProxyClient::connect_rsd(&mut adapter, &mut handshake)
+        .await
+        .map_err(|e| device_error("Installation service", e))?;
+    let apps = proxy
+        .browse(None)
+        .await
+        .map_err(|e| device_error("Installed-app lookup", e))?;
     let own_id = v["own_bundle"]
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("Missing app identity"))?;
@@ -65,12 +111,21 @@ pub(super) async fn run(job: &Arc<Job>, v: &Value) -> anyhow::Result<Value> {
     let proof = v["proof"]
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("Missing local installation proof"))?;
-    let own = HouseArrestClient::connect_rsd(&mut adapter, &mut handshake).await?;
-    let mut own = own.vend_documents(own_id).await?;
+    let own = HouseArrestClient::connect_rsd(&mut adapter, &mut handshake)
+        .await
+        .map_err(|e| device_error("Container service", e))?;
+    let mut own = own
+        .vend_documents(own_id)
+        .await
+        .map_err(|e| device_error("Crumb documents", e))?;
     let mut marker = own
         .open(".crumb-device-proof", AfcFopenMode::RdOnly)
-        .await?;
-    let bytes = marker.read_n(64).await?;
+        .await
+        .map_err(|e| device_error("Device proof file", e))?;
+    let bytes = marker
+        .read_n(64)
+        .await
+        .map_err(|e| device_error("Device proof read", e))?;
     anyhow::ensure!(
         bytes == proof.as_bytes(),
         "The connection does not lead to this Crumb installation"
@@ -127,7 +182,10 @@ pub(super) async fn run(job: &Arc<Job>, v: &Value) -> anyhow::Result<Value> {
             let id = v["helper_bundle"]
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("Missing helper identity"))?;
-            let apps = proxy.browse(None).await?;
+            let apps = proxy
+                .browse(None)
+                .await
+                .map_err(|e| device_error("Installed-app lookup", e))?;
             anyhow::ensure!(
                 apps.iter().any(|a| a
                     .as_dictionary()
@@ -250,5 +308,42 @@ impl Drop for PartialFile {
         if !self.0.as_os_str().is_empty() {
             let _ = std::fs::remove_file(&self.0);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn socket_diagnostic_preserves_stage_and_os_code() {
+        let error = device_error(
+            "Pairing handshake",
+            std::io::Error::from_raw_os_error(54).into(),
+        )
+        .to_string();
+        assert!(error.starts_with("Pairing handshake: socket "));
+        assert!(error.contains("OS 54"));
+    }
+    #[test]
+    fn protocol_payloads_are_excluded_from_diagnostics() {
+        let message = device_error(
+            "RSD handshake",
+            idevice::IdeviceError::UnexpectedResponse(
+                "private payload that must not be shown".into(),
+            ),
+        )
+        .to_string();
+        assert!(message.starts_with("RSD handshake: device protocol error "));
+        assert!(!message.contains("private payload"));
+    }
+    #[test]
+    fn socket_text_payloads_are_excluded_from_diagnostics() {
+        let message = device_error(
+            "Device proof read",
+            std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "private socket payload").into(),
+        )
+        .to_string();
+        assert!(message.contains("UnexpectedEof"));
+        assert!(!message.contains("private socket payload"));
     }
 }
