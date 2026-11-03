@@ -124,6 +124,12 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
             output = nil; helperInstalled = false; start(request)
         } catch { cleanup(); message = error.localizedDescription }
     }
+    func receiveResultURL(_ url: URL) {
+        guard url.host == "device-result",
+              let jobID = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "job" })?.value,
+              UUID(uuidString: jobID) != nil, pending?["job_id"] == jobID else { return }
+        retrieve()
+    }
     func retrieve() {
         guard Self.decryptSupported, let pending else { return }
         deviceOperation("fetch", extra: pending)
@@ -213,7 +219,8 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
             case "installed":
                 helperInstalled = true
                 if let pending { try DeviceKeychain.write(JSONSerialization.data(withJSONObject: pending), account: "pending") }
-                cleanup(); message = "Helper installed. Open Crumb Decrypt, keep it on screen until it finishes, then return here."
+                cleanup(); message = "Helper installed. Keep Crumb Decrypt on screen until it finishes."
+                openHelper()
             case "complete":
                 guard let path = value["path"] as? String else { throw DeviceOperationError.message("Missing verified result.") }
                 output = URL(fileURLWithPath: path); message = "IPA retrieved; hashes and encryption markers verified. Application execution has not been tested."

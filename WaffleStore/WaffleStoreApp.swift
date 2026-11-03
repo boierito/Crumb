@@ -27,6 +27,10 @@ struct CrumbApp: App {
                     }
                 }
                 .onOpenURL { schemedURL in
+                    if schemedURL.host == "device-result" {
+                        DeviceWorkflow.shared.receiveResultURL(schemedURL)
+                        return
+                    }
                     let rawURL = schemedURL.absoluteString.replacingOccurrences(of: "crumb:", with: "")
                     if let appLink = rawURL.removingPercentEncoding {
                         appData.openAppSelection(appLink)
