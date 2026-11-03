@@ -403,6 +403,7 @@ static BOOL pack(NSURL *root, NSURL *out, NSMutableArray *hashes,
 @implementation CrumbHelper
 - (void)viewDidLoad {
   [super viewDidLoad];
+  UIApplication.sharedApplication.idleTimerDisabled = YES;
   self.view.backgroundColor = UIColor.systemBackgroundColor;
   self.label = [[UILabel alloc] initWithFrame:CGRectZero];
   self.label.translatesAutoresizingMaskIntoConstraints = NO;
@@ -540,6 +541,7 @@ static BOOL pack(NSURL *root, NSURL *out, NSMutableArray *hashes,
              error:nil];
   [fm removeItemAtURL:root error:nil];
   dispatch_async(dispatch_get_main_queue(), ^{
+    UIApplication.sharedApplication.idleTimerDisabled = NO;
     self.label.text=ok?@"Decryption finished. Return to Crumb and tap Retrieve result.":error.localizedDescription?:@"Decryption failed. No completed IPA was produced.";
     if (ok) {
       NSURLComponents *callback = [NSURLComponents new];
