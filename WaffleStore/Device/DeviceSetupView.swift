@@ -23,8 +23,11 @@ struct DeviceSetupView: View {
                     }
                     Picker("Local device route", selection: $device.route) {
                         Text("LocalDevVPN").tag("10.7.0.1")
-                        Text("Loopback").tag("127.0.0.1")
+                        Text("Loopback (experimental)").tag("127.0.0.1")
                     }.disabled(device.busy)
+                    if device.route == "127.0.0.1" {
+                        Text("Direct access depends on iOS allowing this connection. If it fails, use LocalDevVPN.").font(.caption).foregroundStyle(.secondary)
+                    }
                     Button("Check authenticated connection") { device.verify() }.disabled(!device.paired || device.busy)
                     if device.connected { Label("Connected", systemImage: "checkmark.circle") }
                     Button("Remove local pairing keys", role: .destructive) { device.forgetPairing() }.disabled(device.busy || !device.paired)

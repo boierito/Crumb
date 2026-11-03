@@ -70,14 +70,52 @@ async fn read_app_document(
     close.map_err(|e| device_error("Close app document", e))?;
     Ok(bytes)
 }
-async fn tunnel(v: &Value) -> anyhow::Result<(AdapterHandle, RsdHandshake)> {
-    // Only local device routes. Never accept an arbitrary network host from an IPA.
-    let ip: IpAddr = match v["route"].as_str().unwrap_or("10.7.0.1") {
-        "10.7.0.1" => "10.7.0.1".parse()?,
-        "127.0.0.1" => "127.0.0.1".parse()?,
+fn local_pairing_addresses(route: &str, port: u16) -> anyhow::Result<Vec<SocketAddr>> {
+    // Keep direct mode on this host. Never turn a route supplied by an IPA or
+    // callback into arbitrary LAN access, or silently connect through a VPN.
+    let hosts = match route {
+        "10.7.0.1" => vec![IpAddr::V4(std::net::Ipv4Addr::new(10, 7, 0, 1))],
+        "127.0.0.1" => vec![
+            IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+            IpAddr::V6(std::net::Ipv6Addr::LOCALHOST),
+        ],
         _ => anyhow::bail!("Unsupported local route"),
     };
-    let addr = SocketAddr::new(ip, 49152);
+    Ok(hosts
+        .into_iter()
+        .map(|ip| SocketAddr::new(ip, port))
+        .collect())
+}
+async fn tunnel(v: &Value) -> anyhow::Result<(AdapterHandle, RsdHandshake)> {
+    let addresses = local_pairing_addresses(v["route"].as_str().unwrap_or("10.7.0.1"), 49152)?;
+    tunnel_on_candidates(v, &addresses, Duration::from_secs(15)).await
+}
+async fn tunnel_on_candidates(
+    v: &Value,
+    addresses: &[SocketAddr],
+    attempt_timeout: Duration,
+) -> anyhow::Result<(AdapterHandle, RsdHandshake)> {
+    let mut failures = Vec::new();
+    for &address in addresses {
+        // A successful TCP connect alone does not establish a route. iOS can
+        // accept loopback and reset the protocol, so try the next family only
+        // after attempting authentication, TLS and RSD on this one.
+        let error = match tokio::time::timeout(attempt_timeout, tunnel_at(v, address)).await {
+            Ok(Ok(connection)) => return Ok(connection),
+            Ok(Err(error)) => error.to_string(),
+            Err(_) => "Authenticated tunnel attempt timed out".to_owned(),
+        };
+        failures.push(format!("{address}: {error}"));
+    }
+    let advice = if !addresses.is_empty() && addresses.iter().all(|a| a.ip().is_loopback()) {
+        " Direct loopback could not establish a device connection. Use LocalDevVPN and check again."
+    } else {
+        ""
+    };
+    anyhow::bail!("{}{advice}", failures.join("; "))
+}
+async fn tunnel_at(v: &Value, addr: SocketAddr) -> anyhow::Result<(AdapterHandle, RsdHandshake)> {
+    let ip = addr.ip();
     let mut record = decode_record(v)?;
     let stream = tokio::time::timeout(
         Duration::from_secs(10),
@@ -395,3 +433,7 @@ mod tests {
 #[cfg(test)]
 #[path = "document_tests.rs"]
 mod document_tests;
+
+#[cfg(test)]
+#[path = "route_tests.rs"]
+mod route_tests;

@@ -33,7 +33,14 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     @Published private(set) var hasCertificate = false
     @Published private(set) var hasProfile = false
     @Published var helperBundle = "com.certlium.crumb.decrypt"
-    @Published var route = "10.7.0.1"
+    @Published var route = "10.7.0.1" {
+        didSet {
+            if route != oldValue {
+                connected = false
+                message = "Route changed. Check the authenticated connection again."
+            }
+        }
+    }
     private var service: NetService?
     private var job: UnsafeMutableRawPointer?
     private var generation = UUID()

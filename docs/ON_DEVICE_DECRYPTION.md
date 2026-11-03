@@ -125,3 +125,30 @@ old ObjectNotFound response, and checks successful reads and descriptor closure
 for all three Documents paths. It is a protocol test, not a physical-device
 acceptance test. Re-test Check authenticated connection with LocalDevVPN enabled;
 helper installation and actual licensed decryption still require device testing.
+
+
+## Build 23026: bounded dual-stack Loopback attempts
+
+Direct mode previously tried only `127.0.0.1`. It now attempts the complete
+authenticated tunnel over IPv4 and then `::1`, with a 15-second bound per
+family. TCP acceptance does not count as success: pairing verification, TLS
+and RSD must complete before selecting that route. Failures identify each
+endpoint and its protocol stage. Direct mode never silently falls back to the
+VPN address. Changing the selected route clears the previous Connected status
+and requires a new authenticated check.
+
+Three regression tests cover the destination allowlist, a TCP peer that accepts
+then rejects the real RemotePairing handshake on both families, and a stalled
+IPv4 handshake that must time out before IPv6 is tried. They do not prove
+that iOS accepts a direct authenticated tunnel.
+
+[Published iOS 27 probes](https://github.com/leeguooooo/iphone-use/blob/7e9c7bdb2bd708c852c8034953d27c50bcc1c3ca/experiments/phone-self-host/README.md)
+report TCP acceptance followed by a RemotePairing reset on direct IPv4. Their
+successful on-device path uses a Network Extension. This is evidence against
+treating TCP reachability as VPN-free support, not proof of the cause on this
+user's device. An integrated VPN extension is not part of this build.
+
+For the physical comparison, establish Connected with LocalDevVPN selected
+first. Then disconnect the VPN, select Loopback (experimental) and repeat the
+check. Record either Connected or the complete IPv4/IPv6 errors. If iOS refuses
+both direct routes, use LocalDevVPN for the decryption acceptance steps.
