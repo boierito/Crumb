@@ -57,6 +57,32 @@ static double histogram_entropy(uint64_t h[256], size_t n) {
     }
   return e;
 }
+// Register the original Apple signature when present. The source stays
+// read-only; this does not sign or alter the target. FairPlay still decides
+// license access.
+static BOOL register_signature(int fd, const uint8_t *header, size_t size) {
+  uint32_t count = 0;
+  memcpy(&count, header + 16, 4);
+  size_t pos = 32;
+  for (uint32_t i = 0; i < count; i++) {
+    uint32_t command = 0, length = 0;
+    memcpy(&command, header + pos, 4);
+    memcpy(&length, header + pos + 4, 4);
+    if (command == 0x1d && length >= 16) {
+      uint32_t offset = 0, bytes = 0;
+      memcpy(&offset, header + pos + 8, 4);
+      memcpy(&bytes, header + pos + 12, 4);
+      if (offset > size || bytes > size - offset || !bytes)
+        return NO;
+      fsignatures_t signatures = {.fs_file_start = 0,
+                                  .fs_blob_start = (void *)(uintptr_t)offset,
+                                  .fs_blob_size = bytes};
+      return fcntl(fd, F_ADDFILESIGS_RETURN, &signatures) == 0;
+    }
+    pos += length;
+  }
+  return NO;
+}
 static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
                     NSError **error) {
   int fd = open(source.fileSystemRepresentation, O_RDONLY | O_NOFOLLOW);
@@ -120,8 +146,12 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
     *error = failure(@"Cannot create decrypted image.");
     return NO;
   }
-  BOOL ok =
-      remap_image(map + enc.offset, enc.length, enc.cpu, enc.subtype) == 0;
+  if (register_signature(fd, map, size)) {
+    munmap(map, size);
+    map = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
+  }
+  BOOL ok = map != MAP_FAILED && remap_image(map + enc.offset, enc.length,
+                                             enc.cpu, enc.subtype) == 0;
   uint8_t *plain = malloc(pg), *cipher = malloc(pg);
   uint64_t before[256] = {0}, after[256] = {0};
   uint64_t oldwords = 0, newwords = 0;
@@ -153,7 +183,8 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
   }
   free(plain);
   free(cipher);
-  munmap(map, size);
+  if (map != MAP_FAILED)
+    munmap(map, size);
   close(fd);
   // Conservative heuristics supplement complete fault-free FairPlay page reads.
   ok = ok && changed && histogram_entropy(before, enc.length) > 7.9 &&
@@ -485,6 +516,16 @@ static BOOL pack(NSURL *root, NSURL *out, NSMutableArray *hashes,
   [fm removeItemAtURL:root error:nil];
   dispatch_async(dispatch_get_main_queue(), ^{
     self.label.text=ok?@"Decryption finished. Return to Crumb and tap Retrieve result.":error.localizedDescription?:@"Decryption failed. No completed IPA was produced.";
+    if (ok) {
+      NSURLComponents *callback = [NSURLComponents new];
+      callback.scheme = @"crumb";
+      callback.host = @"device-result";
+      callback.queryItems =
+          @[ [NSURLQueryItem queryItemWithName:@"job" value:job[@"job_id"]] ];
+      [UIApplication.sharedApplication openURL:callback.URL
+                                       options:@{}
+                             completionHandler:nil];
+    }
   });
 }
 @end

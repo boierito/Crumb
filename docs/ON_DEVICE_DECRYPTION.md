@@ -21,10 +21,11 @@ iOS Settings pairing, certificate acceptance or the compiled UIKit helper.
    enter the certificate password and prepare/install the helper. Crumb's Apple
    session is not a developer-portal signing session. The certificate/profile
    imports are necessary for this implementation, even with a free Apple ID.
-5. Open Crumb Decrypt, trust its development identity if iOS requires it, and
-   leave it in the foreground. Return to Crumb and Retrieve result when finished.
-   The first version uses explicit foreground handoff rather than assuming iOS
-   permits an unattended background decryption.
+5. Crumb opens its installed helper. Trust its development identity if iOS
+   requires it, and leave it in the foreground. On success the helper returns to
+   Crumb using a job-bound callback and retrieval starts automatically. Open
+   Crumb Decrypt and Retrieve result remain available as recovery actions if the
+   system refuses the handoff. Decryption runs in the foreground.
 6. Export the verified output. Output must be re-signed before normal sideloading;
    this pipeline does not install the final decrypted third-party app or provision
    its extensions. Normal encrypted IPA installation/export remains available.
