@@ -211,8 +211,17 @@ pub fn prepare(v: &Value) -> Result<String> {
             leaf,
             identity.certs().iter().skip(1).map(|c| c.as_der()),
         )?;
-        let mut ent = ent.clone();
+        // The helper needs no app groups, iCloud or shared Keychain access.
+        // Keep its signed entitlements to the profile's identity and debug grant.
+        let mut ent = plist::Dictionary::new();
         ent.insert("application-identifier".into(), expected.into());
+        ent.insert(
+            "com.apple.developer.team-identifier".into(),
+            profile.team_id().into(),
+        );
+        if let Some(value) = profile.entitlements().get("get-task-allow") {
+            ent.insert("get-task-allow".into(), value.clone());
+        }
         let mut settings =
             apple_codesign_quick::BundleSigningSettings::new(profile.team_id(), ent, Some(&signer));
         settings.cms_signer = Some(&signer);
