@@ -2,6 +2,7 @@
 #import <CommonCrypto/CommonDigest.h>
 #import <UIKit/UIKit.h>
 #import <dlfcn.h>
+#import <errno.h>
 #import <fcntl.h>
 #import <mach/mach.h>
 #import <math.h>
@@ -29,7 +30,11 @@ static int remap_image(void *address, size_t length, uint32_t cpu,
                    : "+r"(arg0), "+r"(arg1), [failed] "=r"(failed)
                    : "r"(arg2), "r"(arg3), "r"(arg4), "r"(number)
                    : "memory", "cc");
-  return failed ? -1 : (int)arg0;
+  if (failed) {
+    errno = (int)arg0;
+    return -1;
+  }
+  return (int)arg0;
 #else
   return -1;
 #endif
@@ -139,6 +144,17 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
     close(fd);
     return NO;
   }
+  // Installed resources may be read-only. Only the data-container copy is made
+  // writable.
+  if (![NSFileManager.defaultManager setAttributes:@{
+        NSFilePosixPermissions : @(0700)
+      }
+                                      ofItemAtPath:dest.path
+                                             error:error]) {
+    munmap(map, size);
+    close(fd);
+    return NO;
+  }
   int out = open(dest.fileSystemRepresentation, O_WRONLY | O_NOFOLLOW);
   if (out < 0) {
     munmap(map, size);
@@ -150,8 +166,14 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
     munmap(map, size);
     map = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
   }
-  BOOL ok = map != MAP_FAILED && remap_image(map + enc.offset, enc.length,
-                                             enc.cpu, enc.subtype) == 0;
+  errno = 0;
+  int remap_status =
+      map == MAP_FAILED
+          ? -1
+          : remap_image(map + enc.offset, enc.length, enc.cpu, enc.subtype);
+  int remap_errno = errno;
+  int page_status = 0;
+  BOOL ok = map != MAP_FAILED && remap_status == 0;
   uint8_t *plain = malloc(pg), *cipher = malloc(pg);
   uint64_t before[256] = {0}, after[256] = {0};
   uint64_t oldwords = 0, newwords = 0;
@@ -166,6 +188,7 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
                                          len, (vm_address_t)plain, &got);
     if (kr != KERN_SUCCESS || got != len ||
         pread(fd, cipher, len, enc.offset + p) != (ssize_t)len) {
+      page_status = (int)kr;
       ok = NO;
       break;
     }
@@ -198,8 +221,10 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
   close(out);
   if (!ok) {
     [NSFileManager.defaultManager removeItemAtURL:dest error:nil];
-    *error = failure(@"FairPlay decryption or page verification failed. Check "
-                     @"the licensed device account.");
+    *error = failure([NSString
+        stringWithFormat:@"FairPlay verification failed (remap %d, errno %d, "
+                         @"page %d). Check the licensed device account.",
+                         remap_status, remap_errno, page_status]);
   }
   return ok;
 }
