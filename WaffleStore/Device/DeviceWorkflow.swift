@@ -128,11 +128,12 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
             output = nil; helperInstalled = false; start(request)
         } catch { cleanup(); message = error.localizedDescription }
     }
-    func receiveResultURL(_ url: URL) {
+    @discardableResult func receiveResultURL(_ url: URL) -> Bool {
         guard url.host == "device-result",
               let jobID = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "job" })?.value,
-              UUID(uuidString: jobID) != nil, pending?["job_id"] == jobID else { return }
+              UUID(uuidString: jobID) != nil, pending?["job_id"] == jobID else { return false }
         retrieve()
+        return true
     }
     func retrieve() {
         guard Self.decryptSupported, let pending else { return }

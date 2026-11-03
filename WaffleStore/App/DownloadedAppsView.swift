@@ -6,6 +6,7 @@ struct DownloadedAppsView: View {
     @EnvironmentObject var appData: AppData
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @StateObject private var device = DeviceWorkflow.shared
     @State private var installation: DownloadRecord?
     @State private var deletion: DownloadRecord?
     @State private var confirmDeleteAll = false
@@ -44,6 +45,10 @@ struct DownloadedAppsView: View {
                         }
                         .padding(.vertical, 8)
                     }
+                }
+
+                if device.busy || device.helperInstalled || device.output != nil {
+                    DeviceStatusSection()
                 }
 
                 if appData.completedDownloads.isEmpty {

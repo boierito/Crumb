@@ -28,7 +28,7 @@ struct CrumbApp: App {
                 }
                 .onOpenURL { schemedURL in
                     if schemedURL.host == "device-result" {
-                        DeviceWorkflow.shared.receiveResultURL(schemedURL)
+                        if DeviceWorkflow.shared.receiveResultURL(schemedURL) { appData.selectedTab = .downloads }
                         return
                     }
                     let rawURL = schemedURL.absoluteString.replacingOccurrences(of: "crumb:", with: "")
