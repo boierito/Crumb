@@ -363,12 +363,68 @@ mod tests {
         b[48..52].copy_from_slice(&1u32.to_le_bytes());
         assert!(encrypted_ranges(&b).is_err());
     }
+    fn result_zip(bytes: &[u8], hash_override: Option<&str>) -> (PathBuf, Value) {
+        let path = std::env::temp_dir().join(format!("{}.zip", uuid::Uuid::new_v4()));
+        let mut zip = zip::ZipWriter::new(fs::File::create(&path).unwrap());
+        zip.start_file(
+            "Payload/Target.app/Target",
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
+        zip.write_all(bytes).unwrap();
+        zip.finish().unwrap();
+        let digest = format!("{:x}", Sha256::digest(bytes));
+        let manifest = json!({"files":[{"path":"Payload/Target.app/Target","sha256":hash_override.unwrap_or(&digest)}]});
+        (path, manifest)
+    }
+    #[test]
+    fn rejects_hash_mismatch_and_truncated_archive() {
+        let (path, manifest) = result_zip(b"plain resource", Some("wrong hash"));
+        assert!(verify_output(&path, &manifest).is_err());
+        fs::write(&path, b"PK").unwrap();
+        assert!(verify_output(&path, &manifest).is_err());
+        fs::remove_file(path).unwrap();
+    }
+    #[test]
+    fn accepts_matching_archive_and_rejects_missing_file_manifest() {
+        let (path, manifest) = result_zip(b"plain resource", None);
+        assert!(verify_output(&path, &manifest).is_ok());
+        assert!(verify_output(&path, &json!({"files":[]})).is_err());
+        fs::remove_file(path).unwrap();
+    }
+    #[test]
+    fn rejects_still_encrypted_image_even_with_matching_hash() {
+        let mut b = vec![0u8; 64];
+        for (offset, value) in [
+            (0, 0xfeedfacfu32),
+            (4, 0x0100000c),
+            (16, 1),
+            (20, 24),
+            (32, 0x2c),
+            (36, 24),
+            (40, 56),
+            (44, 8),
+            (48, 1),
+        ] {
+            b[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+        }
+        let (path, manifest) = result_zip(&b, None);
+        assert!(verify_output(&path, &manifest).is_err());
+        fs::remove_file(path).unwrap();
+    }
+    #[test]
+    fn rejects_sinf_escape_paths() {
+        for path in ["../secret", "/absolute", "SC_Info/../../secret", ""] {
+            assert!(safe_relative(path).is_err());
+        }
+        assert!(safe_relative("Frameworks/Foo.framework/SC_Info/Foo.sinf").is_ok());
+    }
     #[test]
     fn empty_data_is_not_an_encrypted_image() {
         assert!(encrypted_ranges(b"resource").unwrap().is_empty());
     }
     #[test]
-    fn rejects_duplicate_zip_paths() {
+    fn rejects_zip_path_traversal() {
         let temp = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
         fs::create_dir(&temp).unwrap();
         let path = temp.join("bad.zip");

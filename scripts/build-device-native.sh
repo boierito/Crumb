@@ -22,3 +22,5 @@ PY
 (cd "$HELPER" && zip -q -r ../CrumbDecryptTemplate.zip .)
 mkdir -p "${TARGET_BUILD_DIR:?}/${UNLOCALIZED_RESOURCES_FOLDER_PATH:?}"
 cp build/Native/CrumbDecryptTemplate.zip "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/"
+
+cp NativeDevice/vendor/apple-codesign-quick/COPYING.LESSER "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/CrumbDevice-LGPL.txt"

@@ -2,6 +2,11 @@ import Foundation
 import SwiftUI
 import Zip
 
+enum DeviceOperationError: LocalizedError {
+    case message(String)
+    var errorDescription: String? { if case let .message(text) = self { return text }; return nil }
+}
+
 @MainActor
 final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     static let shared = DeviceWorkflow()
@@ -59,7 +64,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
         do {
             let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-            guard size > 0 && size <= 2 * 1024 * 1024 else { throw "Signing file must be between 1 byte and 2 MiB." }
+            guard size > 0 && size <= 2 * 1024 * 1024 else { throw DeviceOperationError.message("Signing file must be between 1 byte and 2 MiB.") }
             try DeviceKeychain.write(Data(contentsOf: url), account: kind)
             if kind == "p12" { hasCertificate = true } else { hasProfile = true }
             message = "Signing file stored on this device."
@@ -67,7 +72,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     }
     private func credentials() throws -> [String: Any] {
         guard let data = try DeviceKeychain.read("pairing"),
-              let value = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw "Pair this iPhone first." }
+              let value = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw DeviceOperationError.message("Pair this iPhone first.") }
         return value
     }
     func pair() {
@@ -94,7 +99,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         guard !busy, connected, Self.decryptSupported else { message = "Connect on iOS 27.0.1 before preparing a helper."; return }
         do {
             guard let ipa = record.fileURL, let template = Bundle.main.url(forResource: "CrumbDecryptTemplate", withExtension: "zip"),
-                  let cert = try DeviceKeychain.read("p12"), let profile = try DeviceKeychain.read("profile") else { throw "Import a signing certificate and provisioning profile first." }
+                  let cert = try DeviceKeychain.read("p12"), let profile = try DeviceKeychain.read("profile") else { throw DeviceOperationError.message("Import a signing certificate and provisioning profile first.") }
             let fm = FileManager.default
             let base = try fm.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
                 .appendingPathComponent("DeviceJobs", isDirectory: true)
@@ -151,11 +156,11 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         guard !busy else { return }
         do {
             let data = try JSONSerialization.data(withJSONObject: request)
-            guard let json = String(data: data, encoding: .utf8), let handle = crumb_device_start(json) else { throw "Could not start device operation." }
+            guard let json = String(data: data, encoding: .utf8), let handle = crumb_device_start(json) else { throw DeviceOperationError.message("Could not start device operation.") }
             job = handle; busy = true; phase = "starting"; message = ""; pin = nil
             lastRequest = request.filter { $0.key != "password" && $0.key != "record" && $0.key != "host_irk" }
             background = UIApplication.shared.beginBackgroundTask(withName: "Crumb device operation") { [weak self] in
-                Task { @MainActor in self?.cancel(); self?.message = "iOS ended the background session. Return to Crumb and retry." }
+                Task { @MainActor in self?.cancel(); self?.endBackground(); self?.message = "iOS ended the background session. Return to Crumb and retry." }
             }
             let operationID = UUID(); generation = operationID
             polling = Task { [weak self] in
@@ -191,12 +196,12 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         do {
             switch phase {
             case "paired":
-                guard let record = value["record"] as? String, let irk = value["host_irk"] as? String else { throw "Missing pairing credentials." }
+                guard let record = value["record"] as? String, let irk = value["host_irk"] as? String else { throw DeviceOperationError.message("Missing pairing credentials.") }
                 try DeviceKeychain.write(JSONSerialization.data(withJSONObject: ["record":record, "host_irk":irk]), account: "pairing")
                 paired = true; message = "Paired. Connect LocalDevVPN and check the connection."
             case "connected": connected = true; message = "Authenticated device connection available."
             case "prepared":
-                guard let path = value["path"] as? String else { throw "Missing prepared helper." }
+                guard let path = value["path"] as? String else { throw DeviceOperationError.message("Missing prepared helper.") }
                 if let staged {
                     try? FileManager.default.removeItem(at: staged.appendingPathComponent("identity.p12"))
                     try? FileManager.default.removeItem(at: staged.appendingPathComponent("helper.mobileprovision"))
@@ -207,7 +212,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
                 if let pending { try DeviceKeychain.write(JSONSerialization.data(withJSONObject: pending), account: "pending") }
                 cleanup(); message = "Helper installed. Open Crumb Decrypt, keep it on screen until it finishes, then return here."
             case "complete":
-                guard let path = value["path"] as? String else { throw "Missing verified result." }
+                guard let path = value["path"] as? String else { throw DeviceOperationError.message("Missing verified result.") }
                 output = URL(fileURLWithPath: path); message = "IPA retrieved; hashes and encryption markers verified. Application execution has not been tested."
             case "failed":
                 connected = false; message = (value["message"] as? String) ?? "Device operation failed."

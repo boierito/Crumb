@@ -15,7 +15,7 @@ struct DeviceSetupView: View {
             Section("Pair this device") {
                 if DeviceWorkflow.pairingSupported {
                     Button(device.paired ? "Pair again" : "Start pairing") { device.pair() }.disabled(device.busy)
-                    if device.phase == "waiting" { Text("Open Modo de desarrollador in Settings and select Crumb. Return here to see the PIN if needed.") }
+                    if device.phase == "waiting" { Text("Open Developer Mode in Settings and select Crumb. Return here to see the PIN if needed.") }
                     if let pin = device.pin {
                         Text(pin).font(.largeTitle.monospacedDigit()).textSelection(.enabled)
                         Text("Enter this PIN in Settings to approve the pairing.")
