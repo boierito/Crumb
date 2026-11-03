@@ -159,6 +159,7 @@ pub(super) async fn run(job: &Arc<Job>, v: &Value) -> anyhow::Result<Value> {
             local.flush().await?;
             drop(local);
             super::package::verify_output(&partial, &manifest)?;
+            anyhow::ensure!(!job.cancelled.load(Ordering::SeqCst), "Cancelled");
             tokio::fs::rename(&partial, &out).await?;
             cleanup.0 = std::path::PathBuf::new();
             Ok(json!({"phase":"complete", "path":out}))

@@ -174,7 +174,10 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
                     try? await Task.sleep(for: .milliseconds(200))
                 }
             }
-        } catch { message = error.localizedDescription; busy = false }
+        } catch {
+            message = error.localizedDescription; busy = false
+            if ["prepare", "install"].contains(request["operation"] as? String ?? "") { cleanup() }
+        }
     }
     private func receive(_ value: [String: Any]) {
         guard let phase = value["phase"] as? String else { return }

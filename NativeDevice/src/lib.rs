@@ -54,7 +54,7 @@ async fn pair(job: &Arc<Job>, v: &Value) -> anyhow::Result<Value> {
     }
     let irk = B64.encode(info.alt_irk);
     let ready = json!({"phase":"waiting", "port":listener.local_addr()?.port(), "service":file.identifier,
-        "txt":info.mdns_txt_records(&file.identifier)});
+        "txt":info.mdns_txt_records(&file.identifier).into_iter().collect::<std::collections::BTreeMap<_,_>>()});
     job.update(ready.clone());
     // Ignore unrelated probes only before issuing a PIN; after that errors are actionable.
     loop {
@@ -189,30 +189,43 @@ pub unsafe extern "C" fn crumb_device_string_free(ptr: *mut c_char) {
 mod tests {
     use super::*;
     #[test]
-    fn cancellation_closes_listener() {
+    fn cancellation_closes_listener_and_advertising_has_swift_shape() {
         let input = CString::new(r#"{"operation":"pair"}"#).unwrap();
         let ptr = unsafe { crumb_device_start(input.as_ptr()) };
-        for _ in 0..100 {
+        let mut port = None;
+        for _ in 0..200 {
             let p = unsafe { crumb_device_poll(ptr) };
-            let s = unsafe { CStr::from_ptr(p) }.to_string_lossy().to_string();
+            let value: Value =
+                serde_json::from_slice(unsafe { CStr::from_ptr(p) }.to_bytes()).unwrap();
             unsafe { crumb_device_string_free(p) };
-            if s.contains("waiting") {
+            if value["phase"] == "waiting" {
+                assert_eq!(value["txt"]["name"], "Crumb");
+                assert!(
+                    value["txt"].as_object().is_some(),
+                    "Swift expects a TXT dictionary"
+                );
+                port = Some(value["port"].as_u64().unwrap() as u16);
                 break;
             }
             std::thread::sleep(Duration::from_millis(10));
         }
+        let port = port.expect("Pairing listener did not start");
         unsafe { crumb_device_cancel(ptr) };
-        std::thread::sleep(Duration::from_millis(100));
-        let p = unsafe { crumb_device_poll(ptr) };
-        assert!(
-            unsafe { CStr::from_ptr(p) }
+        let mut cancelled = false;
+        for _ in 0..100 {
+            let p = unsafe { crumb_device_poll(ptr) };
+            cancelled = unsafe { CStr::from_ptr(p) }
                 .to_string_lossy()
-                .contains("cancelled")
-        );
-        unsafe {
-            crumb_device_string_free(p);
-            crumb_device_free(ptr);
+                .contains("cancelled");
+            unsafe { crumb_device_string_free(p) };
+            if cancelled {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
         }
+        assert!(cancelled);
+        assert!(std::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port)).is_err());
+        unsafe { crumb_device_free(ptr) };
     }
     #[test]
     fn malformed_requests_are_rejected() {
