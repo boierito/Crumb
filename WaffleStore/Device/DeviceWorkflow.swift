@@ -29,6 +29,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     @Published var route = "10.7.0.1"
     private var service: NetService?
     private var job: UnsafeMutableRawPointer?
+    private var generation = UUID()
     private var polling: Task<Void, Never>?
     private var background: UIBackgroundTaskIdentifier = .invalid
     private var staged: URL?
@@ -38,6 +39,12 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     override private init() {
         super.init()
         do {
+            let fm = FileManager.default
+            let base = try fm.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("DeviceJobs", isDirectory: true)
+            // The old process has no surviving worker; remove interrupted signing workspaces.
+            if let children = try? fm.contentsOfDirectory(at: base, includingPropertiesForKeys: nil) {
+                for child in children where UUID(uuidString: child.lastPathComponent) != nil { try? fm.removeItem(at: child) }
+            }
             paired = try DeviceKeychain.read("pairing") != nil
             hasCertificate = try DeviceKeychain.read("p12") != nil
             hasProfile = try DeviceKeychain.read("profile") != nil
@@ -71,6 +78,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     }
     func verify() { deviceOperation("verify") }
     private func deviceOperation(_ operation: String, extra: [String: Any] = [:]) {
+        guard !busy else { return }
         guard Self.pairingSupported else { message = "This system version has not been enabled for the device connection."; return }
         do {
             var request = try credentials(); request["operation"] = operation
@@ -93,6 +101,8 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
             try fm.createDirectory(at: base, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.complete])
             let id = UUID().uuidString; let root = base.appendingPathComponent(id, isDirectory: true)
             try fm.createDirectory(at: root, withIntermediateDirectories: false, attributes: [.protectionKey: FileProtectionType.complete])
+            var excluded = URLResourceValues(); excluded.isExcludedFromBackup = true
+            var excludedRoot = root; try excludedRoot.setResourceValues(excluded)
             staged = root
             let certURL = root.appendingPathComponent("identity.p12"), profileURL = root.appendingPathComponent("helper.mobileprovision")
             try cert.write(to: certURL, options: [.atomic, .completeFileProtection]); try profile.write(to: profileURL, options: [.atomic, .completeFileProtection])
@@ -147,14 +157,15 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
             background = UIApplication.shared.beginBackgroundTask(withName: "Crumb device operation") { [weak self] in
                 Task { @MainActor in self?.cancel(); self?.message = "iOS ended the background session. Return to Crumb and retry." }
             }
+            let operationID = UUID(); generation = operationID
             polling = Task { [weak self] in
                 while !Task.isCancelled {
-                    guard let self, let job = self.job else { return }
+                    guard let self, self.generation == operationID, let job = self.job else { return }
                     if let ptr = crumb_device_poll(job) {
                         let bytes = Data(String(cString: ptr).utf8); crumb_device_string_free(ptr)
                         if let value = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any] { self.receive(value) }
                     }
-                    if !self.busy { return }
+                    if !self.busy || self.generation != operationID { return }
                     try? await Task.sleep(for: .milliseconds(200))
                 }
             }
@@ -200,7 +211,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
                 output = URL(fileURLWithPath: path); message = "IPA retrieved; hashes and encryption markers verified. Application execution has not been tested."
             case "failed":
                 connected = false; message = (value["message"] as? String) ?? "Device operation failed."
-                if request["operation"] as? String == "prepare" { cleanup() }
+                if ["prepare", "install"].contains(request["operation"] as? String ?? "") { cleanup() }
             default: cleanup(); message = "Operation cancelled."
             }
         } catch { message = error.localizedDescription; cleanup() }

@@ -156,7 +156,7 @@
 			buildActionMask = 2147483647;
 			files = ();
 			inputPaths = ();
-			outputPaths = ("$(SRCROOT)/build/Native/libunicorn.a", "$(SRCROOT)/build/Native/libWaffleSAP.a", "$(SRCROOT)/build/Native/libcrumb_device.a", "-framework", "Security", "-framework", "SystemConfiguration", "-liconv", "-lz", "$(SRCROOT)/build/Native/GoThirdPartyNotices.txt", "$(SRCROOT)/build/Native/UNICORN-COPYING");
+			outputPaths = ("$(SRCROOT)/build/Native/libunicorn.a", "$(SRCROOT)/build/Native/libWaffleSAP.a", "$(SRCROOT)/build/Native/libcrumb_device.a", "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/CrumbDecryptTemplate.zip", "$(SRCROOT)/build/Native/GoThirdPartyNotices.txt", "$(SRCROOT)/build/Native/UNICORN-COPYING");
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
 			shellScript = "bash \"$SRCROOT/scripts/ensure-native.sh\"\n";

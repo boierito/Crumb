@@ -1,5 +1,4 @@
 use crate::error::{CodeSignError, Result};
-use crate::file_bytes::read_file_bytes;
 use crate::macho::{DEFAULT_CMS_BLOB_RESERVATION, MachOSigningConfig, sign_macho_file};
 use crate::signature::CmsSigner;
 use plist::{Dictionary, Value};
@@ -441,28 +440,24 @@ fn should_hash_resource(relative: &str, executable: &str) -> bool {
 
 fn hash_bundle_file(bundle_path: &Path, path: &Path) -> Result<FileHash> {
     let relative_path = relative_path_string(bundle_path, path)?;
-    let data = read_file_bytes(path)?;
-    let (sha1, sha256) = hash_file_data(data.as_slice());
+    use std::io::Read;
+    let mut file = fs::File::open(path).map_err(|source| CodeSignError::io(path, source))?;
+    let mut sha1 = sha1::Sha1::new();
+    let mut sha256 = sha2::Sha256::new();
+    let mut buffer = vec![0u8; 64 * 1024];
+    loop {
+        let n = file.read(&mut buffer).map_err(|source| CodeSignError::io(path, source))?;
+        if n == 0 { break; }
+        sha1.update(&buffer[..n]); sha256.update(&buffer[..n]);
+    }
+    let sha1 = sha1.finalize().into();
+    let sha256 = sha256.finalize().into();
     Ok(FileHash {
         optional: relative_path.contains(".lproj"),
         relative_path,
         sha1,
         sha256,
     })
-}
-
-fn hash_file_data(data: &[u8]) -> ([u8; 20], [u8; 32]) {
-    if data.len() >= 1024 * 1024 {
-        rayon::join(
-            || sha1::Sha1::digest(data).into(),
-            || sha2::Sha256::digest(data).into(),
-        )
-    } else {
-        (
-            sha1::Sha1::digest(data).into(),
-            sha2::Sha256::digest(data).into(),
-        )
-    }
 }
 
 fn encode_code_resources(maps: &CodeResourcesMaps) -> Result<Vec<u8>> {

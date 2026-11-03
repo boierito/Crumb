@@ -5,3 +5,6 @@ EmbeddedPayload from dylib signing: those files are sealed as resources so
 Apple's original signatures and FairPlay material survive helper installation.
 The complete source, Cargo.lock and build scripts are provided for rebuilding
 and relinking the statically linked library with a modified copy.
+
+Resource hashing streams 64 KiB chunks rather than mapping entire files, to bound
+the memory used by parallel hashing of embedded app resources on an iPhone.
