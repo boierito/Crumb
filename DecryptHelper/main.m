@@ -1,4 +1,5 @@
 #import "CrumbFileAccess.h"
+#import "CrumbLicenseResources.h"
 #import "CrumbMachO.h"
 #import <CommonCrypto/CommonDigest.h>
 #import <UIKit/UIKit.h>
@@ -463,9 +464,15 @@ static BOOL pack(NSURL *root, NSURL *out, NSMutableArray *hashes,
                  options:0
                    error:&error];
   NSString *app = job[@"app_name"];
+  NSDictionary *licenses = job[@"license_resources"];
   BOOL ok = job && [app isKindOfClass:NSString.class] &&
             [app.lastPathComponent isEqualToString:app] &&
-            [app hasSuffix:@".app"];
+            [app hasSuffix:@".app"] && [job[@"schema"] integerValue] == 2 &&
+            [licenses isKindOfClass:NSDictionary.class] &&
+            licenses.count <= 4096;
+  if (!ok && !error)
+    error = failure(@"Helper inputs are outdated or invalid. Prepare the "
+                    @"helper again in Crumb.");
   NSURL *src = [NSBundle.mainBundle.bundleURL
       URLByAppendingPathComponent:@"EmbeddedPayload/Target"
                       isDirectory:YES];
@@ -484,17 +491,26 @@ static BOOL pack(NSURL *root, NSURL *out, NSMutableArray *hashes,
     NSURLIsRegularFileKey, NSURLIsDirectoryKey, NSURLIsSymbolicLinkKey,
     NSURLFileSizeKey
   ];
+  NSDirectoryEnumerator *entries = nil;
   if (ok)
-    for (NSURL *url in [fm enumeratorAtURL:src
-                includingPropertiesForKeys:keys
-                                   options:0
-                              errorHandler:^BOOL(NSURL *u, NSError *e) {
-                                enumerationError = e;
-                                return NO;
-                              }]) {
+    entries = [fm enumeratorAtURL:src
+        includingPropertiesForKeys:keys
+                           options:0
+                      errorHandler:^BOOL(NSURL *u, NSError *e) {
+                        enumerationError = e;
+                        return NO;
+                      }];
+  if (ok)
+    for (NSURL *url in entries) {
       @autoreleasepool {
-        NSDictionary *a = [url resourceValuesForKeys:keys error:&error];
         NSString *relative = [url.path substringFromIndex:src.path.length + 1];
+        // Leave installed SC_Info to FairPlay. Export the exact pre-install
+        // metadata from sealed resource copies after processing the images.
+        if ([relative.pathComponents containsObject:@"SC_Info"]) {
+          [entries skipDescendants];
+          continue;
+        }
+        NSDictionary *a = [url resourceValuesForKeys:keys error:&error];
         NSURL *target = [dest URLByAppendingPathComponent:relative];
         if (!a || [a[NSURLIsSymbolicLinkKey] boolValue]) {
           ok = NO;
@@ -549,6 +565,35 @@ static BOOL pack(NSURL *root, NSURL *out, NSMutableArray *hashes,
     ok = NO;
     error = enumerationError;
   }
+  uint64_t licenseTotal = 0;
+  if (ok)
+    for (NSString *relative in licenses) {
+      NSDictionary *resource = licenses[relative];
+      if (![resource isKindOfClass:NSDictionary.class] ||
+          ![resource[@"size"] isKindOfClass:NSNumber.class]) {
+        ok = NO;
+        error = failure(@"Invalid license resource entry.");
+        break;
+      }
+      uint64_t size = [resource[@"size"] unsignedLongLongValue];
+      if (size > 4 * 1024 * 1024 || size > 4000000000ULL - total ||
+          size > 16 * 1024 * 1024 - licenseTotal) {
+        ok = NO;
+        error = failure(@"License resources exceed the export budget.");
+        break;
+      }
+      total += size;
+      licenseTotal += size;
+      if (!crumb_copy_license_resource(NSBundle.mainBundle.bundleURL, relative,
+                                       resource, dest, &error)) {
+        ok = NO;
+        error = failure(
+            [NSString stringWithFormat:@"%@: %@", relative,
+                                       error.localizedDescription
+                                           ?: @"License preservation failed."]);
+        break;
+      }
+    }
   if (ok && decrypted == 0) {
     error = failure(
         @"No encrypted images were found; this is not evidence of decryption.");

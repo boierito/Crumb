@@ -238,3 +238,37 @@ does not expose a documented device tunnel on that existing connection.
 The installed helper must be prepared and installed again from Downloads to
 receive the file diagnostics added in 23028. Merely opening the previously
 installed helper continues running its old code. Signing files are unchanged.
+
+
+## Build 23030: preserve installed license metadata for export
+
+The device's new error identifies an extension SC_Info/*.supp resource:
+open(O_RDONLY) returns EPERM despite mode 0644 and uid/gid 33. Ordinary mode
+bits alone do not explain the denial. This is a license resource, not evidence
+of a failed encrypted Mach-O remap. The helper was incorrectly trying to read
+every installed SC_Info file while reconstructing the output.
+
+Preparation now preserves SC_Info resources from the downloaded target before
+installation, after SINF replication. Originals remain unmodified under Target
+for FairPlay. Separate, encoded copies and a path/size/SHA256 manifest are sealed
+into the helper as ordinary resources. The helper skips installed SC_Info
+descendants and restores original metadata from these copies after processing
+the images. It verifies decoded size, hash and absence of encrypted image
+commands before writing. These restores do not increment the decrypted-image
+count or alter cryptid; actual encrypted images still require the existing
+FairPlay checks. Output verification still checks all ZIP file hashes and
+encryption commands. No metadata is silently dropped.
+
+Preservation limits are 4 MiB per license resource, 16 MiB total and 4096 entries.
+Native tests cover main/extension byte preservation, unchanged originals,
+encrypted metadata rejection, size limits and links. macOS runs the actual
+Foundation restoration implementation against seven fixtures: normal restoration
+without an installed SC_Info tree, hash mismatch, path traversal, an encrypted
+image disguised as metadata, a symlink, excessive size and an empty resource. This does not
+simulate FairPlay or assert that a full physical-device decryption passed.
+
+Re-prepare and install the helper from Downloads after updating Crumb. The
+already installed helper cannot gain the new snapshots from a Crumb update.
+Direct Loopback retains the 23029 discovered-port behavior and remains pending
+physical validation. This patch addresses the measured installed-resource read
+failure; it does not establish a change in iOS's direct connection policy.

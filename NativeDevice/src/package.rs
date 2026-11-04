@@ -1,4 +1,5 @@
 use anyhow::{Context, Result, ensure};
+use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
@@ -8,6 +9,8 @@ use std::{
 };
 use zip::ZipArchive;
 const MAX_BYTES: u64 = 4_000_000_000;
+const MAX_LICENSE_FILE: u64 = 4 * 1024 * 1024;
+const MAX_LICENSE_TOTAL: u64 = 16 * 1024 * 1024;
 fn input<'a>(v: &'a Value, key: &str) -> Result<&'a str> {
     v[key].as_str().with_context(|| format!("Missing {key}"))
 }
@@ -128,6 +131,60 @@ fn helper_application_id(profile: &plist::Dictionary, bundle: &str, own: &str) -
     }
     Ok(format!("{prefix}.{bundle}"))
 }
+// installd can make SC_Info files readable only by system services, even when
+// their mode is 0644. Preserve the original downloaded metadata before install.
+// FairPlay keeps using the originals in Target; exports use these sealed copies.
+fn preserve_license_resources(target: &Path, helper: &Path) -> Result<Value> {
+    let copies = helper.join("CrumbLicenseResources");
+    fs::create_dir(&copies)?;
+    let mut resources = serde_json::Map::new();
+    let mut total = 0u64;
+    for entry in walkdir::WalkDir::new(target) {
+        let entry = entry?;
+        ensure!(
+            !entry.file_type().is_symlink(),
+            "License source contains a link"
+        );
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let relative = entry.path().strip_prefix(target)?;
+        if !relative
+            .components()
+            .any(|part| part.as_os_str() == "SC_Info")
+        {
+            continue;
+        }
+        let size = entry.metadata()?.len();
+        total = total
+            .checked_add(size)
+            .context("License resource size overflow")?;
+        ensure!(
+            size <= MAX_LICENSE_FILE && total <= MAX_LICENSE_TOTAL && resources.len() < 4096,
+            "License resources exceed preservation limits"
+        );
+        let bytes = fs::read(entry.path())?;
+        ensure!(
+            bytes.len() as u64 == size,
+            "License resource changed during preparation"
+        );
+        ensure!(
+            encrypted_ranges(&bytes)?.is_empty(),
+            "Encrypted image found in license metadata"
+        );
+        let file = format!("{:08x}.bin", resources.len());
+        // Encode snapshots so installd treats them as ordinary sealed data,
+        // independent of the original license path, extension and file header.
+        fs::write(copies.join(&file), B64.encode(&bytes))?;
+        let relative = relative.to_str().context("Invalid license resource path")?;
+        resources.insert(
+            relative.to_owned(),
+            json!({"file":file, "size":size,
+            "sha256":format!("{:x}", Sha256::digest(&bytes))}),
+        );
+    }
+    Ok(Value::Object(resources))
+}
 pub fn prepare(v: &Value) -> Result<String> {
     let work = PathBuf::from(input(v, "work")?);
     // Caller creates an exclusive, disposable per-operation directory.
@@ -193,6 +250,7 @@ pub fn prepare(v: &Value) -> Result<String> {
                 }
             }
         }
+        let license_resources = preserve_license_resources(&target, &helper)?;
         // Refuse unsupported images and unreasonable per-file sizes before signing.
         let mut encrypted = 0;
         for entry in walkdir::WalkDir::new(&target) {
@@ -212,7 +270,7 @@ pub fn prepare(v: &Value) -> Result<String> {
             }
         }
         ensure!(encrypted > 0, "No supported encrypted images found");
-        let meta = json!({"job_id":input(v,"job_id")?,"app_name":apps[0].file_name().to_string_lossy(),"bundle_id":strval(&app_info,"CFBundleIdentifier")?});
+        let meta = json!({"schema":2,"job_id":input(v,"job_id")?,"app_name":apps[0].file_name().to_string_lossy(),"bundle_id":strval(&app_info,"CFBundleIdentifier")?,"license_resources":license_resources});
         fs::write(helper.join("job.json"), serde_json::to_vec(&meta)?)?;
         let mut info = plist(&helper.join("Info.plist"))?;
         info.as_dictionary_mut()
@@ -505,3 +563,7 @@ mod tests {
 #[cfg(test)]
 #[path = "profile_tests.rs"]
 mod profile_tests;
+
+#[cfg(test)]
+#[path = "license_tests.rs"]
+mod license_tests;
