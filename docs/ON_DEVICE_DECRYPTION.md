@@ -272,3 +272,39 @@ already installed helper cannot gain the new snapshots from a Crumb update.
 Direct Loopback retains the 23029 discovered-port behavior and remains pending
 physical validation. This patch addresses the measured installed-resource read
 failure; it does not establish a change in iOS's direct connection policy.
+
+
+## Build 23031: preserve the original IPA root
+
+Preparation previously moved only Payload/*.app into the installed helper.
+Although the input ZIP was extracted in full, top-level META-INF,
+iTunesMetadata.plist and other non-Payload files were left in the disposable
+input workspace and never reconstructed.
+
+The helper now receives sealed, encoded snapshots of every supported original
+file outside Payload and an inventory of its directories. Original names and
+bytes are preserved; absent metadata is not invented. Archive metadata is not
+parsed or regenerated. Restoration streams bounded base64 chunks to temporary
+files, validates size/SHA256 and encryption commands, then moves verified bytes
+into the reconstructed IPA root. Root entries cannot overwrite Payload. The
+existing 512 MiB per-file, 4 GB overall and thin-arm64 image restrictions remain.
+License preservation retains its separate 4 MiB/file and 16 MiB total limits.
+
+The ZIP producer now records non-Payload directories, including empty ones,
+and hashes directory entries as empty data. Native verification checks entry
+types and rejects missing or changed original root files/directories against
+the preserved inventory. Job/result schema 3 requires a newly prepared helper.
+The combined snapshot manifest is limited to 16 MiB.
+
+Four new native cases cover original metadata/artwork bytes, empty root folders,
+large streamed resources, missing/changed metadata and directory type checks.
+The shared Foundation restore/archive code runs eleven cases. An independent
+Python ZIP reader inspects its actual output for exact root paths, metadata
+bytes, directory flags, hashes and CRC. Test inputs are synthetic resources,
+not a simulated FairPlay success.
+
+META-INF bytes are copied from the original package. Decryption and repacking
+change the archive, so this does not generate a new valid Apple archive
+signature. The exported app still needs normal re-signing before installation.
+Re-prepare and install the helper after updating Crumb; previous helpers lack
+these original root snapshots. Physical full decryption remains unconfirmed.

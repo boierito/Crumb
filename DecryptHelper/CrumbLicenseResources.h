@@ -5,3 +5,10 @@
 BOOL crumb_copy_license_resource(NSURL *bundle, NSString *relative,
                                  NSDictionary *resource, NSURL *dest,
                                  NSError **error);
+
+// Restores original non-Payload files/directories without overwriting the app.
+BOOL crumb_copy_archive_resource(NSURL *bundle, NSString *relative,
+                                 NSDictionary *resource, NSURL *dest,
+                                 NSError **error);
+BOOL crumb_create_archive_directory(NSURL *dest, NSString *relative,
+                                    NSError **error);

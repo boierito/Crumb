@@ -1,8 +1,10 @@
+#import "../DecryptHelper/CrumbIPAArchive.h"
 #import "../DecryptHelper/CrumbLicenseResources.h"
 #import <CommonCrypto/CommonDigest.h>
 #import <errno.h>
 #import <stdio.h>
 #import <stdlib.h>
+#import <string.h>
 
 static void require(BOOL condition, NSString *message) {
   if (!condition) {
@@ -93,11 +95,118 @@ static void runCase(int number) {
   }
   [fm removeItemAtURL:root error:nil];
 }
-int main(void) {
+static NSMutableDictionary *archiveItem(NSURL *copies, NSString *name,
+                                        NSData *data) {
+  require([[data base64EncodedDataWithOptions:0]
+              writeToURL:[copies URLByAppendingPathComponent:name]
+              atomically:YES],
+          @"archive snapshot");
+  return [@{
+    @"file" : name,
+    @"size" : @(data.length),
+    @"sha256" : sha(data)
+  } mutableCopy];
+}
+static void runArchiveCase(int number, NSString *fixturePath) {
+  NSFileManager *fm = NSFileManager.defaultManager;
+  NSURL *root = [[NSURL fileURLWithPath:NSTemporaryDirectory()]
+      URLByAppendingPathComponent:NSUUID.UUID.UUIDString];
+  NSURL *bundle = [root URLByAppendingPathComponent:@"helper"];
+  NSURL *copies = [bundle URLByAppendingPathComponent:@"CrumbArchiveResources"];
+  NSURL *dest = [root URLByAppendingPathComponent:@"working"];
+  require([fm createDirectoryAtURL:copies
+              withIntermediateDirectories:YES
+                               attributes:nil
+                                    error:nil],
+          @"archive directory");
+  NSData *data =
+      [@"original signature bytes" dataUsingEncoding:NSUTF8StringEncoding];
+  if (number == 3) {
+    NSMutableData *large = [NSMutableData dataWithLength:5 * 1024 * 1024 + 14];
+    memset(large.mutableBytes, 'x', large.length);
+    data = large;
+  }
+  NSMutableDictionary *item = archiveItem(copies, @"00000000.bin", data);
+  NSError *error = nil;
+  if (number == 2) {
+    for (NSString *path in @[
+           @"../escape/META-INF/file", @"/absolute/META-INF/file",
+           @"Payload/Other.app/Test", @"payload/Test.app/Test"
+         ]) {
+      require(!crumb_copy_archive_resource(bundle, path, item, dest, &error),
+              @"unsafe root path accepted");
+    }
+    require(!crumb_create_archive_directory(dest, @"Payload", &error),
+            @"root directory overwrote Payload");
+    require(![fm fileExistsAtPath:dest.path], @"unsafe root path wrote output");
+  } else {
+    NSString *relative = number == 3 ? @"iTunesArtwork"
+                                     : @"META-INF/com.apple.ZipMetadata.plist";
+    require(crumb_copy_archive_resource(bundle, relative, item, dest, &error),
+            error.localizedDescription ?: @"archive restore");
+    require(
+        [[NSData
+            dataWithContentsOfURL:[dest URLByAppendingPathComponent:relative]]
+            isEqual:data],
+        @"root bytes changed");
+    require(crumb_create_archive_directory(dest, @"META-INF/empty", &error),
+            @"empty root directory");
+    if (number == 3) {
+      item[@"size"] = @(512ULL * 1024 * 1024 + 1);
+      require(!crumb_copy_archive_resource(bundle, @"too-large", item, dest,
+                                           &error),
+              @"root size limit ignored");
+    }
+    if (number == 4) {
+      NSMutableDictionary *inventory = [NSMutableDictionary dictionary];
+      inventory[relative] = item;
+      NSData *metadata = [@"bplist00original-store-fields"
+          dataUsingEncoding:NSUTF8StringEncoding];
+      NSMutableDictionary *metaItem =
+          archiveItem(copies, @"00000001.bin", metadata);
+      require(crumb_copy_archive_resource(bundle, @"iTunesMetadata.plist",
+                                          metaItem, dest, &error),
+              @"iTunes metadata restore");
+      inventory[@"iTunesMetadata.plist"] = metaItem;
+      NSURL *app = [dest URLByAppendingPathComponent:@"Payload/Test.app"];
+      [fm createDirectoryAtURL:app
+          withIntermediateDirectories:YES
+                           attributes:nil
+                                error:nil];
+      [[@"plain test image" dataUsingEncoding:NSUTF8StringEncoding]
+          writeToURL:[app URLByAppendingPathComponent:@"Test"]
+          atomically:YES];
+      NSURL *output = fixturePath
+                          ? [NSURL fileURLWithPath:fixturePath]
+                          : [root URLByAppendingPathComponent:@"fixture.ipa"];
+      NSMutableArray *hashes = [NSMutableArray array];
+      require(crumb_pack_ipa(dest, output, hashes, &error),
+              error.localizedDescription ?: @"IPA packing");
+      require(hashes.count == 5, @"unexpected root archive entry count");
+      NSDictionary *manifest = @{
+        @"schema" : @3,
+        @"files" : hashes,
+        @"archive_resources" : inventory,
+        @"archive_directories" : @[ @"META-INF", @"META-INF/empty" ]
+      };
+      NSData *json = [NSJSONSerialization dataWithJSONObject:manifest
+                                                     options:0
+                                                       error:nil];
+      require([json writeToFile:[output.path stringByAppendingString:@".json"]
+                     atomically:YES],
+              @"fixture manifest");
+    }
+  }
+  [fm removeItemAtURL:root error:nil];
+}
+int main(int argc, const char *argv[]) {
   @autoreleasepool {
     for (int i = 1; i <= 7; i++)
       runCase(i);
-    puts("7 license-resource restoration tests passed");
+    for (int i = 1; i <= 4; i++)
+      runArchiveCase(i,
+                     argc > 1 ? [NSString stringWithUTF8String:argv[1]] : nil);
+    puts("11 preserved-resource and IPA archive tests passed");
   }
   return 0;
 }

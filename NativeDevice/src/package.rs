@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
     fs,
-    io::Read,
+    io::{Read, Write},
     path::{Path, PathBuf},
 };
 use zip::ZipArchive;
@@ -185,6 +185,89 @@ fn preserve_license_resources(target: &Path, helper: &Path) -> Result<Value> {
     }
     Ok(Value::Object(resources))
 }
+fn preserve_archive_resources(input: &Path, helper: &Path) -> Result<(Value, Value)> {
+    let copies = helper.join("CrumbArchiveResources");
+    fs::create_dir(&copies)?;
+    let mut resources = serde_json::Map::new();
+    let mut directories = Vec::new();
+    let mut total = 0u64;
+    for entry in walkdir::WalkDir::new(input)
+        .min_depth(1)
+        .into_iter()
+        .filter_entry(|entry| {
+            !entry
+                .path()
+                .strip_prefix(input)
+                .ok()
+                .and_then(|p| p.components().next())
+                .is_some_and(|p| {
+                    p.as_os_str()
+                        .as_encoded_bytes()
+                        .eq_ignore_ascii_case(b"Payload")
+                })
+        })
+    {
+        let entry = entry?;
+        ensure!(
+            !entry.file_type().is_symlink(),
+            "Archive resource contains a link"
+        );
+        let relative = entry
+            .path()
+            .strip_prefix(input)?
+            .to_str()
+            .context("Invalid archive resource path")?;
+        if entry.file_type().is_dir() {
+            directories.push(json!(relative));
+            continue;
+        }
+        ensure!(entry.file_type().is_file(), "Unsupported archive resource");
+        let size = entry.metadata()?.len();
+        total = total
+            .checked_add(size)
+            .context("Archive resource size overflow")?;
+        ensure!(
+            size <= 512 * 1024 * 1024 && total <= MAX_BYTES,
+            "Archive resources exceed size limits"
+        );
+        let file = format!("{:08x}.bin", resources.len());
+        let mut source = fs::File::open(entry.path())?;
+        let mut output =
+            base64::write::EncoderWriter::new(fs::File::create(copies.join(&file))?, &B64);
+        let mut digest = Sha256::new();
+        let mut header = Vec::new();
+        let mut buffer = vec![0u8; 1024 * 1024];
+        let mut actual = 0u64;
+        loop {
+            let n = source.read(&mut buffer)?;
+            if n == 0 {
+                break;
+            }
+            actual += n as u64;
+            ensure!(actual <= size, "Archive resource grew during preparation");
+            digest.update(&buffer[..n]);
+            let keep = (16 * 1024 * 1024 + 32usize)
+                .saturating_sub(header.len())
+                .min(n);
+            header.extend_from_slice(&buffer[..keep]);
+            output.write_all(&buffer[..n])?;
+        }
+        output.finish()?;
+        ensure!(
+            actual == size,
+            "Archive resource truncated during preparation"
+        );
+        ensure!(
+            encrypted_ranges_header(&header, size as usize)?.is_empty(),
+            "Encrypted image outside Payload is unsupported"
+        );
+        resources.insert(
+            relative.to_owned(),
+            json!({"file":file, "size":size, "sha256":format!("{:x}", digest.finalize())}),
+        );
+    }
+    Ok((Value::Object(resources), Value::Array(directories)))
+}
 pub fn prepare(v: &Value) -> Result<String> {
     let work = PathBuf::from(input(v, "work")?);
     // Caller creates an exclusive, disposable per-operation directory.
@@ -224,6 +307,8 @@ pub fn prepare(v: &Value) -> Result<String> {
         fs::create_dir(&embedded)?;
         let target = embedded.join("Target");
         fs::rename(&source, &target)?;
+        let (archive_resources, archive_directories) =
+            preserve_archive_resources(&unpack, &helper)?;
         // Apple SINF replication normally happens in installd; embedded resources
         // need the same per-image license placement before helper signing.
         let manifest_path = target.join("SC_Info/Manifest.plist");
@@ -270,8 +355,14 @@ pub fn prepare(v: &Value) -> Result<String> {
             }
         }
         ensure!(encrypted > 0, "No supported encrypted images found");
-        let meta = json!({"schema":2,"job_id":input(v,"job_id")?,"app_name":apps[0].file_name().to_string_lossy(),"bundle_id":strval(&app_info,"CFBundleIdentifier")?,"license_resources":license_resources});
-        fs::write(helper.join("job.json"), serde_json::to_vec(&meta)?)?;
+        let meta = json!({"schema":3,"job_id":input(v,"job_id")?,"app_name":apps[0].file_name().to_string_lossy(),"bundle_id":strval(&app_info,"CFBundleIdentifier")?,"license_resources":license_resources,
+            "archive_resources":archive_resources,"archive_directories":archive_directories});
+        let meta = serde_json::to_vec(&meta)?;
+        ensure!(
+            meta.len() <= 16 * 1024 * 1024,
+            "Preserved resource manifest exceeds 16 MiB"
+        );
+        fs::write(helper.join("job.json"), meta)?;
         let mut info = plist(&helper.join("Info.plist"))?;
         info.as_dictionary_mut()
             .context("Invalid helper plist")?
@@ -403,6 +494,16 @@ fn encrypted_ranges_header(b: &[u8], file_size: usize) -> Result<Vec<(usize, usi
     Ok(ranges)
 }
 pub fn verify_output(path: &Path, manifest: &Value) -> Result<()> {
+    ensure!(
+        manifest["schema"] == 3,
+        "Result inputs are outdated; prepare the helper again"
+    );
+    let archive_resources = manifest["archive_resources"]
+        .as_object()
+        .context("Missing archive resource inventory")?;
+    let archive_directories = manifest["archive_directories"]
+        .as_array()
+        .context("Missing archive directory inventory")?;
     let mut zip = ZipArchive::new(fs::File::open(path)?)?;
     ensure!(
         zip.len() > 0 && zip.len() <= 100000,
@@ -412,6 +513,10 @@ pub fn verify_output(path: &Path, manifest: &Value) -> Result<()> {
         .as_array()
         .context("Missing result hashes")?;
     ensure!(files.len() == zip.len(), "Result entry count mismatch");
+    ensure!(
+        files.iter().any(|f| f["directory"] != true),
+        "Result has no files"
+    );
     let mut total = 0u64;
     let mut names = std::collections::HashSet::new();
     for f in files {
@@ -419,8 +524,16 @@ pub fn verify_output(path: &Path, manifest: &Value) -> Result<()> {
         ensure!(names.insert(name), "Duplicate result hash");
         let mut entry = zip.by_name(name)?;
         ensure!(
-            !entry.is_dir() && !entry.is_symlink() && entry.enclosed_name().is_some(),
+            !entry.is_symlink() && entry.enclosed_name().is_some(),
             "Unsafe result entry"
+        );
+        ensure!(
+            entry.is_dir() == (f["directory"] == true),
+            "Result entry type mismatch"
+        );
+        ensure!(
+            !entry.is_dir() || entry.size() == 0,
+            "Directory contains file data"
         );
         total = total
             .checked_add(entry.size())
@@ -450,13 +563,51 @@ pub fn verify_output(path: &Path, manifest: &Value) -> Result<()> {
             header.extend_from_slice(&buffer[..keep]);
         }
         ensure!(actual == size, "Result truncated");
+        let digest = format!("{:x}", digest.finalize());
         ensure!(
-            format!("{:x}", digest.finalize()) == f["sha256"].as_str().context("Missing SHA256")?,
+            digest == f["sha256"].as_str().context("Missing SHA256")?,
             "Result hash mismatch"
         );
+        if let Some(original) = archive_resources.get(name) {
+            ensure!(
+                !entry.is_dir()
+                    && original["size"].as_u64() == Some(entry.size())
+                    && original["sha256"].as_str() == Some(digest.as_str()),
+                "Original archive resource was changed"
+            );
+        }
         ensure!(
             encrypted_ranges_header(&header, size)?.is_empty(),
             "Result still contains encrypted Mach-O"
+        );
+    }
+    for name in archive_resources.keys() {
+        let relative = safe_relative(name)?;
+        ensure!(
+            !relative
+                .components()
+                .next()
+                .unwrap()
+                .as_os_str()
+                .as_encoded_bytes()
+                .eq_ignore_ascii_case(b"Payload")
+                && names.contains(name.as_str()),
+            "Original archive resource is missing or overlaps Payload"
+        );
+    }
+    for directory in archive_directories {
+        let directory = directory.as_str().context("Invalid archive directory")?;
+        let relative = safe_relative(directory)?;
+        ensure!(
+            !relative
+                .components()
+                .next()
+                .unwrap()
+                .as_os_str()
+                .as_encoded_bytes()
+                .eq_ignore_ascii_case(b"Payload")
+                && names.contains(format!("{directory}/").as_str()),
+            "Original archive directory is missing or overlaps Payload"
         );
     }
     Ok(())
@@ -490,7 +641,7 @@ mod tests {
         zip.write_all(bytes).unwrap();
         zip.finish().unwrap();
         let digest = format!("{:x}", Sha256::digest(bytes));
-        let manifest = json!({"files":[{"path":"Payload/Target.app/Target","sha256":hash_override.unwrap_or(&digest)}]});
+        let manifest = json!({"schema":3,"archive_resources":{},"archive_directories":[],"files":[{"path":"Payload/Target.app/Target","sha256":hash_override.unwrap_or(&digest)}]});
         (path, manifest)
     }
     #[test]
@@ -505,7 +656,13 @@ mod tests {
     fn accepts_matching_archive_and_rejects_missing_file_manifest() {
         let (path, manifest) = result_zip(b"plain resource", None);
         assert!(verify_output(&path, &manifest).is_ok());
-        assert!(verify_output(&path, &json!({"files":[]})).is_err());
+        assert!(
+            verify_output(
+                &path,
+                &json!({"schema":3,"archive_resources":{},"archive_directories":[],"files":[]})
+            )
+            .is_err()
+        );
         fs::remove_file(path).unwrap();
     }
     #[test]
@@ -567,3 +724,7 @@ mod profile_tests;
 #[cfg(test)]
 #[path = "license_tests.rs"]
 mod license_tests;
+
+#[cfg(test)]
+#[path = "archive_resource_tests.rs"]
+mod archive_resource_tests;

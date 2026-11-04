@@ -1,4 +1,5 @@
 #import "CrumbFileAccess.h"
+#import "CrumbIPAArchive.h"
 #import "CrumbLicenseResources.h"
 #import "CrumbMachO.h"
 #import <CommonCrypto/CommonDigest.h>
@@ -249,175 +250,6 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
   }
   return ok;
 }
-static NSString *hexhash(unsigned char hash[CC_SHA256_DIGEST_LENGTH]) {
-  NSMutableString *s = [NSMutableString string];
-  for (int i = 0; i < CC_SHA256_DIGEST_LENGTH; i++)
-    [s appendFormat:@"%02x", hash[i]];
-  return s;
-}
-static void put16(NSMutableData *d, uint16_t n) {
-  uint16_t x = CFSwapInt16HostToLittle(n);
-  [d appendBytes:&x length:2];
-}
-static void put32(NSMutableData *d, uint32_t n) {
-  uint32_t x = CFSwapInt32HostToLittle(n);
-  [d appendBytes:&x length:4];
-}
-// Stored ZIP entries, CRC32 checked by the receiving Rust verifier. No ZIP64.
-static BOOL pack(NSURL *root, NSURL *out, NSMutableArray *hashes,
-                 NSError **error) {
-  NSFileManager *fm = NSFileManager.defaultManager;
-  FILE *file = fopen(out.fileSystemRepresentation, "wb");
-  if (!file) {
-    *error = failure(@"Cannot create IPA.");
-    return NO;
-  }
-  NSMutableData *central = [NSMutableData data];
-  uint64_t offset = 0;
-  uint16_t count = 0;
-  BOOL ok = YES;
-  NSArray *keys =
-      @[ NSURLIsRegularFileKey, NSURLIsSymbolicLinkKey, NSURLFileSizeKey ];
-  __block NSError *enumerationError = nil;
-  uint8_t *buffer = malloc(1024 * 1024);
-  if (!buffer) {
-    fclose(file);
-    *error = failure(@"Cannot allocate archive buffer.");
-    return NO;
-  }
-  for (NSURL *url in [fm enumeratorAtURL:root
-              includingPropertiesForKeys:keys
-                                 options:0
-                            errorHandler:^BOOL(NSURL *u, NSError *e) {
-                              enumerationError = e;
-                              return NO;
-                            }]) {
-    @autoreleasepool {
-      NSDictionary *attrs = [url resourceValuesForKeys:keys error:error];
-      if (!attrs) {
-        ok = NO;
-        break;
-      }
-      if ([attrs[NSURLIsSymbolicLinkKey] boolValue]) {
-        *error = failure(@"Output contains a link.");
-        ok = NO;
-        break;
-      }
-      if (![attrs[NSURLIsRegularFileKey] boolValue])
-        continue;
-      uint64_t size = [attrs[NSURLFileSizeKey] unsignedLongLongValue];
-      NSString *name = [url.path substringFromIndex:root.path.length + 1];
-      NSData *n = [name dataUsingEncoding:NSUTF8StringEncoding];
-      if (size > 512 * 1024 * 1024 || n.length > 65535 || count == 65535 ||
-          offset + size + n.length + 30 > 4000000000ULL) {
-        *error = failure(@"Result exceeds archive budget.");
-        ok = NO;
-        break;
-      }
-      FILE *input = fopen(url.fileSystemRepresentation, "rb");
-      if (!input) {
-        ok = NO;
-        break;
-      }
-      CC_SHA256_CTX digest;
-      CC_SHA256_Init(&digest);
-      uint32_t crc = 0;
-      uint64_t read = 0;
-      size_t len;
-      while ((len = fread(buffer, 1, 1024 * 1024, input))) {
-        read += len;
-        CC_SHA256_Update(&digest, buffer, (CC_LONG)len);
-        crc = (uint32_t)crc32(crc, buffer, (uInt)len);
-      }
-      unsigned char hash[CC_SHA256_DIGEST_LENGTH];
-      CC_SHA256_Final(hash, &digest);
-      if (ferror(input) || read != size) {
-        fclose(input);
-        ok = NO;
-        break;
-      }
-      rewind(input);
-      NSMutableData *h = [NSMutableData data];
-      put32(h, 0x04034b50);
-      put16(h, 20);
-      put16(h, 0x800);
-      put16(h, 0);
-      put16(h, 0);
-      put16(h, 0);
-      put32(h, crc);
-      put32(h, (uint32_t)size);
-      put32(h, (uint32_t)size);
-      put16(h, (uint16_t)n.length);
-      put16(h, 0);
-      [h appendData:n];
-      if (fwrite(h.bytes, 1, h.length, file) != h.length) {
-        fclose(input);
-        ok = NO;
-        break;
-      }
-      read = 0;
-      while ((len = fread(buffer, 1, 1024 * 1024, input))) {
-        read += len;
-        if (fwrite(buffer, 1, len, file) != len) {
-          ok = NO;
-          break;
-        }
-      }
-      if (ferror(input) || read != size)
-        ok = NO;
-      fclose(input);
-      if (!ok)
-        break;
-      put32(central, 0x02014b50);
-      put16(central, 0x0314);
-      put16(central, 20);
-      put16(central, 0x800);
-      put16(central, 0);
-      put16(central, 0);
-      put16(central, 0);
-      put32(central, crc);
-      put32(central, (uint32_t)size);
-      put32(central, (uint32_t)size);
-      put16(central, (uint16_t)n.length);
-      put16(central, 0);
-      put16(central, 0);
-      put16(central, 0);
-      put16(central, 0);
-      put32(central, 0100755U << 16);
-      put32(central, (uint32_t)offset);
-      [central appendData:n];
-      offset += h.length + size;
-      count++;
-      [hashes addObject:@{@"path" : name, @"sha256" : hexhash(hash)}];
-    }
-  }
-  if (enumerationError) {
-    *error = enumerationError;
-    ok = NO;
-  }
-  if (ok) {
-    ok = fwrite(central.bytes, 1, central.length, file) == central.length;
-    NSMutableData *end = [NSMutableData data];
-    put32(end, 0x06054b50);
-    put16(end, 0);
-    put16(end, 0);
-    put16(end, count);
-    put16(end, count);
-    put32(end, (uint32_t)central.length);
-    put32(end, (uint32_t)offset);
-    put16(end, 0);
-    ok = ok && fwrite(end.bytes, 1, end.length, file) == end.length;
-  }
-  free(buffer);
-  if (fclose(file) != 0)
-    ok = NO;
-  if (!ok) {
-    [fm removeItemAtURL:out error:nil];
-    if (!*error)
-      *error = failure(@"IPA archive write failed.");
-  }
-  return ok;
-}
 @interface CrumbHelper : UIViewController
 @property(nonatomic, strong) UILabel *label;
 @end
@@ -465,11 +297,16 @@ static BOOL pack(NSURL *root, NSURL *out, NSMutableArray *hashes,
                    error:&error];
   NSString *app = job[@"app_name"];
   NSDictionary *licenses = job[@"license_resources"];
-  BOOL ok = job && [app isKindOfClass:NSString.class] &&
-            [app.lastPathComponent isEqualToString:app] &&
-            [app hasSuffix:@".app"] && [job[@"schema"] integerValue] == 2 &&
-            [licenses isKindOfClass:NSDictionary.class] &&
-            licenses.count <= 4096;
+  NSDictionary *archiveResources = job[@"archive_resources"];
+  NSArray *archiveDirectories = job[@"archive_directories"];
+  BOOL ok =
+      job && [app isKindOfClass:NSString.class] &&
+      [app.lastPathComponent isEqualToString:app] && [app hasSuffix:@".app"] &&
+      [job[@"schema"] integerValue] == 3 &&
+      [licenses isKindOfClass:NSDictionary.class] && licenses.count <= 4096 &&
+      [archiveResources isKindOfClass:NSDictionary.class] &&
+      [archiveDirectories isKindOfClass:NSArray.class] &&
+      archiveResources.count <= 100000 && archiveDirectories.count <= 100000;
   if (!ok && !error)
     error = failure(@"Helper inputs are outdated or invalid. Prepare the "
                     @"helper again in Crumb.");
@@ -600,13 +437,50 @@ static BOOL pack(NSURL *root, NSURL *out, NSMutableArray *hashes,
     ok = NO;
   }
   if (ok)
-    ok = pack(root, [docs URLByAppendingPathComponent:@"result.ipa"], hashes,
-              &error);
+    for (NSString *relative in archiveDirectories) {
+      if (!crumb_create_archive_directory(root, relative, &error)) {
+        ok = NO;
+        break;
+      }
+    }
+  if (ok)
+    for (NSString *relative in archiveResources) {
+      NSDictionary *resource = archiveResources[relative];
+      if (![resource isKindOfClass:NSDictionary.class] ||
+          ![resource[@"size"] isKindOfClass:NSNumber.class]) {
+        ok = NO;
+        error = failure(@"Invalid original archive resource.");
+        break;
+      }
+      uint64_t size = [resource[@"size"] unsignedLongLongValue];
+      if (size > 512 * 1024 * 1024 || size > 4000000000ULL - total) {
+        ok = NO;
+        error =
+            failure(@"Original archive resources exceed the export budget.");
+        break;
+      }
+      total += size;
+      if (!crumb_copy_archive_resource(NSBundle.mainBundle.bundleURL, relative,
+                                       resource, root, &error)) {
+        ok = NO;
+        error = failure([NSString
+            stringWithFormat:@"%@: %@", relative,
+                             error.localizedDescription
+                                 ?: @"Original archive preservation failed."]);
+        break;
+      }
+    }
+  if (ok)
+    ok = crumb_pack_ipa(root, [docs URLByAppendingPathComponent:@"result.ipa"],
+                        hashes, &error);
   NSDictionary *result = @{
+    @"schema" : @3,
     @"job_id" : job[@"job_id"] ?: @"",
     @"complete" : @(ok),
     @"decrypted" : @(decrypted),
     @"files" : hashes,
+    @"archive_resources" : archiveResources ?: @{},
+    @"archive_directories" : archiveDirectories ?: @[],
     @"message" : error.localizedDescription ?: @""
   };
   NSData *json = [NSJSONSerialization dataWithJSONObject:result
