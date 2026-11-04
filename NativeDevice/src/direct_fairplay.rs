@@ -24,9 +24,52 @@ const MAX_COMMANDS: usize = 8 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRIES: usize = 100_000;
 const MAX_CANDIDATES: usize = 128;
 
-struct TempImage(PathBuf);
+struct TempImage {
+    path: PathBuf,
+    root: PathBuf,
+    sinf_staged: bool,
+    sinf_bytes: u64,
+}
 impl Drop for TempImage {
-    fn drop(&mut self) { let _ = fs::remove_file(&self.0); }
+    fn drop(&mut self) {
+        // Includes sensitive SC_Info resources. Never leave them in Crumb's tmp.
+        let _ = fs::remove_dir_all(&self.root);
+    }
+}
+// Only the original matching SINF is staged beside this test Mach-O.
+// The original IPA is never rewritten or installed as an app/helper.
+// Sidecar absence is explicit in the report and must not be taken as a
+// FairPlay-daemon policy decision.
+fn stage_matching_sinf(
+    zip: &mut ZipArchive<File>, original_entry: &str, executable: &Path,
+) -> anyhow::Result<(bool,u64)> {
+    let parts: Vec<&str> = original_entry.split('/').collect();
+    anyhow::ensure!(parts.len() >= 3 && is_app_candidate(original_entry),
+        "Invalid executable archive path");
+    let leaf = parts.last().copied().unwrap_or("");
+    anyhow::ensure!(!leaf.is_empty() && leaf.len() < 256, "Invalid executable basename");
+    let original_dir = original_entry.rsplit_once('/').map(|x| x.0).unwrap_or("");
+    let source_candidates = [
+        format!("{original_dir}/SC_Info/{leaf}.sinf"),
+        format!("Payload/{}/SC_Info/{leaf}.sinf", parts[1]),
+    ];
+    for name in source_candidates {
+        let Ok(mut entry) = zip.by_name(&name) else { continue; };
+        anyhow::ensure!(!entry.is_dir() && !entry.is_symlink()
+            && entry.enclosed_name().is_some() && entry.size() > 0
+            && entry.size() <= 4 * 1024 * 1024,
+            "Unsupported original license resource");
+        let target = executable.parent()
+            .ok_or_else(||anyhow::anyhow!("Missing executable parent"))?
+            .join("SC_Info").join(format!("{leaf}.sinf"));
+        fs::create_dir_all(target.parent().unwrap())?;
+        let mut f = OpenOptions::new().write(true).create_new(true).open(&target)?;
+        let copied = std::io::copy(&mut entry, &mut f)?;
+        anyhow::ensure!(copied == entry.size(), "Truncated original SINF");
+        f.sync_all()?;
+        return Ok((true,copied));
+    }
+    Ok((false,0))
 }
 #[derive(Clone, Copy, Debug)]
 struct Range {
@@ -108,9 +151,17 @@ fn extract_one(ipa: &Path) -> anyhow::Result<(TempImage, Range, u64, String)> {
         bytes.extend_from_slice(&rest);
         let Some(range)=parse_crypt_range(&bytes, entry.size())? else {continue};
         drop(entry);
-        let path=std::env::temp_dir().join(format!("crumb-fairplay-{}.macho",uuid::Uuid::new_v4()));
-        let cleanup=TempImage(path);
-        let mut out=OpenOptions::new().write(true).create_new(true).open(&cleanup.0)?;
+        // Preserve the original relative bundle/executable basename. FairPlay
+        // derives SC_Info/<name>.sinf from that name; a random *.macho filename
+        // is NOT a valid licensed-file control.
+        let original_entry = entry.name().to_string();
+        let relative = original_entry.strip_prefix("Payload/")
+            .ok_or_else(||anyhow::anyhow!("Invalid archive root"))?;
+        let root=std::env::temp_dir().join(format!("crumb-fairplay-{}",uuid::Uuid::new_v4()));
+        let path=root.join(relative);
+        fs::create_dir_all(path.parent().unwrap())?;
+        let mut cleanup=TempImage {path,root,sinf_staged:false,sinf_bytes:0};
+        let mut out=OpenOptions::new().write(true).create_new(true).open(&cleanup.path)?;
         let mut fresh=archive.by_index(i)?;
         let mut hash=Sha256::new();
         let mut buffer=[0u8; 64*1024];
@@ -126,6 +177,10 @@ fn extract_one(ipa: &Path) -> anyhow::Result<(TempImage, Range, u64, String)> {
         anyhow::ensure!(total==fresh.size(), "Truncated encrypted image");
         out.sync_all()?;
         drop(out);
+        drop(fresh);
+        let (sinf_staged,sinf_bytes)=stage_matching_sinf(&mut archive,&original_entry,&cleanup.path)?;
+        cleanup.sinf_staged=sinf_staged;
+        cleanup.sinf_bytes=sinf_bytes;
         return Ok((cleanup,range,total,format!("{:x}",hash.finalize())));
     }
     anyhow::bail!("IPA has no supported encrypted arm64 Mach-O")
@@ -198,11 +253,15 @@ fn map_and_probe(path: &Path, size: u64, range: Range) -> Value {
 fn probe_local(ipa: &str) -> Value {
     match extract_one(Path::new(ipa)) {
         Ok((image,range,size,sha))=>{
-            let direct=map_and_probe(&image.0,size,range);
-            json!({"mode":"no_helper_readonly_direct_remap","schema":2,
+            let direct=map_and_probe(&image.path,size,range);
+            json!({"mode":"no_helper_readonly_direct_remap","schema":3,
                 "input_image_bytes":size,"encrypted_size":range.cryptsize,
-                "image_sha256":sha,"native":direct,
-                "note":"A remap return is not decrypted-page evidence; no IPA is exported."})
+                "image_sha256":sha,
+                "staged_original_executable_basename":true,
+                "matching_sinf_staged":image.sinf_staged,
+                "matching_sinf_bytes":image.sinf_bytes,
+                "native":direct,
+                "note":"An SINF next to a data-container file does not grant fairplayd access. A remap return is not decrypted-page evidence; no IPA is exported."})
         }
         Err(e)=>json!({"mode":"no_helper_readonly_direct_remap","schema":2,
             "stage":"preflight_failed","reason":e.to_string()})
@@ -236,25 +295,32 @@ pub(super) async fn correlated(
     let mut counts=(0u64,0u64,0u64);
     let mut state=if trace.is_some() {"sampling"} else {"unavailable"};
     if let Some(mut receiver)=trace {
-        let until=start+Duration::from_secs(3);
-        while Instant::now()<until && counts.0<512 {
-            if job.cancelled.load(Ordering::SeqCst) {break;}
+        let until=start+Duration::from_millis(2600);
+        let mut finished_at: Option<Instant> = None;
+        while Instant::now()<until && counts.0<8192 {
+            if job.cancelled.load(Ordering::SeqCst) {state="cancelled";break;}
+            if task.is_finished() && finished_at.is_none() {finished_at=Some(Instant::now());}
+            if finished_at.is_some_and(|t|t.elapsed()>Duration::from_millis(450)) {break;}
             match tokio::time::timeout(Duration::from_millis(150),receiver.next()).await {
                 Ok(Ok(log))=>{
                     counts.0+=1;
                     let process=log.filename.to_ascii_lowercase();
+                    let image=log.image_name.to_ascii_lowercase();
                     let message=log.message.to_ascii_lowercase();
-                    if process.contains("fairplay")||message.contains("fairplay") {counts.1+=1;}
+                    if process.contains("fairplay")||image.contains("fairplay")||message.contains("fairplay") {counts.1+=1;}
                     if message.contains("sandbox")||message.contains("system policy") {counts.2+=1;}
                 }, Ok(Err(_))=>{state="stream_ended";break;},Err(_)=>{}
             }
         }
     }
+    let truncated=counts.0>=8192;
+    if truncated {state="event_limit_reached";} else if state=="sampling" {state="sampled";}
     let direct=task.await?;
     Ok(json!({"phase":"probe_complete","report":{
         "local_fairplay":direct,
         "trace":{"status":state,"event_count":counts.0,"fairplay_mentions":counts.1,
-            "policy_mentions":counts.2,"window_ms":start.elapsed().as_millis().min(60000)},
+            "policy_mentions":counts.2,"window_ms":start.elapsed().as_millis().min(60000),
+            "event_limit_reached":truncated,"max_events":8192},
         "trace_limitations":"Events are an aggregate in a bounded window; no raw messages or causal service return is available."
     }}))
 }
