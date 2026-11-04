@@ -31,6 +31,7 @@ with zipfile.ZipFile(ipa) as archive:
     assert struct.unpack("<II", executable[:8]) == (0xFEEDFACF, 0x0100000C), "Expected arm64 Mach-O"
     assert not any(n.endswith("embedded.mobileprovision") for n in archive.namelist()), "IPA must be resignable"
     assert "_remotepairing-pairable-host._tcp" in info.get("NSBonjourServices", []), "Pairing service declaration missing"
+    assert "_remotepairing._tcp" in info.get("NSBonjourServices", []), "Pairing port discovery declaration missing"
     assert info.get("NSLocalNetworkUsageDescription"), "Local network permission text missing"
     with zipfile.ZipFile(io.BytesIO(archive.read(root + "CrumbDecryptTemplate.zip"))) as helper:
         assert set(helper.namelist()) == {"CrumbDecrypt", "Info.plist"}, "Unexpected helper template contents"

@@ -209,3 +209,32 @@ User signing files are inspected outside the repository, not committed or
 packaged. No private key or password belongs in CI artifacts. Certificate
 compatibility does not by itself prove decryption; the installed-file failure
 needs a physical retest with the new diagnostics.
+
+
+## Build 23029: own-device pairing port discovery
+
+Direct mode previously assumed that the device's RemotePairing service always
+used 49152. Apple can advertise a different listener port. Loopback now browses
+_remotepairing._tcp for up to three seconds and accepts only a service resolving
+to an address held by this iPhone (getifaddrs). Advertisements from other devices
+do not supply a route. No personal service names or interface addresses are
+printed or persisted. The UI shows the discovered port or lookup failure.
+
+The advertised port is attempted before the default, over both 127.0.0.1 and
+::1. Native inputs permit at most two valid ports, deduplicate them and retain
+the fixed local host allowlist. All candidates still require pair verification,
+TLS, RSD and the fresh same-installation proof. Complete tunnel attempts are
+bounded to at most roughly 32 seconds across four candidates, after discovery.
+Discovery can be cancelled and does not allow an older callback to start work
+after cancellation. Bonjour and UIKit behavior require physical testing.
+
+Two native regressions cover advertised-port ordering/local-only destinations
+and malformed or excessive port lists. This change corrects port selection; it
+is not proof that iOS accepts direct loopback on the user's phone. If the
+verified advertised port also resets, the reset remains unresolved. The incoming
+Settings pairing exchange is a pair-setup flow; the reviewed upstream responder
+does not expose a documented device tunnel on that existing connection.
+
+The installed helper must be prepared and installed again from Downloads to
+receive the file diagnostics added in 23028. Merely opening the previously
+installed helper continues running its old code. Signing files are unchanged.

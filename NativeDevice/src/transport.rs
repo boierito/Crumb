@@ -112,8 +112,43 @@ fn local_pairing_addresses(route: &str, port: u16) -> anyhow::Result<Vec<SocketA
         .collect())
 }
 async fn tunnel(v: &Value) -> anyhow::Result<(AdapterHandle, RsdHandshake)> {
-    let addresses = local_pairing_addresses(v["route"].as_str().unwrap_or("10.7.0.1"), 49152)?;
-    tunnel_on_candidates(v, &addresses, Duration::from_secs(15)).await
+    let addresses = pairing_candidates(v)?;
+    let seconds = if addresses.len() > 2 { 8 } else { 15 };
+    tunnel_on_candidates(v, &addresses, Duration::from_secs(seconds)).await
+}
+fn pairing_candidates(v: &Value) -> anyhow::Result<Vec<SocketAddr>> {
+    let route = v["route"].as_str().unwrap_or("10.7.0.1");
+    let ports = match v.get("pairing_ports") {
+        None => vec![49152],
+        Some(value) => {
+            let values = value
+                .as_array()
+                .ok_or_else(|| anyhow::anyhow!("Invalid pairing ports"))?;
+            anyhow::ensure!(
+                !values.is_empty() && values.len() <= 2,
+                "Invalid pairing port count"
+            );
+            values
+                .iter()
+                .map(|value| {
+                    value
+                        .as_u64()
+                        .filter(|p| (1..=65535).contains(p))
+                        .map(|p| p as u16)
+                        .ok_or_else(|| anyhow::anyhow!("Invalid pairing port"))
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?
+        }
+    };
+    let mut addresses = Vec::new();
+    for port in ports {
+        for address in local_pairing_addresses(route, port)? {
+            if !addresses.contains(&address) {
+                addresses.push(address);
+            }
+        }
+    }
+    Ok(addresses)
 }
 async fn tunnel_on_candidates(
     v: &Value,

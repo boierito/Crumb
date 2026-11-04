@@ -18,6 +18,41 @@ fn direct_routes_cover_both_families_without_leaving_this_host() {
         assert!(local_pairing_addresses(route, 49152).is_err());
     }
 }
+#[test]
+fn advertised_port_precedes_default_without_leaving_loopback() {
+    let candidates =
+        pairing_candidates(&json!({"route":"127.0.0.1", "pairing_ports":[49170,49152]})).unwrap();
+    assert_eq!(candidates.len(), 4);
+    assert!(candidates.iter().all(|a| a.ip().is_loopback()));
+    assert_eq!(
+        candidates.iter().map(|a| a.port()).collect::<Vec<_>>(),
+        vec![49170, 49170, 49152, 49152]
+    );
+    let default = pairing_candidates(&json!({"route":"127.0.0.1"})).unwrap();
+    assert_eq!(default.len(), 2);
+    assert!(default.iter().all(|a| a.port() == 49152));
+    assert_eq!(
+        pairing_candidates(&json!({"route":"127.0.0.1", "pairing_ports":[49152,49152]}))
+            .unwrap()
+            .len(),
+        2
+    );
+}
+#[test]
+fn invalid_and_excessive_discovered_ports_are_rejected() {
+    for ports in [
+        json!([]),
+        json!([0]),
+        json!([65536]),
+        json!([-1]),
+        json!(["49152"]),
+        json!([49152, 49153, 49154]),
+        json!("49152"),
+    ] {
+        assert!(pairing_candidates(&json!({"route":"127.0.0.1", "pairing_ports":ports})).is_err());
+    }
+    assert!(pairing_candidates(&json!({"route":"192.168.1.1", "pairing_ports":[49170]})).is_err());
+}
 fn request() -> Value {
     json!({"record": B64.encode(RpPairingFile::generate("Loopback test").to_bytes())})
 }
