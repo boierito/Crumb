@@ -56,3 +56,29 @@ All service operations are bounded. No third-party app is installed, updated, qu
 
 ## Known boundaries
 The PublicStaging local path is a hypothesis, not a guaranteed alias for the AFC domain on every iOS release. The experiment never assumes the tunnel grants `fairplayd` access. Errors are reported at service or POSIX-code granularity. The existing helper pipeline remains untouched in this feature's base, but this button neither invokes nor installs it.
+
+
+## 2026-11-04: direct-runtime probe with correlated OsTrace (schema 2)
+
+The physical 2026-11-04 report showed AFC/PublicStaging round-trip succeeded but the same file could not be opened by the Crumb process (\`EPERM=1\`). CoreDevice FileService was not advertised; idevice error code 21 is \`ServiceNotFound\`. The 128-event passive trace collected no FairPlay messages, but it did **not** overlap any FairPlay syscall.
+
+Instead of trying another staging alias, the new option in **Downloaded apps → Decrypt on this device → Direct FairPlay without helper** now:
+
+1. Uses the existing completed IPA from Crumb's downloads; it is not modified.
+2. Scans archive entries with bounded limits and only accepts a well-formed encrypted, thin ARM64 Mach-O in \`Payload/*.app/\` with one valid encryption-info command; never trusts traversal paths or symlinks.
+3. Extracts only that executable into Crumb's own random temporary file, hashes the encrypted executable, and attempts a strictly read-only \`mmap\` followed by a single native \`mremap_encrypted\` call (\`cryptid=2\`), without generating or publishing plaintext.
+4. Immediately removes the temporary input file, including on failures.
+5. If **Connected** is true, performs the same probe using the existing authenticated LocalDevVPN route while capturing an aggregate, time-bounded OsTrace sample. If not connected, runs the native probe **without VPN** and explicitly reports the absence of correlated logs.
+6. Returns a JSON report identifying whether \`mmap\` was attempted and succeeded, whether native remap was attempted and its exact error, and an encrypted-image SHA-256 for comparison. It reports **zero verified decrypted pages** regardless of remap return because this diagnostic deliberately does not validate or export plaintext.
+
+This is a deliberate measurement of the reported direct-native \`errno=12\` problem, not a workaround for FairPlay or a proven decryptor. No helper signing, installation, P12, jailbreak, JIT or computer is used by this test. The IPA must be lawfully obtained for the testing account. The OS trace output contains only aggregate event counts, not user data or system log strings.
+
+**Physical evaluation:**
+- On the iPhone's own downloaded encrypted IPA, run once with the tunnel disconnected and record \`local_fairplay.native\`.
+- Establish LocalDevVPN with the cellular-off method only if desired and available, verify the authenticated connection, then run it again to obtain \`trace\` alongside the native result.
+- Compare the same \`image_sha256\`, syscall result, page geometry and system mentions.
+- If \`remap_result=0\`, the test still **does not** declare decryption successful. A separate validated all-page reader is required.
+- A \`remap_errno=12\` (ENOMEM) is known to collapse multiple crypter-creation errors in this iOS branch, and still does not disclose the daemon's private cause by itself.
+
+**Limitations:** Mach-O and IPA formats beyond encrypted thin ARM64 are rejected; only the first acceptable encrypted executable is tested. The trace's short time window is correlation, not a complete activity archive. Dynamic SINF resources are not placed into an installed system-trusted bundle by this probe. This intentionally leaves the original no-helper FairPlay policy question open.
+
