@@ -152,11 +152,11 @@ fn extract_one(ipa: &Path) -> anyhow::Result<(TempImage, Range, u64, String)> {
         entry.read_exact(&mut rest)?;
         bytes.extend_from_slice(&rest);
         let Some(range)=parse_crypt_range(&bytes, entry.size())? else {continue};
-        drop(entry);
         // Preserve the original relative bundle/executable basename. FairPlay
         // derives SC_Info/<name>.sinf from that name; a random *.macho filename
         // is NOT a valid licensed-file control.
         let original_entry = entry.name().to_string();
+        drop(entry);
         let relative = original_entry.strip_prefix("Payload/")
             .ok_or_else(||anyhow::anyhow!("Invalid archive root"))?;
         let root=std::env::temp_dir().join(format!("crumb-fairplay-{}",uuid::Uuid::new_v4()));
