@@ -1,5 +1,6 @@
 mod package;
 mod transport;
+mod diagnostic;
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use idevice::remote_pairing::{PairableHost, PairableHostInfo, RpPairingFile, RpPairingSocket};
 use serde_json::{Value, json};
@@ -98,7 +99,7 @@ async fn pair(job: &Arc<Job>, v: &Value) -> anyhow::Result<Value> {
 async fn run(job: &Arc<Job>, v: Value) -> anyhow::Result<Value> {
     match v["operation"].as_str().unwrap_or("") {
         "pair" => pair(job, &v).await,
-        "verify" | "install" | "fetch" => transport::run(job, &v).await,
+        "verify" | "install" | "fetch" | "probe" => transport::run(job, &v).await,
         "prepare" => {
             job.update(json!({"phase":"preparing"}));
             let v = v.clone();
