@@ -10,7 +10,7 @@ struct DeviceSetupView: View {
         Form {
             Section {
                 Text("Experimental device connection").font(.headline)
-                Text("Pair from Settings → Privacy & Security → Developer Mode. Wi-Fi and Local Network permission are required. Connect LocalDevVPN for subsequent device operations.")
+                Text("Pair from Settings → Privacy & Security → Developer Mode. Allow Local Network access. When only cellular data is available, use the no-Wi-Fi procedure below.")
                 Text("This build enables pairing on iOS 27.0–27.0.1 and the decryption experiment on iOS 27.0.1. Physical validation in Crumb is pending.").font(.caption).foregroundStyle(.secondary)
             }
             Section("Pair this device") {
@@ -27,21 +27,65 @@ struct DeviceSetupView: View {
                     }.disabled(device.busy)
                     if device.route == "127.0.0.1" {
                         Text("Direct access depends on iOS allowing this connection. If it fails, use LocalDevVPN.").font(.caption).foregroundStyle(.secondary)
-                        if !device.routeDiscovery.isEmpty { Text(device.routeDiscovery).font(.caption).foregroundStyle(.secondary) }
+                    }
+                    Text("Pairing port: Bonjour discovery, saved port, or manual override. 49152 is a fallback.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Discover and save RemotePairing port") { device.discoverPairingPort() }
+                        .disabled(device.busy)
+                    if let saved = device.lastPairingPort {
+                        Text("Last discovered: \(saved) (may change after reboot).")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    TextField("Manual pairing port (optional)", text: $device.manualPairingPort)
+                        .keyboardType(.numberPad)
+                        .disabled(device.busy)
+                    if !device.routeDiscovery.isEmpty {
+                        Text(device.routeDiscovery).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Button("Inspect VPN routing (no pairing required)") { device.checkLocalVPNRoute() }
+                        .disabled(device.busy)
+                    if !device.routeInspection.isEmpty {
+                        Text(device.routeInspection)
+                            .font(.caption.monospaced())
+                            .textSelection(.enabled)
                     }
                     Button("Check authenticated connection") { device.verify() }.disabled(!device.paired || device.busy)
                     if device.connected { Label("Connected", systemImage: "checkmark.circle") }
                     Button("Remove local pairing keys", role: .destructive) { device.forgetPairing() }.disabled(device.busy || !device.paired)
                 } else { Text("On-device pairing is unavailable on this system version in this build.") }
             }
+            if DeviceWorkflow.pairingSupported {
+                Section("No Wi-Fi? Use cellular data first") {
+                    Text("1. Leave Cellular Data ON and connect LocalDevVPN.")
+                    Text("2. With data still ON, tap Discover and save RemotePairing port above.")
+                    Text("3. Open Control Center. Turn Cellular Data OFF, but leave LocalDevVPN connected.")
+                    Text("4. Return to Crumb; tap Check authenticated connection, then Run VPN access diagnostics.")
+                    Text("5. Turn Cellular Data ON again after testing.")
+                    Text("iOS does not let Crumb switch cellular data directly. If the VPN disconnects, turn data on again before reconnecting it. This is an experimental workaround, not a guaranteed iOS permission bypass.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Section("No-helper VPN diagnostics") {
+                    Text("Tests the existing authenticated LocalDevVPN connection, a harmless AFC canary in PublicStaging, Crumb's own Documents mapping, CoreDevice and a bounded passive OS trace sample. No IPA, SINF, helper or certificate is involved.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Run VPN access diagnostics") { device.probeVPN() }
+                        .disabled(device.busy || !device.connected)
+                    if !device.diagnosticReport.isEmpty {
+                        Text(device.diagnosticReport)
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                    }
+                }
+            }
             if DeviceWorkflow.decryptSupported {
-                Section("Helper signing") {
+                Section {
+                    DisclosureGroup("Legacy helper signing (not used for VPN diagnostics)") {
                     Text("Import a .p12 certificate and a matching provisioning profile that permits your chosen helper identifier and this device. The certificate password is requested when preparing a download. Files are stored in this device's Keychain.").font(.caption)
                     Text("Crumb Decrypt is a separate app. A profile limited to Crumb's own identifier cannot sign this helper.").font(.caption).foregroundStyle(.secondary)
                     TextField("Helper bundle identifier", text: $device.helperBundle).textInputAutocapitalization(.never).autocorrectionDisabled().disabled(device.busy)
                     Button(device.hasCertificate ? "Replace certificate (.p12)" : "Import certificate (.p12)") { importKind = "p12"; importing = true }.disabled(device.busy)
                     Button(device.hasProfile ? "Replace provisioning profile" : "Import provisioning profile") { importKind = "profile"; importing = true }.disabled(device.busy)
                     Button("Remove signing files", role: .destructive) { device.forgetSigning() }.disabled(device.busy)
+                    }
                 }
             }
             DeviceStatusSection()
@@ -81,12 +125,30 @@ struct DeviceDecryptView: View {
                 Text("The device's App Store account must own this app. The helper preserves its Apple license and encrypted bytes until FairPlay processes them. Keep the helper in the foreground while decrypting.")
                 Text("Experimental: iOS 27.0.1, thin arm64 packages, maximum 4 GB expanded and 512 MiB per file. A failure produces no completed IPA.").font(.caption).foregroundStyle(.secondary)
             }
+            Section("Direct FairPlay without helper") {
+                Text("Runs one native mremap_encrypted attempt against an arm64 image from the downloaded IPA. Nothing is installed or signed, and no decrypted IPA is exported. The test reports whether mmap succeeded and the native remap was accepted.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Text(device.connected
+                    ? "An authenticated tunnel is active: a short OS trace will be collected at the same time."
+                    : "No VPN connection: the native test still runs locally, without an OS trace.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Button("Test direct FairPlay now (no helper)") {
+                    device.runDirectFairPlayProbe(record)
+                }.disabled(device.busy || record.fileURL == nil)
+                if !device.diagnosticReport.isEmpty {
+                    Text(device.diagnosticReport)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+            }
             Section {
-                NavigationLink("Connection and signing setup") { DeviceSetupView() }
-                SecureField("Certificate password", text: $password)
+                DisclosureGroup("Legacy: prepare and install helper") {
+                    NavigationLink("Connection and signing setup") { DeviceSetupView() }
+                    SecureField("Certificate password", text: $password)
                 Button("Prepare and install decryption helper") {
                     device.prepare(record, password: password); password = ""
                 }.disabled(device.busy || !device.connected || !device.hasCertificate || !device.hasProfile || !DeviceWorkflow.decryptSupported)
+                }
             }
             DeviceStatusSection()
         }

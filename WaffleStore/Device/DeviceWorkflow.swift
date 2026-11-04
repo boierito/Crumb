@@ -3,6 +3,7 @@ import Combine
 import UIKit
 import SwiftUI
 import Zip
+import Darwin
 
 enum DeviceOperationError: LocalizedError {
     case message(String)
@@ -25,6 +26,15 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     @Published private(set) var phase = "idle"
     @Published private(set) var message = ""
     @Published private(set) var routeDiscovery = ""
+    @Published private(set) var routeInspection = ""
+    @Published private(set) var lastPairingPort: Int?
+    @Published var manualPairingPort = "" {
+        didSet {
+            UserDefaults.standard.set(manualPairingPort, forKey: "crumb.device.manualPairingPort")
+            if manualPairingPort != oldValue { connected = false }
+        }
+    }
+    @Published private(set) var diagnosticReport = ""
     @Published private(set) var pin: String?
     @Published private(set) var connected = false
     @Published private(set) var paired = false
@@ -55,6 +65,9 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
 
     override private init() {
         super.init()
+        manualPairingPort = UserDefaults.standard.string(forKey: "crumb.device.manualPairingPort") ?? ""
+        let cachedPort = UserDefaults.standard.integer(forKey: "crumb.device.lastPairingPort")
+        if (1...65535).contains(cachedPort) { lastPairingPort = cachedPort }
         do {
             let fm = FileManager.default
             let base = try fm.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("DeviceJobs", isDirectory: true)
@@ -95,21 +108,96 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         start(request)
     }
     func verify() { deviceOperation("verify") }
+    func checkLocalVPNRoute() {
+        routeInspection = CrumbVPNRouteObservation.inspect()
+    }
+
+    // Can run with mobile data still enabled, before the cellular-off tunnel step.
+    // A discovered port is cached locally; no pairing record or license is exposed.
+    func discoverPairingPort() {
+        guard !busy, Self.pairingSupported else { return }
+        busy = true; phase = "discovering"
+        message = "Discovering this iPhone's RemotePairing port…"
+        routeDiscovery = ""
+        let finder = DevicePairingDiscovery()
+        discovery = finder
+        finder.start { [weak self, weak finder] result in
+            guard let self, let finder, self.discovery === finder else { return }
+            self.discovery = nil; self.busy = false
+            self.routeDiscovery = result.summary
+            if let port = result.port {
+                self.lastPairingPort = port
+                UserDefaults.standard.set(port, forKey: "crumb.device.lastPairingPort")
+                self.message = "Saved this iPhone's advertised port \(port). The port may change after a reboot."
+            } else {
+                self.message = "Could not discover a port. Use the saved port, enter one manually if known, or try 49152."
+            }
+        }
+    }
+    func runDirectFairPlayProbe(_ record: DownloadRecord) {
+        guard Self.decryptSupported, !busy else {
+            message = "Direct FairPlay probe is available only on iOS 27.0.1."
+            return
+        }
+        guard let ipa = record.fileURL else {
+            message = "This download has no local IPA."
+            return
+        }
+        diagnosticReport = ""
+        // This attempt is deliberately independent of the VPN when disconnected.
+        // Connected devices also collect bounded OS diagnostics during the syscall.
+        if connected {
+            deviceOperation("fairplay_probe", extra: ["ipa": ipa.path])
+        } else {
+            start(["operation":"direct_probe","ipa":ipa.path])
+        }
+    }
+
+    func probeVPN() {
+        guard connected, Self.pairingSupported, !busy else {
+            message = "Check the authenticated device connection first."
+            return
+        }
+        diagnosticReport = ""
+        deviceOperation("probe")
+    }
     private func deviceOperation(_ operation: String, extra: [String: Any] = [:]) {
         guard !busy else { return }
         guard Self.pairingSupported else { message = "This system version has not been enabled for the device connection."; return }
-        if route == "127.0.0.1" {
-            busy = true; phase = "discovering"; message = "Finding this iPhone's pairing service…"
-            routeDiscovery = ""
-            let finder = DevicePairingDiscovery(); discovery = finder
-            finder.start { [weak self, weak finder] result in
-                guard let self, let finder, self.discovery === finder else { return }
-                self.discovery = nil; self.busy = false; self.routeDiscovery = result.summary
-                var ports = result.port.map { [$0] } ?? []
-                if !ports.contains(49152) { ports.append(49152) }
-                self.performDeviceOperation(operation, extra: extra, ports: ports)
+        // Explicit override is useful when cellular data has already been
+        // disabled and Bonjour cannot discover the port without network.
+        let configured = manualPairingPort.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !configured.isEmpty {
+            guard let port = Int(configured), (1...65535).contains(port),
+                  configured.allSatisfy({ $0.isNumber }) else {
+                message = "Manual RemotePairing port must be a number between 1 and 65535."
+                return
             }
-        } else { performDeviceOperation(operation, extra: extra, ports: [49152]) }
+            routeDiscovery = "Using manually selected port \(port); 49152 remains the fallback."
+            performDeviceOperation(operation, extra: extra,
+                                   ports: port == 49152 ? [49152] : [port, 49152])
+            return
+        }
+
+        busy = true; phase = "discovering"; message = "Finding this iPhone's pairing service…"
+        routeDiscovery = ""
+        let finder = DevicePairingDiscovery()
+        discovery = finder
+        finder.start { [weak self, weak finder] result in
+            guard let self, let finder, self.discovery === finder else { return }
+            self.discovery = nil; self.busy = false
+            if let port = result.port {
+                self.lastPairingPort = port
+                UserDefaults.standard.set(port, forKey: "crumb.device.lastPairingPort")
+            }
+            // A prior discovery survives a cellular-off run and app restart.
+            let port = result.port ?? self.lastPairingPort ?? 49152
+            self.routeDiscovery = result.port == nil && self.lastPairingPort != nil
+                ? "Bonjour unavailable; using saved port \(port), then 49152."
+                : result.summary
+            self.performDeviceOperation(operation, extra: extra,
+                                        ports: port == 49152 ? [49152] : [port, 49152])
+        }
     }
     private func performDeviceOperation(_ operation: String, extra: [String: Any], ports: [Int]) {
         guard !busy else { return }
@@ -120,6 +208,9 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
             let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             try Data(proof.utf8).write(to: docs.appendingPathComponent(".crumb-device-proof"), options: [.atomic, .completeFileProtection])
             request["proof"] = proof
+            if operation == "probe" {
+                request["self_probe_path"] = docs.appendingPathComponent(".crumb-device-proof").path
+            }
             request["route"] = route; request["own_bundle"] = Bundle.main.bundleIdentifier
             extra.forEach { request[$0.key] = $0.value }; start(request)
         } catch { message = error.localizedDescription }
@@ -234,7 +325,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
             pin = value["pin"] as? String
             return
         }
-        guard ["paired", "connected", "prepared", "installed", "complete", "failed", "cancelled"].contains(phase) else { return }
+        guard ["paired", "connected", "prepared", "installed", "complete", "probe_complete", "failed", "cancelled"].contains(phase) else { return }
         let request = lastRequest
         if let job { crumb_device_free(job); self.job = nil }
         busy = false; stopAdvertising(); endBackground(); pin = nil; lastRequest = [:]
@@ -259,13 +350,31 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
                 if let pending { try DeviceKeychain.write(JSONSerialization.data(withJSONObject: pending), account: "pending") }
                 cleanup(); message = "Helper installed. Keep Crumb Decrypt on screen until it finishes."
                 openHelper()
+            case "probe_complete":
+                if let report = value["report"],
+                   JSONSerialization.isValidJSONObject(report),
+                   let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]),
+                   let text = String(data: data, encoding: .utf8) {
+                    diagnosticReport = text
+                    message = ["fairplay_probe", "direct_probe"].contains(request["operation"] as? String ?? "")
+                        ? "Direct no-helper FairPlay probe finished. No decrypted IPA was exported."
+                        : "No-helper VPN diagnostics completed. No IPA was processed."
+                } else {
+                    diagnosticReport = ""
+                    message = "Diagnostic returned an invalid report."
+                }
             case "complete":
                 guard let path = value["path"] as? String else { throw DeviceOperationError.message("Missing verified result.") }
                 output = URL(fileURLWithPath: path); message = "IPA retrieved; hashes and encryption markers verified. Application execution has not been tested."
             case "failed":
                 // Local signing failures do not invalidate the verified route.
-                if request["operation"] as? String != "prepare" { connected = false }
-                message = (value["message"] as? String) ?? "Device operation failed."
+                if !["prepare", "probe"].contains(request["operation"] as? String ?? "") { connected = false }
+                let detail = (value["message"] as? String) ?? "Device operation failed."
+                if route == "10.7.0.1" && detail.contains("Pairing TCP") {
+                    message = detail + "\nMobile-only workaround: connect LocalDevVPN with Cellular Data ON, then turn Cellular Data OFF without disconnecting the VPN, and retry. If needed, enter the discovered RemotePairing port above. Turn cellular data back on when finished."
+                } else {
+                    message = detail
+                }
                 if ["prepare", "install"].contains(request["operation"] as? String ?? "") { cleanup() }
             default: cleanup(); message = "Operation cancelled."
             }
@@ -276,5 +385,72 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     private func cleanup() { if let staged { try? FileManager.default.removeItem(at: staged) }; staged = nil }
     nonisolated func netService(_ sender: NetService, didNotPublish errorDict: [String: NSNumber]) {
         Task { @MainActor in self.cancel(); self.message = "Could not advertise the pairing host. Allow Local Network access in Settings." }
+    }
+}
+
+
+// A UDP connect only asks the kernel which local interface it would use.
+// No network packets, pairing secrets, IPAs or device log contents are sent.
+// This is NOT an authenticated device connection check.
+private enum CrumbVPNRouteObservation {
+    static func inspect() -> String {
+        let fd = Darwin.socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
+        guard fd >= 0 else { return "Route inspection unavailable (socket error \(errno))." }
+        defer { Darwin.close(fd) }
+
+        var target = sockaddr_in()
+        target.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        target.sin_family = sa_family_t(AF_INET)
+        target.sin_port = in_port_t(49152).bigEndian
+        guard "10.7.0.1".withCString({ Darwin.inet_pton(AF_INET, $0, &target.sin_addr) }) == 1 else {
+            return "Unable to prepare the local tunnel address."
+        }
+        let connected = withUnsafePointer(to: &target) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        guard connected == 0 else { return "No route to 10.7.0.1 (OS \(errno))." }
+
+        var source = sockaddr_in()
+        var size = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let named = withUnsafeMutablePointer(to: &source) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.getsockname(fd, $0, &size)
+            }
+        }
+        guard named == 0 else { return "Cannot identify the route source (OS \(errno))." }
+        var ip = source.sin_addr
+        var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+        guard Darwin.inet_ntop(AF_INET, &ip, &buffer, socklen_t(buffer.count)) != nil else {
+            return "Cannot decode the local tunnel route."
+        }
+        let address = String(cString: buffer)
+        var addresses: UnsafeMutablePointer<ifaddrs>?
+        var interfaceName = "unknown"
+        if getifaddrs(&addresses) == 0 {
+            defer { freeifaddrs(addresses) }
+            var current = addresses
+            while let item = current {
+                if let interfaceAddress = item.pointee.ifa_addr,
+                   interfaceAddress.pointee.sa_family == sa_family_t(AF_INET) {
+                    let ipv4 = UnsafeRawPointer(interfaceAddress).assumingMemoryBound(to: sockaddr_in.self)
+                    if ipv4.pointee.sin_addr.s_addr == source.sin_addr.s_addr {
+                        interfaceName = String(cString: item.pointee.ifa_name)
+                        break
+                    }
+                }
+                current = item.pointee.ifa_next
+            }
+        }
+        let path = "\(interfaceName) (\(address))"
+        if (interfaceName.hasPrefix("utun") || interfaceName.hasPrefix("ipsec"))
+            && address.hasPrefix("10.7.") {
+            return "Route to 10.7.0.1: \(path). LocalDevVPN-style route detected. This does not prove RemotePairing is listening."
+        }
+        if interfaceName.hasPrefix("pdp") {
+            return "Route to 10.7.0.1: \(path). iOS is routing through cellular. Connect LocalDevVPN first, then switch Cellular Data OFF and recheck."
+        }
+        return "Route to 10.7.0.1: \(path). Not verified as LocalDevVPN; another route or VPN may intercept the connection."
     }
 }

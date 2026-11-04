@@ -168,10 +168,11 @@ async fn tunnel_on_candidates(
         failures.push(format!("{address}: {error}"));
     }
     let advice = if !addresses.is_empty() && addresses.iter().all(|a| a.ip().is_loopback()) {
-        " Direct loopback could not establish a device connection. Use LocalDevVPN and check again."
-    } else {
-        ""
-    };
+        " Direct loopback did not establish an authenticated tunnel. Use LocalDevVPN and check again; direct loopback is not a proven substitute on iOS 27."
+    } else if !addresses.is_empty()
+        && addresses.iter().all(|a| a.ip() == IpAddr::V4(std::net::Ipv4Addr::new(10, 7, 0, 1))) {
+        " On a cellular-only iPhone: connect LocalDevVPN while cellular is ON, turn cellular OFF without disconnecting LocalDevVPN, then retry. A stale RemotePairing port can also refuse TCP; use a recently discovered or manually entered port."
+    } else { "" };
     anyhow::bail!("{}{advice}", failures.join("; "))
 }
 async fn tunnel_at(v: &Value, addr: SocketAddr) -> anyhow::Result<(AdapterHandle, RsdHandshake)> {
@@ -263,6 +264,8 @@ pub(super) async fn run(job: &Arc<Job>, v: &Value) -> anyhow::Result<Value> {
     drop(own);
     match v["operation"].as_str().unwrap_or("") {
         "verify" => Ok(json!({"phase":"connected"})),
+        "probe" => super::diagnostic::run(job, &mut adapter, &mut handshake, v, own_id).await,
+        "fairplay_probe" => super::direct_fairplay::correlated(job, &mut adapter, &mut handshake, v).await,
         "install" => {
             let helper_id = v["helper_bundle"]
                 .as_str()
@@ -449,6 +452,25 @@ impl Drop for PartialFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn pairing_route_ports_are_bounded_and_stay_on_this_iphone() {
+        let options = json!({"route":"10.7.0.1","pairing_ports":[54833,49152]});
+        let addrs = pairing_candidates(&options).unwrap();
+        assert_eq!(addrs.len(), 2);
+        assert_eq!(addrs[0].to_string(), "10.7.0.1:54833");
+        assert_eq!(addrs[1].to_string(), "10.7.0.1:49152");
+        assert!(pairing_candidates(&json!({"route":"8.8.8.8","pairing_ports":[49152]})).is_err());
+        assert!(pairing_candidates(&json!({"route":"10.7.0.1","pairing_ports":[0]})).is_err());
+        assert!(pairing_candidates(&json!({"route":"10.7.0.1","pairing_ports":[54833,49152,62078]})).is_err());
+    }
+    #[test]
+    fn local_pairing_retains_ipv6_and_ipv4_only_for_loopback() {
+        let options = json!({"route":"127.0.0.1","pairing_ports":[49152]});
+        let addrs = pairing_candidates(&options).unwrap();
+        assert_eq!(addrs.len(), 2);
+        assert_eq!(addrs[0].to_string(), "127.0.0.1:49152");
+        assert_eq!(addrs[1].to_string(), "[::1]:49152");
+    }
     #[test]
     fn failed_helper_result_preserves_its_file_error_without_accepting_output() {
         let manifest = json!({"job_id":"test-job", "complete":false, "decrypted":2,
