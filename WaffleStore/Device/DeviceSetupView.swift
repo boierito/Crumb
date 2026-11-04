@@ -125,12 +125,30 @@ struct DeviceDecryptView: View {
                 Text("The device's App Store account must own this app. The helper preserves its Apple license and encrypted bytes until FairPlay processes them. Keep the helper in the foreground while decrypting.")
                 Text("Experimental: iOS 27.0.1, thin arm64 packages, maximum 4 GB expanded and 512 MiB per file. A failure produces no completed IPA.").font(.caption).foregroundStyle(.secondary)
             }
+            Section("Direct FairPlay without helper") {
+                Text("Runs one native mremap_encrypted attempt against an arm64 image from the downloaded IPA. Nothing is installed or signed, and no decrypted IPA is exported. The test reports whether mmap succeeded and the native remap was accepted.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Text(device.connected
+                    ? "An authenticated tunnel is active: a short OS trace will be collected at the same time."
+                    : "No VPN connection: the native test still runs locally, without an OS trace.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Button("Test direct FairPlay now (no helper)") {
+                    device.runDirectFairPlayProbe(record)
+                }.disabled(device.busy || record.fileURL == nil)
+                if !device.diagnosticReport.isEmpty {
+                    Text(device.diagnosticReport)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+            }
             Section {
-                NavigationLink("Connection and signing setup") { DeviceSetupView() }
-                SecureField("Certificate password", text: $password)
+                DisclosureGroup("Legacy: prepare and install helper") {
+                    NavigationLink("Connection and signing setup") { DeviceSetupView() }
+                    SecureField("Certificate password", text: $password)
                 Button("Prepare and install decryption helper") {
                     device.prepare(record, password: password); password = ""
                 }.disabled(device.busy || !device.connected || !device.hasCertificate || !device.hasProfile || !DeviceWorkflow.decryptSupported)
+                }
             }
             DeviceStatusSection()
         }
