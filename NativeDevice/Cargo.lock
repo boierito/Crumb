@@ -532,6 +532,7 @@ dependencies = [
  "apple-codesign-quick",
  "base64 0.22.1",
  "idevice",
+ "libc",
  "p12-keystore",
  "plist",
  "serde",
