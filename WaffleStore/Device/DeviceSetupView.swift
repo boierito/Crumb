@@ -34,6 +34,19 @@ struct DeviceSetupView: View {
                     Button("Remove local pairing keys", role: .destructive) { device.forgetPairing() }.disabled(device.busy || !device.paired)
                 } else { Text("On-device pairing is unavailable on this system version in this build.") }
             }
+            if DeviceWorkflow.pairingSupported {
+                Section("No-helper VPN diagnostics") {
+                    Text("Tests the existing authenticated LocalDevVPN connection, a harmless AFC canary in PublicStaging, Crumb's own Documents mapping, CoreDevice and a bounded passive OS trace sample. No IPA, SINF, helper or certificate is involved.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Run VPN access diagnostics") { device.probeVPN() }
+                        .disabled(device.busy || !device.connected)
+                    if !device.diagnosticReport.isEmpty {
+                        Text(device.diagnosticReport)
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                    }
+                }
+            }
             if DeviceWorkflow.decryptSupported {
                 Section("Helper signing") {
                     Text("Import a .p12 certificate and a matching provisioning profile that permits your chosen helper identifier and this device. The certificate password is requested when preparing a download. Files are stored in this device's Keychain.").font(.caption)
