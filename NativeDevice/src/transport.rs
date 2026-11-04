@@ -168,7 +168,7 @@ async fn tunnel_on_candidates(
         failures.push(format!("{address}: {error}"));
     }
     let advice = if !addresses.is_empty() && addresses.iter().all(|a| a.ip().is_loopback()) {
-        " Direct loopback responded without an authenticated tunnel; this mode is not a substitute for LocalDevVPN on iOS 27."
+        " Direct loopback did not establish an authenticated tunnel. Use LocalDevVPN and check again; direct loopback is not a proven substitute on iOS 27."
     } else if !addresses.is_empty()
         && addresses.iter().all(|a| a.ip() == IpAddr::V4(std::net::Ipv4Addr::new(10, 7, 0, 1))) {
         " On a cellular-only iPhone: connect LocalDevVPN while cellular is ON, turn cellular OFF without disconnecting LocalDevVPN, then retry. A stale RemotePairing port can also refuse TCP; use a recently discovered or manually entered port."
