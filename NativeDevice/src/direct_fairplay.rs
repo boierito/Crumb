@@ -12,6 +12,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{Read, Write},
     os::fd::AsRawFd,
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -64,6 +65,7 @@ fn stage_matching_sinf(
             .join("SC_Info").join(format!("{leaf}.sinf"));
         fs::create_dir_all(target.parent().unwrap())?;
         let mut f = OpenOptions::new().write(true).create_new(true).open(&target)?;
+        fs::set_permissions(&target,fs::Permissions::from_mode(0o600))?;
         let copied = std::io::copy(&mut entry, &mut f)?;
         anyhow::ensure!(copied == entry.size(), "Truncated original SINF");
         f.sync_all()?;
@@ -160,8 +162,10 @@ fn extract_one(ipa: &Path) -> anyhow::Result<(TempImage, Range, u64, String)> {
         let root=std::env::temp_dir().join(format!("crumb-fairplay-{}",uuid::Uuid::new_v4()));
         let path=root.join(relative);
         fs::create_dir_all(path.parent().unwrap())?;
+        fs::set_permissions(&root,fs::Permissions::from_mode(0o700))?;
         let mut cleanup=TempImage {path,root,sinf_staged:false,sinf_bytes:0};
         let mut out=OpenOptions::new().write(true).create_new(true).open(&cleanup.path)?;
+        fs::set_permissions(&cleanup.path,fs::Permissions::from_mode(0o600))?;
         let mut fresh=archive.by_index(i)?;
         let mut hash=Sha256::new();
         let mut buffer=[0u8; 64*1024];
@@ -352,6 +356,33 @@ mod tests {
         assert!(!is_app_candidate("Payload/Test.app/../../private"));
         assert!(is_app_candidate("Payload/Test.app/Test"));
         assert!(!is_app_candidate("Library/Other.app/Test"));
+    }
+    #[test] fn sidecar_staging_preserves_original_executable_identity_and_cleans_up(){
+        use zip::{ZipWriter,write::SimpleFileOptions};
+        let id=uuid::Uuid::new_v4();
+        let zip_path=std::env::temp_dir().join(format!("crumb-test-{id}.zip"));
+        let stage_root=std::env::temp_dir().join(format!("crumb-test-stage-{id}"));
+        let test=||->anyhow::Result<()>{
+            let mut writer=ZipWriter::new(File::create(&zip_path)?);
+            writer.start_file("Payload/Test.app/SC_Info/Test.sinf",SimpleFileOptions::default())?;
+            writer.write_all(b"sinf-test")?;
+            writer.finish()?;
+            let mut archive=ZipArchive::new(File::open(&zip_path)?)?;
+            let image=stage_root.join("Test.app/Test");
+            fs::create_dir_all(image.parent().unwrap())?;
+            let (found,size)=stage_matching_sinf(&mut archive,"Payload/Test.app/Test",&image)?;
+            assert!(found);
+            assert_eq!(size,9);
+            assert_eq!(fs::read(stage_root.join("Test.app/SC_Info/Test.sinf"))?,b"sinf-test");
+            let (found,size)=stage_matching_sinf(&mut archive,"Payload/Test.app/Other",&stage_root.join("Test.app/Other"))?;
+            assert!(!found);
+            assert_eq!(size,0);
+            Ok(())
+        };
+        let result=test();
+        let _=fs::remove_file(&zip_path);
+        let _=fs::remove_dir_all(&stage_root);
+        result.unwrap();
     }
     #[test] fn corrupt_command_geometry_fails_closed(){
         let h=fixture(&[0u8;8],1);
