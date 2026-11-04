@@ -25,6 +25,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     @Published private(set) var phase = "idle"
     @Published private(set) var message = ""
     @Published private(set) var routeDiscovery = ""
+    @Published private(set) var diagnosticReport = ""
     @Published private(set) var pin: String?
     @Published private(set) var connected = false
     @Published private(set) var paired = false
@@ -95,6 +96,14 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         start(request)
     }
     func verify() { deviceOperation("verify") }
+    func probeVPN() {
+        guard connected, Self.pairingSupported, !busy else {
+            message = "Check the authenticated device connection first."
+            return
+        }
+        diagnosticReport = ""
+        deviceOperation("probe")
+    }
     private func deviceOperation(_ operation: String, extra: [String: Any] = [:]) {
         guard !busy else { return }
         guard Self.pairingSupported else { message = "This system version has not been enabled for the device connection."; return }
@@ -120,6 +129,9 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
             let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             try Data(proof.utf8).write(to: docs.appendingPathComponent(".crumb-device-proof"), options: [.atomic, .completeFileProtection])
             request["proof"] = proof
+            if operation == "probe" {
+                request["self_probe_path"] = docs.appendingPathComponent(".crumb-device-proof").path
+            }
             request["route"] = route; request["own_bundle"] = Bundle.main.bundleIdentifier
             extra.forEach { request[$0.key] = $0.value }; start(request)
         } catch { message = error.localizedDescription }
@@ -234,7 +246,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
             pin = value["pin"] as? String
             return
         }
-        guard ["paired", "connected", "prepared", "installed", "complete", "failed", "cancelled"].contains(phase) else { return }
+        guard ["paired", "connected", "prepared", "installed", "complete", "probe_complete", "failed", "cancelled"].contains(phase) else { return }
         let request = lastRequest
         if let job { crumb_device_free(job); self.job = nil }
         busy = false; stopAdvertising(); endBackground(); pin = nil; lastRequest = [:]
@@ -259,12 +271,23 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
                 if let pending { try DeviceKeychain.write(JSONSerialization.data(withJSONObject: pending), account: "pending") }
                 cleanup(); message = "Helper installed. Keep Crumb Decrypt on screen until it finishes."
                 openHelper()
+            case "probe_complete":
+                if let report = value["report"],
+                   JSONSerialization.isValidJSONObject(report),
+                   let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]),
+                   let text = String(data: data, encoding: .utf8) {
+                    diagnosticReport = text
+                    message = "No-helper VPN diagnostics completed. No IPA was processed."
+                } else {
+                    diagnosticReport = ""
+                    message = "Diagnostic returned an invalid report."
+                }
             case "complete":
                 guard let path = value["path"] as? String else { throw DeviceOperationError.message("Missing verified result.") }
                 output = URL(fileURLWithPath: path); message = "IPA retrieved; hashes and encryption markers verified. Application execution has not been tested."
             case "failed":
                 // Local signing failures do not invalidate the verified route.
-                if request["operation"] as? String != "prepare" { connected = false }
+                if !["prepare", "probe"].contains(request["operation"] as? String ?? "") { connected = false }
                 message = (value["message"] as? String) ?? "Device operation failed."
                 if ["prepare", "install"].contains(request["operation"] as? String ?? "") { cleanup() }
             default: cleanup(); message = "Operation cancelled."
