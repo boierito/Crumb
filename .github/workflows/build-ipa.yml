@@ -1,7 +1,8 @@
 name: Build IPA
 on:
   push:
-    branches: [main, 'feature/**', 'release/**', 'fix/**']
+    # Feature commits build via pull_request; avoid push/PR macOS cancellation races.
+    branches: [main, 'release/**', 'fix/**']
     tags: ['v*']
   pull_request:
   workflow_dispatch:
