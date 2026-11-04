@@ -42,6 +42,13 @@ struct DeviceSetupView: View {
                     if !device.routeDiscovery.isEmpty {
                         Text(device.routeDiscovery).font(.caption).foregroundStyle(.secondary)
                     }
+                    Button("Inspect VPN routing (no pairing required)") { device.checkLocalVPNRoute() }
+                        .disabled(device.busy)
+                    if !device.routeInspection.isEmpty {
+                        Text(device.routeInspection)
+                            .font(.caption.monospaced())
+                            .textSelection(.enabled)
+                    }
                     Button("Check authenticated connection") { device.verify() }.disabled(!device.paired || device.busy)
                     if device.connected { Label("Connected", systemImage: "checkmark.circle") }
                     Button("Remove local pairing keys", role: .destructive) { device.forgetPairing() }.disabled(device.busy || !device.paired)
