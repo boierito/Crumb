@@ -203,11 +203,15 @@ static void runArchiveCase(int number, NSString *fixturePath) {
 }
 int main(int argc, const char *argv[]) {
   @autoreleasepool {
-    for (int i = 1; i <= 7; i++)
+    for (int i = 1; i <= 7; i++) {
+      fprintf(stderr, "Testing license resource case %d\n", i);
       runCase(i);
-    for (int i = 1; i <= 4; i++)
+    }
+    for (int i = 1; i <= 4; i++) {
+      fprintf(stderr, "Testing archive resource case %d\n", i);
       runArchiveCase(i,
                      argc > 1 ? [NSString stringWithUTF8String:argv[1]] : nil);
+    }
     puts("11 preserved-resource and IPA archive tests passed");
   }
   return 0;

@@ -45,7 +45,7 @@ jobs:
         run: xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.4 -fobjc-arc -framework UIKit -framework Foundation -framework CoreGraphics -lz DecryptHelper/main.m DecryptHelper/CrumbMachO.c DecryptHelper/CrumbFileAccess.c DecryptHelper/CrumbLicenseResources.m DecryptHelper/CrumbIPAArchive.m -o "$RUNNER_TEMP/CrumbDecrypt-link-check"
       - name: Test preserved resources and original IPA layout
         run: |
-          xcrun --sdk macosx clang -fobjc-arc -framework Foundation -lz tests/CrumbLicenseResourcesTests.m DecryptHelper/CrumbLicenseResources.m DecryptHelper/CrumbMachO.c DecryptHelper/CrumbFileAccess.c DecryptHelper/CrumbIPAArchive.m -o "$RUNNER_TEMP/CrumbLicenseResources-tests"
+          xcrun --sdk macosx clang -g -fsanitize=address -fno-omit-frame-pointer -fobjc-arc -framework Foundation -lz tests/CrumbLicenseResourcesTests.m DecryptHelper/CrumbLicenseResources.m DecryptHelper/CrumbMachO.c DecryptHelper/CrumbFileAccess.c DecryptHelper/CrumbIPAArchive.m -o "$RUNNER_TEMP/CrumbLicenseResources-tests"
           "$RUNNER_TEMP/CrumbLicenseResources-tests" "$RUNNER_TEMP/CrumbArchiveFixture.ipa"
           python3 scripts/verify-preserved-root-fixture.py "$RUNNER_TEMP/CrumbArchiveFixture.ipa"
       - uses: actions/cache/restore@v4
