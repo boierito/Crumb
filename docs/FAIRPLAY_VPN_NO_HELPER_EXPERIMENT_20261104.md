@@ -104,3 +104,30 @@ A physical iPhone reported for the same downloaded encrypted IPA:
 **Expected report:** `local_fairplay.schema=3` plus `matching_sinf_staged`. If `false`, the test IPA does not contain a matching SINF at the paths checked; do **not** infer that the Apple Account owns/does not own the app or that FairPlay policy was tested. If `true`, a repeated EPERM isolates a smaller class of failures, but cannot alone distinguish license validity from System Policy's known data-container limits.
 
 Source: https://github.com/morzelowski/FairPlayed#how-it-works (upstream's installed-bundle requirement and license sidecar path).
+
+## 2026-11-04: physical schema-3 classified trace — access-policy gate
+
+A second physical run on the same encrypted ARM64 executable and same original SINF produced:
+
+- Executable SHA-256: `09e6e556071f94b932de7c0a211e03aebe579a6b2bef856e46909582354d9add`; encrypted bytes: 2,506,752; 153 encrypted 16KiB pages.
+- Original `SC_Info/<executable>.sinf` staged: **true**, 1,032 bytes. Original executable basename was preserved.
+- `mmap` succeeded; `mremap_encrypted` returned -1 with errno **12** (generic XNU crypter-creation error mapping). **Zero verified decrypted pages**.
+- OsTrace: 2,539 events during a 547 ms receive window; not truncated; 7 FairPlay mentions and 3 policy mentions.
+- **Crucial**: at 87 ms *client reception time*, a classified **kernel** `Error` had `policy=true`, `permission_denial_mentioned=true`, `probe_path_mentioned=true`, and `sinf_mentioned=true`; at 88 ms another kernel event included `crypter_mentioned=true` and `fairplay=true`. Additional references to the exact test location and SINF occurred around 140–141 ms; unrelated kernel denials were also seen at 87 and 233 ms.
+- The trace redacts raw process details, message contents and absolute file paths; we cannot prove the **subject process** was `fairplayd` just from `actor=kernel`, and we cannot infer kernel event timestamps from client reception order.
+
+**Assessment:** Strong new evidence that the **test path's SINF** encountered a system policy denial contemporaneously with the FairPlay remap attempt, consistent with FairPlayed's reported failure for license files staged in app data containers. It is stronger than earlier aggregate counts, but not a full identity-aware causal trace. `errno=12` must not be interpreted as actual physical out-of-memory.
+
+**Stop rule for this branch:** Do NOT build additional `PublicStaging`, `Documents`, `tmp` or symlink variants as candidate decryption locations in the absence of an independently verified permission grant to the daemon. LocalDevVPN's AFC/RSD/HouseArrest is a remote-host access interface, **not** a sandbox extension for `fairplayd`. Retrying the same native request with unchanged storage access cannot fix the policy failure.
+
+**Remaining architecturally distinct approaches and gates:**
+
+1. A genuinely accessible **Apple-installed bundle resource** is known to work in FairPlayed's development-signed embedded-file scenario, but runtime writing or replacing arbitrary bytes inside Crumb's installed signed bundle has **not** been established on a stock, sideloaded iOS 27.0.1 device. Per-IPA rebuild/reinstall violates the requested UX.
+2. A purely local **offline FairPlay derivation** from original SINF/SUPF (e.g., EthanArbuckle/fairplay-decrypt) avoids `fairplayd`'s local file-path checks but requires a genuinely authorized 16-byte account credential. Existing upstream retrieval requires an independently jailbroken device; Crumb has **no verified credential producer on stock iOS**. Do not derive one from guessed UID, SINF bytes, DSID or brute force.
+3. A future genuine, independently reproduced **system authorization route** for a daemon-readable imported file could reopen direct `mremap` testing. It must be demonstrated on the same iPhone without entitlements, a helper or assumptions from LocalDevVPN.
+
+**Current outcome:** A usable no-helper IPA decryption path is **not established**. The two main blockers remain daemon-readable installed-bundle storage and independently available licensed offline credentials. Rebuild or re-run without a new hypothesis is not useful. Do not disclose original license bytes or raw OS logs.
+
+References:
+- https://github.com/morzelowski/FairPlayed (readable installed bundle vs forbidden app data container)
+- https://github.com/EthanArbuckle/fairplay-decrypt (offline credential prerequisite)
