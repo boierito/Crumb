@@ -71,6 +71,12 @@ static void runCase(int number) {
   }
   if (number == 6)
     item[@"size"] = @(4 * 1024 * 1024 + 1);
+  if (number == 8) {
+    NSMutableData *bad =
+        [[original base64EncodedDataWithOptions:0] mutableCopy];
+    ((uint8_t *)bad.mutableBytes)[0] = '?';
+    [bad writeToURL:saved atomically:YES];
+  }
   NSError *error = nil;
   BOOL ok = crumb_copy_license_resource(bundle, relative, item, dest, &error);
   if (number == 1 || number == 7) {
@@ -92,6 +98,9 @@ static void runCase(int number) {
         @"path escaped output");
     if (number == 5)
       require(error.code == ELOOP, @"symlink was followed");
+    if (number == 8)
+      require([error.localizedDescription containsString:@"decoding"],
+              @"error did not survive the decode pool");
   }
   [fm removeItemAtURL:root error:nil];
 }
@@ -157,6 +166,20 @@ static void runArchiveCase(int number, NSString *fixturePath) {
                                            &error),
               @"root size limit ignored");
     }
+    if (number == 5) {
+      NSURL *link = [dest URLByAppendingPathComponent:@"unsafe-link"];
+      require([fm createSymbolicLinkAtURL:link
+                       withDestinationURL:copies
+                                    error:nil],
+              @"archive link fixture");
+      NSMutableArray *hashes = [NSMutableArray array];
+      NSURL *output = [root URLByAppendingPathComponent:@"rejected.ipa"];
+      BOOL packed = crumb_pack_ipa(dest, output, hashes, &error);
+      require(!packed && [error.localizedDescription containsString:@"link"],
+              @"archive error did not survive its pool");
+      require(![fm fileExistsAtPath:output.path],
+              @"partial rejected archive remained");
+    }
     if (number == 4) {
       NSMutableDictionary *inventory = [NSMutableDictionary dictionary];
       inventory[relative] = item;
@@ -180,8 +203,8 @@ static void runArchiveCase(int number, NSString *fixturePath) {
                           ? [NSURL fileURLWithPath:fixturePath]
                           : [root URLByAppendingPathComponent:@"fixture.ipa"];
       NSMutableArray *hashes = [NSMutableArray array];
-      require(crumb_pack_ipa(dest, output, hashes, &error),
-              error.localizedDescription ?: @"IPA packing");
+      BOOL packed = crumb_pack_ipa(dest, output, hashes, &error);
+      require(packed, error.localizedDescription ?: @"IPA packing");
       require(hashes.count == 5,
               [NSString stringWithFormat:@"unexpected root archive entries: %@",
                                          hashes]);
@@ -203,16 +226,16 @@ static void runArchiveCase(int number, NSString *fixturePath) {
 }
 int main(int argc, const char *argv[]) {
   @autoreleasepool {
-    for (int i = 1; i <= 7; i++) {
+    for (int i = 1; i <= 8; i++) {
       fprintf(stderr, "Testing license resource case %d\n", i);
       runCase(i);
     }
-    for (int i = 1; i <= 4; i++) {
+    for (int i = 1; i <= 5; i++) {
       fprintf(stderr, "Testing archive resource case %d\n", i);
       runArchiveCase(i,
                      argc > 1 ? [NSString stringWithUTF8String:argv[1]] : nil);
     }
-    puts("11 preserved-resource and IPA archive tests passed");
+    puts("13 preserved-resource and IPA archive tests passed");
   }
   return 0;
 }

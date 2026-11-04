@@ -298,7 +298,8 @@ The combined snapshot manifest is limited to 16 MiB.
 
 Four new native cases cover original metadata/artwork bytes, empty root folders,
 large streamed resources, missing/changed metadata and directory type checks.
-The shared Foundation restore/archive code runs eleven cases. An independent
+The shared Foundation restore/archive code runs thirteen cases, including errors
+that must survive internal autorelease pools. An independent
 Python ZIP reader inspects its actual output for exact root paths, metadata
 bytes, directory flags, hashes and CRC. Test inputs are synthetic resources,
 not a simulated FairPlay success.

@@ -60,7 +60,7 @@ BOOL crumb_create_archive_directory(NSURL *dest, NSString *relative,
 }
 static BOOL copy_resource(NSURL *bundle, NSString *relative,
                           NSDictionary *resource, NSURL *dest, BOOL archive,
-                          NSError **error) {
+                          NSError *__strong *error) {
   NSString *file = resource[@"file"], *expectedHash = resource[@"sha256"];
   NSNumber *expectedSize = resource[@"size"];
   uint64_t limit = archive ? 512ULL * 1024 * 1024 : 4ULL * 1024 * 1024;
@@ -177,14 +177,17 @@ static BOOL copy_resource(NSURL *bundle, NSString *relative,
   close(output);
   if (ok) {
     NSURL *target = [dest URLByAppendingPathComponent:relative];
+    NSError *moveError = nil;
     ok = [NSFileManager.defaultManager
                     createDirectoryAtURL:target.URLByDeletingLastPathComponent
              withIntermediateDirectories:YES
                               attributes:nil
-                                   error:error] &&
+                                   error:&moveError] &&
          [NSFileManager.defaultManager moveItemAtURL:temporary
                                                toURL:target
-                                               error:error];
+                                               error:&moveError];
+    if (!ok)
+      *error = moveError;
   }
   if (!ok)
     [NSFileManager.defaultManager removeItemAtURL:temporary error:nil];
@@ -193,10 +196,18 @@ static BOOL copy_resource(NSURL *bundle, NSString *relative,
 BOOL crumb_copy_license_resource(NSURL *bundle, NSString *relative,
                                  NSDictionary *resource, NSURL *dest,
                                  NSError **error) {
-  return copy_resource(bundle, relative, resource, dest, NO, error);
+  NSError *problem = nil;
+  BOOL ok = copy_resource(bundle, relative, resource, dest, NO, &problem);
+  if (!ok && error)
+    *error = problem;
+  return ok;
 }
 BOOL crumb_copy_archive_resource(NSURL *bundle, NSString *relative,
                                  NSDictionary *resource, NSURL *dest,
                                  NSError **error) {
-  return copy_resource(bundle, relative, resource, dest, YES, error);
+  NSError *problem = nil;
+  BOOL ok = copy_resource(bundle, relative, resource, dest, YES, &problem);
+  if (!ok && error)
+    *error = problem;
+  return ok;
 }

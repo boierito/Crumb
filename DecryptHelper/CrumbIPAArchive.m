@@ -23,8 +23,8 @@ static void put32(NSMutableData *d, uint32_t n) {
   [d appendBytes:&x length:4];
 }
 // Stored ZIP entries, CRC32 checked by the receiving Rust verifier. No ZIP64.
-BOOL crumb_pack_ipa(NSURL *root, NSURL *out, NSMutableArray *hashes,
-                    NSError **error) {
+static BOOL pack_impl(NSURL *root, NSURL *out, NSMutableArray *hashes,
+                      NSError *__strong *error) {
   root = root.URLByResolvingSymlinksInPath;
   NSString *prefix = root.path;
   if (![prefix hasSuffix:@"/"])
@@ -58,8 +58,11 @@ BOOL crumb_pack_ipa(NSURL *root, NSURL *out, NSMutableArray *hashes,
                               return NO;
                             }]) {
     @autoreleasepool {
-      NSDictionary *attrs = [url resourceValuesForKeys:keys error:error];
+      NSError *metadataError = nil;
+      NSDictionary *attrs = [url resourceValuesForKeys:keys
+                                                 error:&metadataError];
       if (!attrs) {
+        *error = metadataError;
         ok = NO;
         break;
       }
@@ -71,12 +74,13 @@ BOOL crumb_pack_ipa(NSURL *root, NSURL *out, NSMutableArray *hashes,
       BOOL directory = [attrs[NSURLIsDirectoryKey] boolValue];
       if (![attrs[NSURLIsRegularFileKey] boolValue] && !directory)
         continue;
-      if (![url.path hasPrefix:prefix]) {
+      NSString *path = url.URLByResolvingSymlinksInPath.path;
+      if (![path hasPrefix:prefix]) {
         *error = archive_failure(@"Output entry is outside the archive root.");
         ok = NO;
         break;
       }
-      NSString *name = [url.path substringFromIndex:prefix.length];
+      NSString *name = [path substringFromIndex:prefix.length];
       if (directory) {
         if ([name.pathComponents.firstObject isEqualToString:@"Payload"])
           continue;
@@ -203,5 +207,15 @@ BOOL crumb_pack_ipa(NSURL *root, NSURL *out, NSMutableArray *hashes,
     if (!*error)
       *error = archive_failure(@"IPA archive write failed.");
   }
+  return ok;
+}
+
+BOOL crumb_pack_ipa(NSURL *root, NSURL *out, NSMutableArray *hashes,
+                    NSError **error) {
+  // Keep errors alive across the producer's per-entry autorelease pools.
+  NSError *problem = nil;
+  BOOL ok = pack_impl(root, out, hashes, &problem);
+  if (!ok && error)
+    *error = problem;
   return ok;
 }
