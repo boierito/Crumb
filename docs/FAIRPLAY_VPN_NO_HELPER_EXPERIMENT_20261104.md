@@ -8,7 +8,7 @@ Determine whether the authenticated *same-iPhone* RemotePairing tunnel exposes u
 ## How to run on iOS 27.0.1
 1. Install this experimental Crumb build as your existing Crumb application (normal sideload of Crumb itself). No helper signing files are needed.
 2. Start LocalDevVPN and use the existing **Settings → Device connection → Pair this device** flow if not paired.
-3. Choose **LocalDevVPN** (`10.7.0.1`) and tap **Check authenticated connection**. The native worker verifies pairing, TLS, RSD, installed Crumb bundle ID and a fresh `/Documents/.crumb-device-proof` nonce via House Arrest.
+3. Join a **Wi-Fi network** (cellular-only mode is not supported by LocalDevVPN), connect LocalDevVPN with the expected Device IP `10.7.0.1`, then tap **Check authenticated connection**. Crumb now resolves the iPhone's `_remotepairing._tcp` Bonjour port for both VPN and Loopback routes; port 49152 remains only a fallback. The native worker verifies pairing, TLS, RSD, installed Crumb bundle ID and a fresh `/Documents/.crumb-device-proof` nonce via House Arrest.
 4. Tap **Run VPN access diagnostics** under *No-helper VPN diagnostics*. The result is pretty-printed in Settings and can be selected/copied.
 5. Repeat selecting *Loopback (experimental)* only if desired. If the direct RemotePairing handshake resets, use LocalDevVPN. No silent fallback is performed.
 6. Share only the JSON summary. Do **not** share pairing files, P12, private keys, license files, original paths, full trace messages or your IPA.
