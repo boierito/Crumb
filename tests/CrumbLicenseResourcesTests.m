@@ -182,7 +182,9 @@ static void runArchiveCase(int number, NSString *fixturePath) {
       NSMutableArray *hashes = [NSMutableArray array];
       require(crumb_pack_ipa(dest, output, hashes, &error),
               error.localizedDescription ?: @"IPA packing");
-      require(hashes.count == 5, @"unexpected root archive entry count");
+      require(hashes.count == 5,
+              [NSString stringWithFormat:@"unexpected root archive entries: %@",
+                                         hashes]);
       NSDictionary *manifest = @{
         @"schema" : @3,
         @"files" : hashes,

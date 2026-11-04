@@ -25,6 +25,10 @@ static void put32(NSMutableData *d, uint32_t n) {
 // Stored ZIP entries, CRC32 checked by the receiving Rust verifier. No ZIP64.
 BOOL crumb_pack_ipa(NSURL *root, NSURL *out, NSMutableArray *hashes,
                     NSError **error) {
+  root = root.URLByResolvingSymlinksInPath;
+  NSString *prefix = root.path;
+  if (![prefix hasSuffix:@"/"])
+    prefix = [prefix stringByAppendingString:@"/"];
   NSFileManager *fm = NSFileManager.defaultManager;
   FILE *file = fopen(out.fileSystemRepresentation, "wb");
   if (!file) {
@@ -67,7 +71,12 @@ BOOL crumb_pack_ipa(NSURL *root, NSURL *out, NSMutableArray *hashes,
       BOOL directory = [attrs[NSURLIsDirectoryKey] boolValue];
       if (![attrs[NSURLIsRegularFileKey] boolValue] && !directory)
         continue;
-      NSString *name = [url.path substringFromIndex:root.path.length + 1];
+      if (![url.path hasPrefix:prefix]) {
+        *error = archive_failure(@"Output entry is outside the archive root.");
+        ok = NO;
+        break;
+      }
+      NSString *name = [url.path substringFromIndex:prefix.length];
       if (directory) {
         if ([name.pathComponents.firstObject isEqualToString:@"Payload"])
           continue;
