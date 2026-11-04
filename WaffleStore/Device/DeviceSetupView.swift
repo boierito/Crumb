@@ -27,7 +27,11 @@ struct DeviceSetupView: View {
                     }.disabled(device.busy)
                     if device.route == "127.0.0.1" {
                         Text("Direct access depends on iOS allowing this connection. If it fails, use LocalDevVPN.").font(.caption).foregroundStyle(.secondary)
-                        if !device.routeDiscovery.isEmpty { Text(device.routeDiscovery).font(.caption).foregroundStyle(.secondary) }
+                    }
+                    Text("The pairing port is discovered using Bonjour; 49152 is only a fallback. LocalDevVPN requires Wi-Fi joined to a network.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if !device.routeDiscovery.isEmpty {
+                        Text(device.routeDiscovery).font(.caption).foregroundStyle(.secondary)
                     }
                     Button("Check authenticated connection") { device.verify() }.disabled(!device.paired || device.busy)
                     if device.connected { Label("Connected", systemImage: "checkmark.circle") }
