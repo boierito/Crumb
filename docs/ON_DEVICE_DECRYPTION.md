@@ -152,3 +152,32 @@ For the physical comparison, establish Connected with LocalDevVPN selected
 first. Then disconnect the VPN, select Loopback (experimental) and repeat the
 check. Record either Connected or the complete IPv4/IPv6 errors. If iOS refuses
 both direct routes, use LocalDevVPN for the decryption acceptance steps.
+
+
+## Build 23027: helper profile validation
+
+Device feedback reached local helper preparation and reported `Profile does
+not permit the helper bundle identifier`. This can indicate an actual explicit
+profile for a different app, including Crumb itself. The original validator also
+incorrectly assumed the App ID prefix always equals the Team ID.
+[Apple QA1879](https://developer.apple.com/library/archive/qa/qa1879/_index.html)
+explicitly documents that these values can differ.
+
+The helper application-identifier now uses the prefix in the profile's
+entitlement, checked against ApplicationIdentifierPrefix. The Mach-O signing
+team and team-identifier entitlement continue to use the Team ID. Exact and
+terminal-wildcard bundle restrictions remain enforced; Crumb cannot be replaced
+by the helper. Mismatch errors name both the permitted pattern and requested
+helper ID, and explain when a profile is restricted to Crumb itself.
+
+Profile scope and expiry are checked before unpacking the target IPA. A local
+preparation error preserves the previously authenticated connection state.
+Five regression tests cover different App ID/Team ID prefixes, wildcard scope,
+actionable mismatch errors, the Crumb-only profile case and invalid prefixes.
+
+The imported profile from the device has not been inspected. This change does
+not establish which of the two mismatch causes applies to that profile. An
+explicit profile for Crumb still cannot authorize com.certlium.crumb.decrypt;
+the user needs a matching separate-helper profile or a permitted wildcard one.
+No profile is modified or generated and no Apple developer provisioning is
+automated by this change.

@@ -81,11 +81,70 @@ pub(super) fn validate_helper_id(bundle: &str, own: &str) -> Result<()> {
     );
     Ok(())
 }
+fn helper_application_id(profile: &plist::Dictionary, bundle: &str, own: &str) -> Result<String> {
+    validate_helper_id(bundle, own)?;
+    let appid = profile
+        .get("Entitlements")
+        .and_then(|v| v.as_dictionary())
+        .and_then(|ent| ent.get("application-identifier"))
+        .and_then(|v| v.as_string())
+        .context("Profile has no app identifier")?;
+    let (prefix, pattern) = appid
+        .split_once('.')
+        .context("Invalid profile app identifier")?;
+    ensure!(
+        !prefix.is_empty()
+            && prefix.len() <= 64
+            && prefix.bytes().all(|b| b.is_ascii_alphanumeric()),
+        "Invalid profile app identifier prefix"
+    );
+    // App ID prefixes can predate the Team ID or survive an app transfer.
+    // The app-identifier entitlement must keep the prefix authorized by the
+    // profile; the signing team and team-identifier entitlement stay separate.
+    ensure!(
+        profile
+            .get("ApplicationIdentifierPrefix")
+            .and_then(|v| v.as_array())
+            .is_some_and(|prefixes| prefixes.iter().any(|v| v.as_string() == Some(prefix))),
+        "Profile app identifier prefix is absent from ApplicationIdentifierPrefix"
+    );
+    let fixed = pattern.strip_suffix('*').unwrap_or(pattern);
+    ensure!(
+        !pattern.is_empty()
+            && pattern.len() <= 255
+            && fixed
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.'),
+        "Invalid profile bundle identifier pattern"
+    );
+    let permits = pattern == bundle || (pattern.ends_with('*') && bundle.starts_with(fixed));
+    if !permits {
+        let advice = if pattern.eq_ignore_ascii_case(own) {
+            "This profile is for Crumb itself. Import a separate profile for the helper."
+        } else {
+            "Import a matching profile, or choose a separate helper identifier permitted by this profile."
+        };
+        anyhow::bail!("Profile permits {pattern}; helper is {bundle}. {advice}");
+    }
+    Ok(format!("{prefix}.{bundle}"))
+}
 pub fn prepare(v: &Value) -> Result<String> {
     let work = PathBuf::from(input(v, "work")?);
     // Caller creates an exclusive, disposable per-operation directory.
     fs::create_dir(&work)?;
     let result = (|| {
+        let bundle = input(v, "helper_bundle")?;
+        let profile_bytes = fs::read(input(v, "profile")?)?;
+        let profile = apple_codesign_quick::ProvisioningProfile::parse(&profile_bytes)?;
+        let expected = helper_application_id(profile.plist(), bundle, input(v, "own_bundle")?)?;
+        ensure!(
+            profile
+                .plist()
+                .get("ExpirationDate")
+                .and_then(|v| v.as_date())
+                .is_some_and(|d| std::time::SystemTime::from(d) > std::time::SystemTime::now()),
+            "Provisioning profile expired"
+        );
         let unpack = work.join("input");
         fs::create_dir(&unpack)?;
         extract(Path::new(input(v, "ipa")?), &unpack)?;
@@ -101,8 +160,6 @@ pub fn prepare(v: &Value) -> Result<String> {
             "Invalid payload"
         );
         let app_info = plist(&source.join("Info.plist"))?;
-        let bundle = input(v, "helper_bundle")?;
-        validate_helper_id(bundle, input(v, "own_bundle")?)?;
         let template = Path::new(input(v, "template")?);
         let helper = work.join("CrumbDecrypt.app");
         copy_tree(template, &helper)?;
@@ -162,29 +219,6 @@ pub fn prepare(v: &Value) -> Result<String> {
             .context("Invalid helper plist")?
             .insert("CFBundleIdentifier".into(), bundle.into());
         info.to_file_binary(helper.join("Info.plist"))?;
-        let profile_bytes = fs::read(input(v, "profile")?)?;
-        let profile = apple_codesign_quick::ProvisioningProfile::parse(&profile_bytes)?;
-        let ent = profile.entitlements();
-        let appid = ent
-            .get("application-identifier")
-            .and_then(|v| v.as_string())
-            .context("Profile has no app identifier")?;
-        let expected = format!("{}.{}", profile.team_id(), bundle);
-        ensure!(
-            appid == expected
-                || appid
-                    .strip_suffix('*')
-                    .is_some_and(|prefix| expected.starts_with(prefix)),
-            "Profile does not permit the helper bundle identifier"
-        );
-        ensure!(
-            profile
-                .plist()
-                .get("ExpirationDate")
-                .and_then(|v| v.as_date())
-                .is_some_and(|d| std::time::SystemTime::from(d) > std::time::SystemTime::now()),
-            "Provisioning profile expired"
-        );
         let store = p12_keystore::KeyStore::from_pkcs12(
             &fs::read(input(v, "p12")?)?,
             input(v, "password")?,
@@ -467,3 +501,7 @@ mod tests {
         fs::remove_dir_all(temp).unwrap();
     }
 }
+
+#[cfg(test)]
+#[path = "profile_tests.rs"]
+mod profile_tests;

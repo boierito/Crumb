@@ -239,7 +239,9 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
                 guard let path = value["path"] as? String else { throw DeviceOperationError.message("Missing verified result.") }
                 output = URL(fileURLWithPath: path); message = "IPA retrieved; hashes and encryption markers verified. Application execution has not been tested."
             case "failed":
-                connected = false; message = (value["message"] as? String) ?? "Device operation failed."
+                // Local signing failures do not invalidate the verified route.
+                if request["operation"] as? String != "prepare" { connected = false }
+                message = (value["message"] as? String) ?? "Device operation failed."
                 if ["prepare", "install"].contains(request["operation"] as? String ?? "") { cleanup() }
             default: cleanup(); message = "Operation cancelled."
             }
