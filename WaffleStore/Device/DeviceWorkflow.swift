@@ -3,6 +3,7 @@ import Combine
 import UIKit
 import SwiftUI
 import Zip
+import Darwin
 
 enum DeviceOperationError: LocalizedError {
     case message(String)
@@ -25,6 +26,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     @Published private(set) var phase = "idle"
     @Published private(set) var message = ""
     @Published private(set) var routeDiscovery = ""
+    @Published private(set) var routeInspection = ""
     @Published private(set) var lastPairingPort: Int?
     @Published var manualPairingPort = "" {
         didSet {
@@ -106,6 +108,9 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         start(request)
     }
     func verify() { deviceOperation("verify") }
+    func checkLocalVPNRoute() {
+        routeInspection = CrumbVPNRouteObservation.inspect()
+    }
 
     // Can run with mobile data still enabled, before the cellular-off tunnel step.
     // A discovered port is cached locally; no pairing record or license is exposed.
@@ -359,5 +364,72 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     private func cleanup() { if let staged { try? FileManager.default.removeItem(at: staged) }; staged = nil }
     nonisolated func netService(_ sender: NetService, didNotPublish errorDict: [String: NSNumber]) {
         Task { @MainActor in self.cancel(); self.message = "Could not advertise the pairing host. Allow Local Network access in Settings." }
+    }
+}
+
+
+// A UDP connect only asks the kernel which local interface it would use.
+// No network packets, pairing secrets, IPAs or device log contents are sent.
+// This is NOT an authenticated device connection check.
+private enum CrumbVPNRouteObservation {
+    static func inspect() -> String {
+        let fd = Darwin.socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
+        guard fd >= 0 else { return "Route inspection unavailable (socket error \(errno))." }
+        defer { Darwin.close(fd) }
+
+        var target = sockaddr_in()
+        target.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        target.sin_family = sa_family_t(AF_INET)
+        target.sin_port = in_port_t(49152).bigEndian
+        guard "10.7.0.1".withCString({ Darwin.inet_pton(AF_INET, $0, &target.sin_addr) }) == 1 else {
+            return "Unable to prepare the local tunnel address."
+        }
+        let connected = withUnsafePointer(to: &target) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        guard connected == 0 else { return "No route to 10.7.0.1 (OS \(errno))." }
+
+        var source = sockaddr_in()
+        var size = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let named = withUnsafeMutablePointer(to: &source) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.getsockname(fd, $0, &size)
+            }
+        }
+        guard named == 0 else { return "Cannot identify the route source (OS \(errno))." }
+        var ip = source.sin_addr
+        var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+        guard Darwin.inet_ntop(AF_INET, &ip, &buffer, socklen_t(buffer.count)) != nil else {
+            return "Cannot decode the local tunnel route."
+        }
+        let address = String(cString: buffer)
+        var addresses: UnsafeMutablePointer<ifaddrs>?
+        var interfaceName = "unknown"
+        if getifaddrs(&addresses) == 0 {
+            defer { freeifaddrs(addresses) }
+            var current = addresses
+            while let item = current {
+                if let interfaceAddress = item.pointee.ifa_addr,
+                   interfaceAddress.pointee.sa_family == sa_family_t(AF_INET) {
+                    let ipv4 = UnsafeRawPointer(interfaceAddress).assumingMemoryBound(to: sockaddr_in.self)
+                    if ipv4.pointee.sin_addr.s_addr == source.sin_addr.s_addr {
+                        interfaceName = String(cString: item.pointee.ifa_name)
+                        break
+                    }
+                }
+                current = item.pointee.ifa_next
+            }
+        }
+        let path = "\(interfaceName) (\(address))"
+        if (interfaceName.hasPrefix("utun") || interfaceName.hasPrefix("ipsec"))
+            && address.hasPrefix("10.7.") {
+            return "Route to 10.7.0.1: \(path). LocalDevVPN-style route detected. This does not prove RemotePairing is listening."
+        }
+        if interfaceName.hasPrefix("pdp") {
+            return "Route to 10.7.0.1: \(path). iOS is routing through cellular. Connect LocalDevVPN first, then switch Cellular Data OFF and recheck."
+        }
+        return "Route to 10.7.0.1: \(path). Not verified as LocalDevVPN; another route or VPN may intercept the connection."
     }
 }
