@@ -5,13 +5,27 @@ Base: `feature/on-device-pairing-decryption` from commit `4a3ca40d9a6766ad448f34
 ## Objective
 Determine whether the authenticated *same-iPhone* RemotePairing tunnel exposes useful storage or diagnostic services **without** preparing, signing, installing or relaunching a per-IPA helper. This first step is an authorization/access experiment, **not** a FairPlay decryptor.
 
-## How to run on iOS 27.0.1
-1. Install this experimental Crumb build as your existing Crumb application (normal sideload of Crumb itself). No helper signing files are needed.
-2. Start LocalDevVPN and use the existing **Settings → Device connection → Pair this device** flow if not paired.
-3. Join a **Wi-Fi network** (cellular-only mode is not supported by LocalDevVPN), connect LocalDevVPN with the expected Device IP `10.7.0.1`, then tap **Check authenticated connection**. Crumb now resolves the iPhone's `_remotepairing._tcp` Bonjour port for both VPN and Loopback routes; port 49152 remains only a fallback. The native worker verifies pairing, TLS, RSD, installed Crumb bundle ID and a fresh `/Documents/.crumb-device-proof` nonce via House Arrest.
-4. Tap **Run VPN access diagnostics** under *No-helper VPN diagnostics*. The result is pretty-printed in Settings and can be selected/copied.
-5. Repeat selecting *Loopback (experimental)* only if desired. If the direct RemotePairing handshake resets, use LocalDevVPN. No silent fallback is performed.
-6. Share only the JSON summary. Do **not** share pairing files, P12, private keys, license files, original paths, full trace messages or your IPA.
+## How to run on iOS 27.0.1 (no Wi-Fi required for the workaround)
+1. Install the experimental Crumb IPA with an ordinary sideloader. No helper signing material is needed.
+2. With Cellular Data **ON**, open **LocalDevVPN**, connect it to Device IP `10.7.0.1/32`, and return to Crumb. iOS must allow Local Network access. Keep the VPN connected through all steps.
+3. In **Settings → Device connection** use the existing on-device pairing once if not paired. Tap **Discover and save RemotePairing port** while cellular connectivity remains available, if discovery can find it. An unavailable result is not fatal; `49152` is the fallback. An alternate known port may be entered in **Manual pairing port (optional)**. The saved port survives switching cellular off and restarting Crumb.
+4. Tap **Inspect VPN routing (no pairing required)**. It performs a packet-free UDP route lookup, classifying the source as `pdp_ip0`, LocalDevVPN-style `utun`, or unknown. This is **not** an authenticated tunnel test.
+5. Open **Control Center** and turn **Cellular Data OFF** while leaving LocalDevVPN connected. Do not disconnect or reconnect LocalDevVPN after the phone has lost network access. The tunnel can continue serving local traffic without external connectivity, according to Madeira's documented iOS 27 workflow. If it disconnects, turn cellular data back on, reconnect the VPN and repeat.
+6. Return to Crumb. Inspect the route again. Choose **LocalDevVPN** (not Loopback) and tap **Check authenticated connection**. The native worker verifies authenticated pairing, TLS, RSD, installed Crumb identity and a fresh Documents nonce.
+7. Only if **Connected** appears, tap **Run VPN access diagnostics**. Copy/share the JSON summary; never share pairing records, P12/private keys, license files or IPA contents.
+8. Turn Cellular Data **ON** after testing. This experiment cannot itself toggle the cellular radio from within the app.
+
+### Interpretation and limits
+- No iOS API allows Crumb to flip Cellular Data automatically. An iOS Shortcut could be added later, with the user importing and approving it.
+- The VPN's `Connected` label alone does not establish routing or availability of the RemotePairing daemon. The route probe identifies where a packet *would* go; the authenticated connection check is the authority for actual device access.
+- On iOS 27, direct TCP over `127.0.0.1` / `::1` may accept connections and then reject TLS/RemotePairing. Loopback mode is not a proven replacement.
+- RemotePairing may listen on a dynamic Bonjour port instead of `49152`. During cellular-off runs, DNS-SD may be unavailable, so Crumb now reuses its saved port or a user-selected numeric override (1–65535), always constrained to its fixed local device address and normal authentication. No LAN host address is accepted.
+- If `Pairing TCP: ConnectionRefused (OS 61)` continues with a valid port and LocalDevVPN route, the device daemon may not be listening or iOS may refuse the tunnel. Never report this as an authentication, certificate or FairPlay failure.
+
+Sources:
+- https://github.com/willfaust/Madeira/blob/main/docs/JIT.md (cellular-off workaround and route-probe idea)
+- https://github.com/jkcoxson/LocalDevVPN/issues/31 (maintainer confirms cellular route limitation)
+- https://github.com/playportdev/playport/issues/55 (dynamic RemotePairing port on iOS 27.0.1)
 
 ## Actual probes and what they mean
 - `self_documents_mmap`: opens and read-only `mmap`s the existing same-installation pairing proof file. It must match the fresh nonce. Positive control for Crumb's own Documents. No FairPlay call is made.
