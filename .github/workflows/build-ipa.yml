@@ -42,7 +42,7 @@ jobs:
         with:
           targets: aarch64-apple-ios
       - name: Compile and link helper against the iOS SDK
-        run: xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.4 -fobjc-arc -framework UIKit -framework Foundation -framework CoreGraphics -lz DecryptHelper/main.m DecryptHelper/CrumbMachO.c -o "$RUNNER_TEMP/CrumbDecrypt-link-check"
+        run: xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.4 -fobjc-arc -framework UIKit -framework Foundation -framework CoreGraphics -lz DecryptHelper/main.m DecryptHelper/CrumbMachO.c DecryptHelper/CrumbFileAccess.c -o "$RUNNER_TEMP/CrumbDecrypt-link-check"
       - uses: actions/cache/restore@v4
         id: device-cache
         with:
@@ -59,6 +59,7 @@ jobs:
           mkdir -p artifacts
           cargo test --locked --manifest-path NativeDevice/Cargo.toml
           python3 scripts/test-device-macho.py
+          python3 scripts/test-device-file-access.py
           xcodebuild -version | tee artifacts/toolchain.txt
           xcodebuild -project WaffleStore.xcodeproj -scheme WaffleStore \
             -configuration "$CONFIGURATION" -sdk iphoneos \

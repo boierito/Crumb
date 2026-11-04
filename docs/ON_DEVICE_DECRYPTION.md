@@ -181,3 +181,31 @@ explicit profile for Crumb still cannot authorize com.certlium.crumb.decrypt;
 the user needs a matching separate-helper profile or a permitted wildcard one.
 No profile is modified or generated and no Apple developer provisioning is
 automated by this change.
+
+
+## Build 23028: installed-file diagnostics and failed-result recovery
+
+Device feedback now shows an authenticated LocalDevVPN connection and a
+launched helper. Direct IPv4 and IPv6 both reset the RemotePairing handshake
+with OS 54; direct access is not established on that device. The helper reports
+`Cannot open installed image`, which is an open() failure, not evidence that
+FairPlay accepted or rejected that image. The failing path and errno were
+previously discarded, so the underlying cause is not established.
+
+The helper now preserves open errno, relative target path and available file
+mode/ownership metadata. It retries EINTR and retains O_NOFOLLOW, O_RDONLY and
+close-on-exec. It does not make installed files writable, follow rejected links
+or mark an unreadable file decrypted. Four portable OS-level tests cover
+read-only access, a missing path, a denied read and a rejected symlink. These
+do not simulate iOS sandbox or FairPlay policy. The UIKit helper is compiled
+and linked against the iOS SDK in both build configurations.
+
+Retrieval checks the job identity before surfacing a bounded failed-helper
+message and decrypted-image count. It rejects incomplete output and keeps the
+original image error instead of replacing it with a generic message. Three
+regressions cover partial failure, unrelated-job diagnostics and message bounds.
+
+User signing files are inspected outside the repository, not committed or
+packaged. No private key or password belongs in CI artifacts. Certificate
+compatibility does not by itself prove decryption; the installed-file failure
+needs a physical retest with the new diagnostics.

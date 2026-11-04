@@ -11,7 +11,7 @@ rm -rf "$HELPER"
 rm -f build/Native/CrumbDecryptTemplate.zip
 mkdir -p "$HELPER"
 xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.4 -Os -fobjc-arc \
-  -framework UIKit -framework Foundation -framework CoreGraphics -lz DecryptHelper/main.m DecryptHelper/CrumbMachO.c -o "$HELPER/CrumbDecrypt"
+  -framework UIKit -framework Foundation -framework CoreGraphics -lz DecryptHelper/main.m DecryptHelper/CrumbMachO.c DecryptHelper/CrumbFileAccess.c -o "$HELPER/CrumbDecrypt"
 python3 - "$HELPER/Info.plist" <<'PY'
 import plistlib,sys
 with open(sys.argv[1],'wb') as f:

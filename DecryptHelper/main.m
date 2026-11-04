@@ -1,3 +1,4 @@
+#import "CrumbFileAccess.h"
 #import "CrumbMachO.h"
 #import <CommonCrypto/CommonDigest.h>
 #import <UIKit/UIKit.h>
@@ -7,6 +8,7 @@
 #import <mach/mach.h>
 #import <math.h>
 #import <stdio.h>
+#import <string.h>
 #import <sys/mman.h>
 #import <sys/stat.h>
 #import <unistd.h>
@@ -43,6 +45,20 @@ static NSError *failure(NSString *s) {
   return [NSError errorWithDomain:@"CrumbDecrypt"
                              code:1
                          userInfo:@{NSLocalizedDescriptionKey : s}];
+}
+static NSError *file_failure(NSString *operation, CrumbFileAccess status) {
+  NSString *details =
+      status.metadata_available
+          ? [NSString stringWithFormat:@"; mode %04o, uid %u, gid %u",
+                                       status.mode & 07777, status.owner,
+                                       status.group]
+          : @"; metadata unavailable";
+  NSString *message = [NSString
+      stringWithFormat:@"%@: %s (errno %d%@).", operation,
+                       strerror(status.error_code), status.error_code, details];
+  return [NSError errorWithDomain:NSPOSIXErrorDomain
+                             code:status.error_code
+                         userInfo:@{NSLocalizedDescriptionKey : message}];
 }
 static uint32_t codewords(const uint8_t *b, size_t n) {
   uint32_t count = 0, w;
@@ -90,15 +106,18 @@ static BOOL register_signature(int fd, const uint8_t *header, size_t size) {
 }
 static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
                     NSError **error) {
-  int fd = open(source.fileSystemRepresentation, O_RDONLY | O_NOFOLLOW);
+  CrumbFileAccess access;
+  int fd = crumb_open_installed_image(source.fileSystemRepresentation, &access);
   if (fd < 0) {
-    *error = failure(@"Cannot open installed image.");
+    *error = file_failure(@"Cannot open installed image", access);
     return NO;
   }
   struct stat st;
-  if (fstat(fd, &st) || st.st_size < 0) {
+  int inspected = fstat(fd, &st);
+  if (inspected || st.st_size < 0) {
+    access.error_code = inspected ? errno : EFBIG;
     close(fd);
-    *error = failure(@"Cannot inspect installed image.");
+    *error = file_failure(@"Cannot inspect installed image", access);
     return NO;
   }
   size_t size = (size_t)st.st_size;
@@ -110,8 +129,9 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
   }
   uint8_t *map = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
   if (map == MAP_FAILED) {
+    access.error_code = errno;
     close(fd);
-    *error = failure(@"Cannot map installed image.");
+    *error = file_failure(@"Cannot map installed image", access);
     return NO;
   }
   CrumbEncryption enc = {0};
@@ -507,6 +527,17 @@ static BOOL pack(NSURL *root, NSURL *out, NSMutableArray *hashes,
                                   error:&error];
         BOOL encrypted = NO;
         if (!decrypt(url, target, &encrypted, &error)) {
+          // Keep paths relative to the embedded target. Installed container
+          // UUIDs and absolute sandbox paths are not needed for diagnosis.
+          NSMutableDictionary *details =
+              [error.userInfo mutableCopy] ?: [NSMutableDictionary dictionary];
+          details[NSLocalizedDescriptionKey] =
+              [NSString stringWithFormat:@"%@: %@", relative,
+                                         error.localizedDescription
+                                             ?: @"Image processing failed."];
+          NSString *domain = error.domain ?: @"CrumbDecrypt";
+          NSInteger code = error ? error.code : 1;
+          error = [NSError errorWithDomain:domain code:code userInfo:details];
           ok = NO;
           break;
         }

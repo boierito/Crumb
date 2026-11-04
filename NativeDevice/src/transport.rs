@@ -70,6 +70,31 @@ async fn read_app_document(
     close.map_err(|e| device_error("Close app document", e))?;
     Ok(bytes)
 }
+fn check_helper_manifest(manifest: &Value, expected: &str) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        manifest["job_id"] == expected,
+        "Result belongs to a different operation"
+    );
+    if manifest["complete"] != true {
+        let message: String = manifest["message"]
+            .as_str()
+            .unwrap_or("")
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(1024)
+            .collect();
+        let message = if message.trim().is_empty() {
+            "Helper did not decrypt every encrypted image"
+        } else {
+            message.as_str()
+        };
+        anyhow::bail!(
+            "Helper failed after {} decrypted images: {message}",
+            manifest["decrypted"].as_u64().unwrap_or(0)
+        );
+    }
+    Ok(())
+}
 fn local_pairing_addresses(route: &str, port: u16) -> anyhow::Result<Vec<SocketAddr>> {
     // Keep direct mode on this host. Never turn a route supplied by an IPA or
     // callback into arbitrary LAN access, or silently connect through a VPN.
@@ -289,17 +314,10 @@ pub(super) async fn run(job: &Arc<Job>, v: &Value) -> anyhow::Result<Value> {
                 read_app_document(&mut afc, AppDocument::Manifest, manifest_size).await?;
             anyhow::ensure!(manifest.len() == manifest_size, "Oversized result manifest");
             let manifest: Value = serde_json::from_slice(&manifest)?;
-            anyhow::ensure!(
-                manifest["complete"] == true,
-                "Helper did not decrypt every encrypted image"
-            );
             let expected = v["job_id"]
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("Missing job identity"))?;
-            anyhow::ensure!(
-                manifest["job_id"] == expected,
-                "Result belongs to a different operation"
-            );
+            check_helper_manifest(&manifest, expected)?;
             let size = afc
                 .get_file_info(AppDocument::Output.path())
                 .await
@@ -396,6 +414,48 @@ impl Drop for PartialFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn failed_helper_result_preserves_its_file_error_without_accepting_output() {
+        let manifest = json!({"job_id":"test-job", "complete":false, "decrypted":2,
+            "message":"Frameworks/Test.framework/Test: Cannot open installed image (errno 13)"});
+        let message = check_helper_manifest(&manifest, "test-job")
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("after 2 decrypted images"));
+        assert!(message.contains("Frameworks/Test.framework/Test"));
+        assert!(message.contains("errno 13"));
+    }
+    #[test]
+    fn wrong_job_result_does_not_expose_its_diagnostic() {
+        let manifest =
+            json!({"job_id":"stale-job", "complete":false, "message":"unrelated private payload"});
+        let message = check_helper_manifest(&manifest, "test-job")
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("different operation"));
+        assert!(!message.contains("private payload"));
+    }
+    #[test]
+    fn helper_status_checks_completion_and_bounds_failure_text() {
+        assert!(
+            check_helper_manifest(&json!({"job_id":"test-job", "complete":true}), "test-job")
+                .is_ok()
+        );
+        let message = check_helper_manifest(
+            &json!({"job_id":"test-job", "complete":false,
+            "message":format!("\u{0000}{}", "x".repeat(4096))}),
+            "test-job",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(!message.contains('\0'));
+        assert!(message.len() < 1200);
+        let message =
+            check_helper_manifest(&json!({"job_id":"test-job", "complete":false}), "test-job")
+                .unwrap_err()
+                .to_string();
+        assert!(message.contains("did not decrypt every encrypted image"));
+    }
     #[test]
     fn socket_diagnostic_preserves_stage_and_os_code() {
         let error = device_error(
