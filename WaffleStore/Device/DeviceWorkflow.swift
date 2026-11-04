@@ -25,6 +25,13 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     @Published private(set) var phase = "idle"
     @Published private(set) var message = ""
     @Published private(set) var routeDiscovery = ""
+    @Published private(set) var lastPairingPort: Int?
+    @Published var manualPairingPort = "" {
+        didSet {
+            UserDefaults.standard.set(manualPairingPort, forKey: "crumb.device.manualPairingPort")
+            if manualPairingPort != oldValue { connected = false }
+        }
+    }
     @Published private(set) var diagnosticReport = ""
     @Published private(set) var pin: String?
     @Published private(set) var connected = false
@@ -56,6 +63,9 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
 
     override private init() {
         super.init()
+        manualPairingPort = UserDefaults.standard.string(forKey: "crumb.device.manualPairingPort") ?? ""
+        let cachedPort = UserDefaults.standard.integer(forKey: "crumb.device.lastPairingPort")
+        if (1...65535).contains(cachedPort) { lastPairingPort = cachedPort }
         do {
             let fm = FileManager.default
             let base = try fm.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("DeviceJobs", isDirectory: true)
@@ -96,6 +106,29 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         start(request)
     }
     func verify() { deviceOperation("verify") }
+
+    // Can run with mobile data still enabled, before the cellular-off tunnel step.
+    // A discovered port is cached locally; no pairing record or license is exposed.
+    func discoverPairingPort() {
+        guard !busy, Self.pairingSupported else { return }
+        busy = true; phase = "discovering"
+        message = "Discovering this iPhone's RemotePairing port…"
+        routeDiscovery = ""
+        let finder = DevicePairingDiscovery()
+        discovery = finder
+        finder.start { [weak self, weak finder] result in
+            guard let self, let finder, self.discovery === finder else { return }
+            self.discovery = nil; self.busy = false
+            self.routeDiscovery = result.summary
+            if let port = result.port {
+                self.lastPairingPort = port
+                UserDefaults.standard.set(port, forKey: "crumb.device.lastPairingPort")
+                self.message = "Saved this iPhone's advertised port \(port). The port may change after a reboot."
+            } else {
+                self.message = "Could not discover a port. Use the saved port, enter one manually if known, or try 49152."
+            }
+        }
+    }
     func probeVPN() {
         guard connected, Self.pairingSupported, !busy else {
             message = "Check the authenticated device connection first."
@@ -107,19 +140,39 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     private func deviceOperation(_ operation: String, extra: [String: Any] = [:]) {
         guard !busy else { return }
         guard Self.pairingSupported else { message = "This system version has not been enabled for the device connection."; return }
-        // RemotePairing's listener is not guaranteed to use 49152. In particular,
-        // LocalDevVPN on iOS 27 can route to a Bonjour-advertised dynamic port.
-        // Discovery only supplies a port; the authenticated tunnel still uses
-        // the explicitly selected same-device address and validates its pairing.
+        // Explicit override is useful when cellular data has already been
+        // disabled and Bonjour cannot discover the port without network.
+        let configured = manualPairingPort.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !configured.isEmpty {
+            guard let port = Int(configured), (1...65535).contains(port),
+                  configured.allSatisfy({ $0.isNumber }) else {
+                message = "Manual RemotePairing port must be a number between 1 and 65535."
+                return
+            }
+            routeDiscovery = "Using manually selected port \(port); 49152 remains the fallback."
+            performDeviceOperation(operation, extra: extra,
+                                   ports: port == 49152 ? [49152] : [port, 49152])
+            return
+        }
+
         busy = true; phase = "discovering"; message = "Finding this iPhone's pairing service…"
         routeDiscovery = ""
-        let finder = DevicePairingDiscovery(); discovery = finder
+        let finder = DevicePairingDiscovery()
+        discovery = finder
         finder.start { [weak self, weak finder] result in
             guard let self, let finder, self.discovery === finder else { return }
-            self.discovery = nil; self.busy = false; self.routeDiscovery = result.summary
-            var ports = result.port.map { [$0] } ?? []
-            if !ports.contains(49152) { ports.append(49152) }
-            self.performDeviceOperation(operation, extra: extra, ports: ports)
+            self.discovery = nil; self.busy = false
+            if let port = result.port {
+                self.lastPairingPort = port
+                UserDefaults.standard.set(port, forKey: "crumb.device.lastPairingPort")
+            }
+            // A prior discovery survives a cellular-off run and app restart.
+            let port = result.port ?? self.lastPairingPort ?? 49152
+            self.routeDiscovery = result.port == nil && self.lastPairingPort != nil
+                ? "Bonjour unavailable; using saved port \(port), then 49152."
+                : result.summary
+            self.performDeviceOperation(operation, extra: extra,
+                                        ports: port == 49152 ? [49152] : [port, 49152])
         }
     }
     private func performDeviceOperation(_ operation: String, extra: [String: Any], ports: [Int]) {
@@ -290,7 +343,12 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
             case "failed":
                 // Local signing failures do not invalidate the verified route.
                 if !["prepare", "probe"].contains(request["operation"] as? String ?? "") { connected = false }
-                message = (value["message"] as? String) ?? "Device operation failed."
+                let detail = (value["message"] as? String) ?? "Device operation failed."
+                if route == "10.7.0.1" && detail.contains("Pairing TCP") {
+                    message = detail + "\nMobile-only workaround: connect LocalDevVPN with Cellular Data ON, then turn Cellular Data OFF without disconnecting the VPN, and retry. If needed, enter the discovered RemotePairing port above. Turn cellular data back on when finished."
+                } else {
+                    message = detail
+                }
                 if ["prepare", "install"].contains(request["operation"] as? String ?? "") { cleanup() }
             default: cleanup(); message = "Operation cancelled."
             }
