@@ -7,7 +7,7 @@ use idevice::services::{
     core_device::{Domain, FileServiceClient},
     os_trace_relay::OsTraceRelayClient,
 };
-use idevice::tcp::adapter::AdapterHandle;
+use idevice::tcp::handle::AdapterHandle;
 use idevice::rsd::RsdHandshake;
 use serde_json::{json, Value};
 use std::{fs::File, os::fd::AsRawFd, path::Path, time::Duration};
