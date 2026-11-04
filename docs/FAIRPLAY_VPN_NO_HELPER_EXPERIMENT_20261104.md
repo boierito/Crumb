@@ -82,3 +82,25 @@ This is a deliberate measurement of the reported direct-native \`errno=12\` prob
 
 **Limitations:** Mach-O and IPA formats beyond encrypted thin ARM64 are rejected; only the first acceptable encrypted executable is tested. The trace's short time window is correlation, not a complete activity archive. Dynamic SINF resources are not placed into an installed system-trusted bundle by this probe. This intentionally leaves the original no-helper FairPlay policy question open.
 
+
+## 2026-11-04: report for direct probe build 23031; matched SINF correction
+
+A physical iPhone reported for the same downloaded encrypted IPA:
+- Encrypted Mach-O length: 3,049,216 B; encrypted range: 2,506,752 B (153 pages on a 16 KiB-page device).
+- SHA-256 of encrypted Mach-O: `09e6e556071f94b932de7c0a211e03aebe579a6b2bef856e46909582354d9add`.
+- `mmap` attempted/succeeded, `mapping_errno=0`. `mremap_encrypted` attempted, returned `-1`, `remap_errno=1` (EPERM); zero verified decrypted pages, no output.
+- OsTrace: 512/512 events in **196 ms**, 2 mentions of FairPlay, no policy mentions. This stream ended at the cap; its absence of other messages is **not** proof that no denial occurred.
+
+**Critical error in the first probe:** build 23031 unpacked the Mach-O alone into a UUID-named `.macho` under `tmp`, with **no adjacent `SC_Info/<original basename>.sinf`**. This was not a faithful installed-file comparator. FairPlayed reports FairPlay builds the SINF path from the executable's filename; a relocated executable with no corresponding SINF is not equivalent to a licensed original. `EPERM` in that artificial context must not be taken as proof that a complete runtime-imported app is rejected.
+
+**Correction to schema 3:**
+- Preserve the original `Payload/<App>.app/<relative executable>` path and filename *inside one unique temporary Crumb-private staging directory* rather than renaming to random `.macho`.
+- If the original IPA contains the matching `SC_Info/<original executable basename>.sinf` in the same binary directory, or the app-root SC_Info, copy **only that file** next to the staged executable (max 4 MiB; ZIP type, ownership and path checked). Record `matching_sinf_staged` and its size, **never license data, filename or path**.
+- Restrict the temporary directory (0700) and both executable/SINF (0600); delete all created content on completion/failure. No helper, reinstall, App Group, P12, provisioning profile or cross-app access.
+- Preserve the original encrypted executable SHA-256 for an apples-to-apples result comparison.
+- Increase OsTrace's cap to 8192 events, mark explicit truncation, and sample approximately 450 ms after the native probe ends (up to 2600 ms), rather than reporting an incomplete 196 ms sample as a full duration. Logs remain aggregate-only.
+- Continue to return **zero verified decrypted pages** regardless of `mremap` result, and never produce a decrypted IPA. A real FairPlay policy or license conclusion still requires successful all-page validation and matched installed-bundle controls.
+
+**Expected report:** `local_fairplay.schema=3` plus `matching_sinf_staged`. If `false`, the test IPA does not contain a matching SINF at the paths checked; do **not** infer that the Apple Account owns/does not own the app or that FairPlay policy was tested. If `true`, a repeated EPERM isolates a smaller class of failures, but cannot alone distinguish license validity from System Policy's known data-container limits.
+
+Source: https://github.com/morzelowski/FairPlayed#how-it-works (upstream's installed-bundle requirement and license sidecar path).
