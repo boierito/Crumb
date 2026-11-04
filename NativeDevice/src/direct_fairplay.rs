@@ -278,6 +278,50 @@ pub(super) fn local(request:&Value)->anyhow::Result<Value>{
         "local_fairplay":probe_local(ipa),
         "trace":{"status":"not_started_without_authenticated_tunnel"}}}))
 }
+/// Convert an untrusted OS log into fixed labels only. Never return log text,
+/// private paths, names, UUIDs, IDs, or even arbitrary subsystem strings.
+/// These are `mentions`, not conclusive OS daemon return codes.
+fn classify_trace_event(process: &str, image: &str, subsystem: &str, message: &str) -> Option<Value> {
+    let actor = process.rsplit('/').next().unwrap_or(process).to_ascii_lowercase();
+    let image = image.to_ascii_lowercase();
+    let subsystem = subsystem.to_ascii_lowercase();
+    let message = message.to_ascii_lowercase();
+    let role = match actor.as_str() {
+        "fairplayd" => "fairplayd",
+        "kernel" => "kernel",
+        "amfid" => "amfid",
+        "installd" => "installd",
+        "crumb" => "crumb",
+        _ => "other",
+    };
+    let fairplay = role == "fairplayd" || image.contains("fairplay")
+        || subsystem.contains("fairplay") || message.contains("fairplay");
+    let policy = subsystem.contains("sandbox") || subsystem.contains("security")
+        || message.contains("sandbox") || message.contains("system policy")
+        || message.contains("deny(");
+    let probe_path = message.contains("crumb-fairplay-");
+    let sinf = message.contains(".sinf") || message.contains("sc_info");
+    let permission = message.contains("operation not permitted")
+        || message.contains("permission denied") || message.contains("deny(")
+        || message.contains("access denied");
+    let missing = message.contains("no such file") || message.contains("not found")
+        || message.contains("missing file");
+    let license = message.contains("license") || message.contains("licence");
+    let crypter = message.contains("crypter") || message.contains("mremap_encrypted");
+    if !(fairplay || policy || probe_path || sinf || crypter) { return None; }
+    Some(json!({
+        "actor":role,
+        "fairplay":fairplay,
+        "policy":policy,
+        "probe_path_mentioned":probe_path,
+        "sinf_mentioned":sinf,
+        "permission_denial_mentioned":permission,
+        "missing_file_mentioned":missing,
+        "license_mentioned":license,
+        "crypter_mentioned":crypter
+    }))
+}
+
 pub(super) async fn correlated(
     job:&std::sync::Arc<Job>,adapter:&mut AdapterHandle,handshake:&mut RsdHandshake,
     request:&Value
@@ -297,6 +341,10 @@ pub(super) async fn correlated(
     // Capture only counts; strings are discarded, paths and account/IPA identifiers
     // are never exposed. This is a time-window correlation, not causal proof.
     let mut counts=(0u64,0u64,0u64);
+    // A bounded set of fixed-category observations; nothing directly from a
+    // system log string is returned. Collection happens during this probe.
+    let mut categorized: Vec<Value> = Vec::new();
+    let mut categorized_total = 0u64;
     let mut state=if trace.is_some() {"sampling"} else {"unavailable"};
     if let Some(mut receiver)=trace {
         let until=start+Duration::from_millis(2600);
@@ -308,11 +356,27 @@ pub(super) async fn correlated(
             match tokio::time::timeout(Duration::from_millis(150),receiver.next()).await {
                 Ok(Ok(log))=>{
                     counts.0+=1;
-                    let process=log.filename.to_ascii_lowercase();
-                    let image=log.image_name.to_ascii_lowercase();
+                    let subsystem=log.label.as_ref()
+                        .map(|x| x.subsystem.as_str()).unwrap_or("");
                     let message=log.message.to_ascii_lowercase();
-                    if process.contains("fairplay")||image.contains("fairplay")||message.contains("fairplay") {counts.1+=1;}
-                    if message.contains("sandbox")||message.contains("system policy") {counts.2+=1;}
+                    if log.filename.to_ascii_lowercase().contains("fairplay")
+                        || log.image_name.to_ascii_lowercase().contains("fairplay")
+                        || subsystem.to_ascii_lowercase().contains("fairplay")
+                        || message.contains("fairplay") { counts.1+=1; }
+                    if message.contains("sandbox")||message.contains("system policy")
+                        || message.contains("deny(") || subsystem.to_ascii_lowercase().contains("sandbox") {
+                        counts.2+=1;
+                    }
+                    if let Some(mut classified)=classify_trace_event(
+                        &log.filename,&log.image_name,subsystem,&log.message) {
+                        categorized_total += 1;
+                        if categorized.len() < 24 {
+                            classified["received_after_start_ms"]=
+                                json!(start.elapsed().as_millis().min(60000));
+                            classified["severity"]=json!(format!("{:?}",log.level));
+                            categorized.push(classified);
+                        }
+                    }
                 }, Ok(Err(_))=>{state="stream_ended";break;},Err(_)=>{}
             }
         }
@@ -324,8 +388,11 @@ pub(super) async fn correlated(
         "local_fairplay":direct,
         "trace":{"status":state,"event_count":counts.0,"fairplay_mentions":counts.1,
             "policy_mentions":counts.2,"window_ms":start.elapsed().as_millis().min(60000),
-            "event_limit_reached":truncated,"max_events":8192},
-        "trace_limitations":"Events are an aggregate in a bounded window; no raw messages or causal service return is available."
+            "event_limit_reached":truncated,"max_events":8192,
+            "categorized_event_count":categorized_total,
+            "categorized_examples":categorized,
+            "examples_truncated":categorized_total>24},
+        "trace_limitations":"Fixed-category events contain NO raw OS logs, paths, IDs or messages. Time is client reception after start, not daemon generation or causal proof; counts can reflect unrelated device activity."
     }}))
 }
 
@@ -356,6 +423,31 @@ mod tests {
         assert!(!is_app_candidate("Payload/Test.app/../../private"));
         assert!(is_app_candidate("Payload/Test.app/Test"));
         assert!(!is_app_candidate("Library/Other.app/Test"));
+    }
+    #[test] fn os_trace_classification_discards_original_path_and_message(){
+        let private_msg="Sandbox: deny(1) file-read-data /private/var/mobile/Containers/Data/Application/SECRET/crumb-fairplay-123/Test.app/SC_Info/Test.sinf";
+        let event=classify_trace_event(
+            "/usr/libexec/fairplayd","/System/FairPlay.framework/FairPlay",
+            "com.apple.sandbox",private_msg).unwrap();
+        assert_eq!(event["actor"],"fairplayd");
+        assert_eq!(event["probe_path_mentioned"],true);
+        assert_eq!(event["sinf_mentioned"],true);
+        assert_eq!(event["permission_denial_mentioned"],true);
+        assert_eq!(event["policy"],true);
+        assert!(!event.to_string().contains("SECRET"));
+        assert!(!event.to_string().contains("Test.sinf"));
+        assert!(!event.to_string().contains("file-read-data"));
+        assert!(classify_trace_event("other","something","noise","unrelated event").is_none());
+    }
+    #[test] fn os_trace_exposes_only_static_process_role_and_topics(){
+        let event=classify_trace_event(
+            "/private/path/account-name","/System/Library/PrivateFrameworks/FairPlay",
+            "com.apple.private", "license missing for user@example.com").unwrap();
+        assert_eq!(event["actor"],"other");
+        assert_eq!(event["license_mentioned"],true);
+        assert_eq!(event["missing_file_mentioned"],false);
+        assert!(!event.to_string().contains("example.com"));
+        assert!(!event.to_string().contains("account-name"));
     }
     #[test] fn sidecar_staging_preserves_original_executable_identity_and_cleans_up(){
         use zip::{ZipWriter,write::SimpleFileOptions};
