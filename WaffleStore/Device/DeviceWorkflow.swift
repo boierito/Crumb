@@ -107,18 +107,20 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     private func deviceOperation(_ operation: String, extra: [String: Any] = [:]) {
         guard !busy else { return }
         guard Self.pairingSupported else { message = "This system version has not been enabled for the device connection."; return }
-        if route == "127.0.0.1" {
-            busy = true; phase = "discovering"; message = "Finding this iPhone's pairing service…"
-            routeDiscovery = ""
-            let finder = DevicePairingDiscovery(); discovery = finder
-            finder.start { [weak self, weak finder] result in
-                guard let self, let finder, self.discovery === finder else { return }
-                self.discovery = nil; self.busy = false; self.routeDiscovery = result.summary
-                var ports = result.port.map { [$0] } ?? []
-                if !ports.contains(49152) { ports.append(49152) }
-                self.performDeviceOperation(operation, extra: extra, ports: ports)
-            }
-        } else { performDeviceOperation(operation, extra: extra, ports: [49152]) }
+        // RemotePairing's listener is not guaranteed to use 49152. In particular,
+        // LocalDevVPN on iOS 27 can route to a Bonjour-advertised dynamic port.
+        // Discovery only supplies a port; the authenticated tunnel still uses
+        // the explicitly selected same-device address and validates its pairing.
+        busy = true; phase = "discovering"; message = "Finding this iPhone's pairing service…"
+        routeDiscovery = ""
+        let finder = DevicePairingDiscovery(); discovery = finder
+        finder.start { [weak self, weak finder] result in
+            guard let self, let finder, self.discovery === finder else { return }
+            self.discovery = nil; self.busy = false; self.routeDiscovery = result.summary
+            var ports = result.port.map { [$0] } ?? []
+            if !ports.contains(49152) { ports.append(49152) }
+            self.performDeviceOperation(operation, extra: extra, ports: ports)
+        }
     }
     private func performDeviceOperation(_ operation: String, extra: [String: Any], ports: [Int]) {
         guard !busy else { return }
