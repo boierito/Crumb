@@ -134,6 +134,25 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
             }
         }
     }
+    func runDirectFairPlayProbe(_ record: DownloadRecord) {
+        guard Self.decryptSupported, !busy else {
+            message = "Direct FairPlay probe is available only on iOS 27.0.1."
+            return
+        }
+        guard let ipa = record.fileURL else {
+            message = "This download has no local IPA."
+            return
+        }
+        diagnosticReport = ""
+        // This attempt is deliberately independent of the VPN when disconnected.
+        // Connected devices also collect bounded OS diagnostics during the syscall.
+        if connected {
+            deviceOperation("fairplay_probe", extra: ["ipa": ipa.path])
+        } else {
+            start(["operation":"direct_probe","ipa":ipa.path])
+        }
+    }
+
     func probeVPN() {
         guard connected, Self.pairingSupported, !busy else {
             message = "Check the authenticated device connection first."
@@ -337,7 +356,9 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
                    let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]),
                    let text = String(data: data, encoding: .utf8) {
                     diagnosticReport = text
-                    message = "No-helper VPN diagnostics completed. No IPA was processed."
+                    message = ["fairplay_probe", "direct_probe"].contains(request["operation"] as? String ?? "")
+                        ? "Direct no-helper FairPlay probe finished. No decrypted IPA was exported."
+                        : "No-helper VPN diagnostics completed. No IPA was processed."
                 } else {
                     diagnosticReport = ""
                     message = "Diagnostic returned an invalid report."
