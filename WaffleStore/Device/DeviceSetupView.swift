@@ -10,7 +10,7 @@ struct DeviceSetupView: View {
         Form {
             Section {
                 Text("Experimental device connection").font(.headline)
-                Text("Pair from Settings → Privacy & Security → Developer Mode. Wi-Fi and Local Network permission are required. Connect LocalDevVPN for subsequent device operations.")
+                Text("Pair from Settings → Privacy & Security → Developer Mode. Allow Local Network access. When only cellular data is available, use the no-Wi-Fi procedure below.")
                 Text("This build enables pairing on iOS 27.0–27.0.1 and the decryption experiment on iOS 27.0.1. Physical validation in Crumb is pending.").font(.caption).foregroundStyle(.secondary)
             }
             Section("Pair this device") {
@@ -28,8 +28,17 @@ struct DeviceSetupView: View {
                     if device.route == "127.0.0.1" {
                         Text("Direct access depends on iOS allowing this connection. If it fails, use LocalDevVPN.").font(.caption).foregroundStyle(.secondary)
                     }
-                    Text("The pairing port is discovered using Bonjour; 49152 is only a fallback. LocalDevVPN requires Wi-Fi joined to a network.")
+                    Text("Pairing port: Bonjour discovery, saved port, or manual override. 49152 is a fallback.")
                         .font(.caption).foregroundStyle(.secondary)
+                    Button("Discover and save RemotePairing port") { device.discoverPairingPort() }
+                        .disabled(device.busy)
+                    if let saved = device.lastPairingPort {
+                        Text("Last discovered: \(saved) (may change after reboot).")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    TextField("Manual pairing port (optional)", text: $device.manualPairingPort)
+                        .keyboardType(.numberPad)
+                        .disabled(device.busy)
                     if !device.routeDiscovery.isEmpty {
                         Text(device.routeDiscovery).font(.caption).foregroundStyle(.secondary)
                     }
@@ -39,6 +48,15 @@ struct DeviceSetupView: View {
                 } else { Text("On-device pairing is unavailable on this system version in this build.") }
             }
             if DeviceWorkflow.pairingSupported {
+                Section("No Wi-Fi? Use cellular data first") {
+                    Text("1. Leave Cellular Data ON and connect LocalDevVPN.")
+                    Text("2. With data still ON, tap Discover and save RemotePairing port above.")
+                    Text("3. Open Control Center. Turn Cellular Data OFF, but leave LocalDevVPN connected.")
+                    Text("4. Return to Crumb; tap Check authenticated connection, then Run VPN access diagnostics.")
+                    Text("5. Turn Cellular Data ON again after testing.")
+                    Text("iOS does not let Crumb switch cellular data directly. If the VPN disconnects, turn data on again before reconnecting it. This is an experimental workaround, not a guaranteed iOS permission bypass.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Section("No-helper VPN diagnostics") {
                     Text("Tests the existing authenticated LocalDevVPN connection, a harmless AFC canary in PublicStaging, Crumb's own Documents mapping, CoreDevice and a bounded passive OS trace sample. No IPA, SINF, helper or certificate is involved.")
                         .font(.caption).foregroundStyle(.secondary)
@@ -52,13 +70,15 @@ struct DeviceSetupView: View {
                 }
             }
             if DeviceWorkflow.decryptSupported {
-                Section("Helper signing") {
+                Section {
+                    DisclosureGroup("Legacy helper signing (not used for VPN diagnostics)") {
                     Text("Import a .p12 certificate and a matching provisioning profile that permits your chosen helper identifier and this device. The certificate password is requested when preparing a download. Files are stored in this device's Keychain.").font(.caption)
                     Text("Crumb Decrypt is a separate app. A profile limited to Crumb's own identifier cannot sign this helper.").font(.caption).foregroundStyle(.secondary)
                     TextField("Helper bundle identifier", text: $device.helperBundle).textInputAutocapitalization(.never).autocorrectionDisabled().disabled(device.busy)
                     Button(device.hasCertificate ? "Replace certificate (.p12)" : "Import certificate (.p12)") { importKind = "p12"; importing = true }.disabled(device.busy)
                     Button(device.hasProfile ? "Replace provisioning profile" : "Import provisioning profile") { importKind = "profile"; importing = true }.disabled(device.busy)
                     Button("Remove signing files", role: .destructive) { device.forgetSigning() }.disabled(device.busy)
+                    }
                 }
             }
             DeviceStatusSection()
