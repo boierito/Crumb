@@ -263,6 +263,7 @@ pub(super) async fn run(job: &Arc<Job>, v: &Value) -> anyhow::Result<Value> {
     drop(own);
     match v["operation"].as_str().unwrap_or("") {
         "verify" => Ok(json!({"phase":"connected"})),
+        "probe" => super::diagnostic::run(job, &mut adapter, &mut handshake, v, own_id).await,
         "install" => {
             let helper_id = v["helper_bundle"]
                 .as_str()
