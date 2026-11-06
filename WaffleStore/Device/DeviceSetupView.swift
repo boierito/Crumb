@@ -15,7 +15,7 @@ struct DeviceSetupView: View {
                     Image("CrumbMark").resizable().frame(width: 52, height: 52).clipShape(RoundedRectangle(cornerRadius: 12))
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Crumb Decrypter").font(.headline)
-                        Text(device.ready && device.connected ? "Ready" : "Set up once").font(.subheadline).foregroundStyle(.secondary)
+                        Text((device.ready && device.connected ? "Ready" : "Set up once").localized).font(.subheadline).foregroundStyle(.secondary)
                     }
                     Spacer()
                     if device.ready && device.connected { Image(systemName:"checkmark.circle.fill").foregroundStyle(.green) }
@@ -26,7 +26,7 @@ struct DeviceSetupView: View {
                     Label("LocalDevVPN", systemImage:"network")
                     Spacer()
                     if device.paired && device.busy && !device.signingReady { ProgressView() }
-                    Text(device.connected ? "Connected" : "Waiting").foregroundStyle(device.connected ? .green : .secondary)
+                    Text((device.connected ? "Connected" : "Waiting").localized).foregroundStyle(device.connected ? .green : .secondary)
                 }
                 HStack {
                     Label("Pairing", systemImage:"link")
@@ -34,7 +34,7 @@ struct DeviceSetupView: View {
                     if device.paired {
                         Image(systemName:"checkmark.circle.fill").foregroundStyle(.green)
                     } else if DeviceWorkflow.pairingSupported {
-                        Button(device.busy ? "Cancel" : "Pair") { if device.busy { device.cancel() } else { device.pair() } }
+                        Button((device.busy ? "Cancel" : "Pair").localized) { if device.busy { device.cancel() } else { device.pair() } }
                     } else {
                         Button("Import") { pick("pairing") }.disabled(device.busy || device.waitingForHelper)
                     }
@@ -96,7 +96,7 @@ struct DeviceSetupView: View {
             HStack(spacing:12) {
                 Image(systemName:present ? "checkmark.circle.fill" : "plus.circle").foregroundStyle(present ? .green : .accentColor)
                 VStack(alignment:.leading,spacing:2) {
-                    Text(title).foregroundStyle(.primary)
+                    Text(title.localized).foregroundStyle(.primary)
                     if !name.isEmpty { Text(name).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                 }
                 Spacer()

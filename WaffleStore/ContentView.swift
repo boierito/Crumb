@@ -21,7 +21,7 @@ struct ContentView: View {
             SettingsView(embedded: true)
                 .tabItem { Label("Settings".localized, systemImage: "gearshape") }.tag(AppTab.settings)
         }
-        .sheet(isPresented:$device.setupNeeded,onDismiss:{ device.continueQueued() }) {
+        .sheet(isPresented:$device.setupNeeded,onDismiss:{ if device.ready { device.continueQueued() } }) {
             NavigationStack { DeviceSetupView().toolbar { ToolbarItem(placement:.confirmationAction) { Button("Done") { device.setupNeeded = false } } } }
         }
         .alert("Could not finish", isPresented:Binding(get:{ !device.errorMessage.isEmpty },set:{ if !$0 { device.errorMessage = "" } })) {

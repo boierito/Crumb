@@ -52,7 +52,7 @@ struct DownloadedAppsView: View {
                             ProgressView()
                             VStack(alignment:.leading,spacing:4) {
                                 Text(record.appName).font(.headline)
-                                Text(device.activityTitle).font(.subheadline).foregroundStyle(.secondary)
+                                Text(device.activityTitle.localized).font(.subheadline).foregroundStyle(.secondary)
                             }
                             Spacer()
                             if device.busy { Button { device.cancel() } label: { Image(systemName:"xmark.circle.fill") }.buttonStyle(.borderless).accessibilityLabel("Cancel") }

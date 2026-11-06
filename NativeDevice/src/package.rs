@@ -84,7 +84,11 @@ pub(super) fn validate_helper_id(bundle: &str, own: &str) -> Result<()> {
     );
     Ok(())
 }
-pub(super) fn helper_application_id(profile: &plist::Dictionary, bundle: &str, own: &str) -> Result<String> {
+pub(super) fn helper_application_id(
+    profile: &plist::Dictionary,
+    bundle: &str,
+    own: &str,
+) -> Result<String> {
     validate_helper_id(bundle, own)?;
     let appid = profile
         .get("Entitlements")
@@ -300,8 +304,10 @@ pub fn prepare(v: &Value) -> Result<String> {
             "Invalid payload"
         );
         let app_info = plist(&source.join("Info.plist"))?;
-        ensure!(strval(&app_info,"CFBundleIdentifier")? != bundle,
-            "The helper needs its own profile or a wildcard profile; it cannot use the target app identifier");
+        ensure!(
+            strval(&app_info, "CFBundleIdentifier")? != bundle,
+            "The helper needs its own profile or a wildcard profile; it cannot use the target app identifier"
+        );
         let template = Path::new(input(v, "template")?);
         let helper = work.join("CrumbDecrypt.app");
         copy_tree(template, &helper)?;
@@ -428,21 +434,30 @@ fn payload_inventory(target: &Path) -> Result<Value> {
     for entry in walkdir::WalkDir::new(target).min_depth(1) {
         let entry = entry?;
         ensure!(!entry.file_type().is_symlink(), "Payload contains a link");
-        let relative = entry.path().strip_prefix(target)?.to_str().context("Invalid payload path")?.to_owned();
+        let relative = entry
+            .path()
+            .strip_prefix(target)?
+            .to_str()
+            .context("Invalid payload path")?
+            .to_owned();
         if entry.file_type().is_dir() {
             inventory.insert(relative, json!({"directory":true}));
         } else {
             let mut file = fs::File::open(entry.path())?;
             let size = entry.metadata()?.len();
             let mut header = Vec::new();
-            (&mut file).take(16 * 1024 * 1024 + 32).read_to_end(&mut header)?;
+            (&mut file)
+                .take(16 * 1024 * 1024 + 32)
+                .read_to_end(&mut header)?;
             let encrypted = !encrypted_ranges_header(&header, size as usize)?.is_empty();
             let mut digest = Sha256::new();
             digest.update(&header);
             let mut buffer = vec![0; 1024 * 1024];
             loop {
                 let n = file.read(&mut buffer)?;
-                if n == 0 { break; }
+                if n == 0 {
+                    break;
+                }
                 digest.update(&buffer[..n]);
             }
             inventory.insert(relative, json!({"size":size,"encrypted":encrypted,"sha256":format!("{:x}",digest.finalize())}));
@@ -672,9 +687,14 @@ mod tests {
         let inventory = payload_inventory(&root).unwrap();
         assert_eq!(inventory["PlugIns/Widget.appex/Empty"]["directory"], true);
         assert_eq!(inventory["Info.plist"]["size"], 8);
-        assert_eq!(inventory["PlugIns/Widget.appex/resource"]["sha256"],
-            format!("{:x}", Sha256::digest(&bytes)));
-        assert_eq!(inventory["PlugIns/Widget.appex/resource"]["encrypted"], false);
+        assert_eq!(
+            inventory["PlugIns/Widget.appex/resource"]["sha256"],
+            format!("{:x}", Sha256::digest(&bytes))
+        );
+        assert_eq!(
+            inventory["PlugIns/Widget.appex/resource"]["encrypted"],
+            false
+        );
         fs::remove_dir_all(root).unwrap();
     }
     fn result_zip(bytes: &[u8], hash_override: Option<&str>) -> (PathBuf, Value) {

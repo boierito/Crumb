@@ -38,9 +38,7 @@ enum FavouritesStore {
                 .sorted { $0.dateAdded > $1.dateAdded }
         } catch {
             #if DEBUG
-            #if DEBUG
             print("Failed to load favourites: \(error)")
-            #endif
             #endif
             return []
         }
@@ -73,9 +71,7 @@ enum FavouritesStore {
             UserDefaults.standard.set(data, forKey: storageKey)
         } catch {
             #if DEBUG
-            #if DEBUG
             print("Failed to save favourites: \(error)")
-            #endif
             #endif
         }
     }

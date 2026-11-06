@@ -100,6 +100,10 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
             }
         }
         network.start(queue: DispatchQueue(label: "Crumb.network"))
+        if let path = pending?["output"], activeRecord == nil {
+            if FileManager.default.fileExists(atPath:path) { start(["operation":"inspect-result","ipa":path]) }
+            else { pending = nil; helperInstalled = false; waitingForHelper = false; try? DeviceKeychain.remove("pending") }
+        }
     }
     func importFile(_ url: URL, kind: String) {
         guard !busy else { return }
@@ -175,14 +179,14 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         catch { cleanup(); errorMessage = error.localizedDescription }
     }
     func decrypt(_ record: DownloadRecord, install: Bool = false) {
-        guard !busy, !waitingForHelper else { errorMessage = "Finish the current app first."; return }
+        guard (!busy || lastRequest["operation"] as? String == "verify"), !waitingForHelper else { errorMessage = "Finish the current app first."; return }
         guard Self.decryptSupported else { errorMessage = "Decryption is supported on iOS 27.0.1. Pairing on other versions does not enable this method."; return }
         queuedRecord = record; installAfterDecrypt = install
         continueQueued()
     }
     func continueQueued() {
         if ready && connected { setupNeeded = false }
-        if ready && !busy, let record = queuedInstall {
+        if signingReady && !busy, let record = queuedInstall {
             queuedInstall = nil; setupNeeded = false; install(record); return
         }
         guard let record = queuedRecord, !busy else { return }
@@ -224,7 +228,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         } catch { errorMessage = error.localizedDescription }
     }
     func prepare(_ record: DownloadRecord, password: String) {
-        guard !busy, connected, Self.decryptSupported else { message = "Connect on iOS 27.0.1 before preparing a helper."; return }
+        guard !busy, connected, Self.decryptSupported else { activeRecord = nil; errorMessage = "Connect the decrypter on iOS 27.0.1 first."; return }
         do {
             guard let ipa = record.fileURL, let template = Bundle.main.url(forResource: "CrumbDecryptTemplate", withExtension: "zip"),
                   let cert = try DeviceKeychain.read("p12"), let profile = try DeviceKeychain.read("profile") else { throw DeviceOperationError.message("Import a signing certificate and provisioning profile first.") }
@@ -331,7 +335,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
             pin = value["pin"] as? String
             return
         }
-        guard ["pairing-imported", "signing-ready", "signed", "paired", "connected", "prepared", "installed", "complete", "failed", "cancelled"].contains(phase) else { return }
+        guard ["legacy-result", "pairing-imported", "signing-ready", "signed", "paired", "connected", "prepared", "installed", "complete", "failed", "cancelled"].contains(phase) else { return }
         let request = lastRequest
         if let job { crumb_device_free(job); self.job = nil }
         busy = false; stopAdvertising(); endBackground(); pin = nil; lastRequest = [:]
@@ -372,7 +376,11 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
                 if let pending { try DeviceKeychain.write(JSONSerialization.data(withJSONObject: pending), account: "pending") }
                 cleanup(); message = "Helper installed. Keep Crumb Decrypt on screen until it finishes."
                 openHelper()
-            case "complete":
+            case "legacy-result", "complete":
+                if phase == "legacy-result", let bundle = value["bundle_id"] as? String {
+                    let original = DownloadRecord.load().first { $0.bundleID == bundle && $0.version == (value["version"] as? String) }
+                    activeRecord = original ?? DownloadRecord(filename:"legacy.ipa",appID:"",appName:bundle,bundleID:bundle,version:value["version"] as? String ?? "",build:value["build"] as? String,externalVersionID:"",date:Date())
+                }
                 guard let path = value["path"] as? String else { throw DeviceOperationError.message("Missing verified result.") }
                 guard let source = activeRecord else { throw DeviceOperationError.message("Missing download record.") }
                 let name = UUID().uuidString + "-decrypted.ipa"
@@ -394,6 +402,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
                 if ["verify","install","fetch"].contains(operation) { connected = false }
                 message = (value["message"] as? String) ?? "Could not finish."
                 if operation != "verify" { errorMessage = message }
+                if operation == "verify", queuedRecord != nil { setupNeeded = true }
                 if operation == "signing-info" { signingReady = false }
                 if operation != "fetch" { activeRecord = nil }
                 if operation == "sign" || operation == "signing-info" { cleanup() }

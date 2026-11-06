@@ -42,3 +42,55 @@
 
 /* Community & Translation */
 "Translation Thank You" = "¡Gracias a la comunidad de WaffleStore por ayudarnos a traducir!";
+
+/* Crumb decrypter */
+"Decrypter" = "Desencriptador";
+"Crumb Decrypter" = "Desencriptador de Crumb";
+"Ready" = "Listo";
+"Set up once" = "Configuración inicial";
+"Connection" = "Conexión";
+"Connected" = "Conectado";
+"Waiting" = "Esperando";
+"Pairing" = "Emparejamiento";
+"Pair" = "Emparejar";
+"Import" = "Importar";
+"Change pairing" = "Cambiar emparejamiento";
+"Pair again" = "Volver a emparejar";
+"Import pairing file" = "Importar archivo de emparejamiento";
+"Remove pairing" = "Eliminar emparejamiento";
+"Connect to Wi-Fi to pair this iPhone." = "Conéctate a una red Wi-Fi para emparejar este iPhone.";
+"Settings → Privacy & Security → Developer Mode → Crumb" = "Ajustes → Privacidad y seguridad → Modo de desarrollador → Crumb";
+"Signing" = "Firma";
+"Certificate" = "Certificado";
+"Provisioning profile" = "Perfil de aprovisionamiento";
+"Password saved" = "Contraseña guardada";
+"Change" = "Cambiar";
+"Certificate password" = "Contraseña del certificado";
+"Save signing" = "Guardar firma";
+"Encrypted" = "Encriptadas";
+"Decrypted" = "Desencriptadas";
+"No encrypted apps" = "No hay apps encriptadas";
+"No decrypted apps" = "No hay apps desencriptadas";
+"Downloads" = "Descargas";
+"Install" = "Instalar";
+"Export" = "Exportar";
+"Decrypt" = "Desencriptar";
+"Decrypt and install" = "Desencriptar e instalar";
+"Download encrypted" = "Descargar encriptada";
+"Download encrypted and install" = "Descargar encriptada e instalar";
+"Download decrypted" = "Descargar desencriptada";
+"Download decrypted and install" = "Descargar desencriptada e instalar";
+"Decrypter settings" = "Configuración del desencriptador";
+"Preparing decrypter" = "Preparando desencriptador";
+"Installing decrypter" = "Instalando desencriptador";
+"Decrypting" = "Desencriptando";
+"Saving app" = "Guardando app";
+"Signing app" = "Firmando app";
+"Connecting" = "Conectando";
+"Open decrypter" = "Abrir desencriptador";
+"Save result" = "Guardar resultado";
+"Choose version" = "Elegir versión";
+"Selected version" = "Versión seleccionada";
+"Delete" = "Eliminar";
+"Could not finish" = "No se pudo completar";
+"Decrypt app" = "Desencriptar app";

@@ -91,7 +91,7 @@ extension AppData {
                 storeStage("IPA verified and saved. Ready to install or export.")
                 if decryptWhenReady { DeviceWorkflow.shared.decrypt(record,install:installWhenReady) }
                 else if installWhenReady { installationRequest = record }
-                else { downloadReady = record }
+                else { downloadReady = nil }
 
                 downgradeProgress = 1; applicationIcon = "checkmark.circle.fill"
             } catch {
@@ -109,9 +109,7 @@ extension AppData {
         applicationStatus = stage; downgradeProgressDetail = stage
 
         #if DEBUG
-        #if DEBUG
         print("Apple Store stage: \(stage)")
-        #endif
         #endif
     }
     func deleteDownload(_ record: DownloadRecord) throws {

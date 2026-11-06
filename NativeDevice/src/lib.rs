@@ -1,6 +1,6 @@
 mod package;
-mod transport;
 mod signing;
+mod transport;
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use idevice::remote_pairing::{PairableHost, PairableHostInfo, RpPairingFile, RpPairingSocket};
 use serde_json::{Value, json};
@@ -99,20 +99,72 @@ async fn pair(job: &Arc<Job>, v: &Value) -> anyhow::Result<Value> {
 async fn run(job: &Arc<Job>, v: Value) -> anyhow::Result<Value> {
     match v["operation"].as_str().unwrap_or("") {
         "pair" => pair(job, &v).await,
+        "inspect-result" => {
+            let path = v["ipa"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing result"))?;
+            let mut zip = zip::ZipArchive::new(std::fs::File::open(path)?)?;
+            anyhow::ensure!(zip.len() <= 100000, "Invalid IPA");
+            let names = zip
+                .file_names()
+                .filter(|n| {
+                    n.starts_with("Payload/")
+                        && n.ends_with(".app/Info.plist")
+                        && n.split('/').count() == 3
+                })
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+            anyhow::ensure!(names.len() == 1, "Invalid result app");
+            let mut entry = zip.by_name(&names[0])?;
+            anyhow::ensure!(entry.size() <= 1024 * 1024, "App metadata too large");
+            use std::io::Read;
+            let mut bytes = Vec::new();
+            entry.read_to_end(&mut bytes)?;
+            let info = plist::Value::from_reader(std::io::Cursor::new(bytes))?
+                .into_dictionary()
+                .ok_or_else(|| anyhow::anyhow!("Invalid metadata"))?;
+            let text = |key: &str| {
+                info.get(key)
+                    .and_then(|x| x.as_string())
+                    .unwrap_or("")
+                    .to_string()
+            };
+            let id = text("CFBundleIdentifier");
+            anyhow::ensure!(!id.is_empty(), "Missing app identity");
+            Ok(
+                json!({"phase":"legacy-result","path":path,"bundle_id":id,"version":text("CFBundleShortVersionString"),"build":text("CFBundleVersion")}),
+            )
+        }
+
         "signing-info" | "sign" => {
             job.update(json!({"phase":"signing"}));
             let job = job.clone();
             tokio::task::spawn_blocking(move || {
-                if v["operation"] == "sign" { signing::sign(&v, &job) } else { signing::inspect(&v) }
-            }).await?
+                if v["operation"] == "sign" {
+                    signing::sign(&v, &job)
+                } else {
+                    signing::inspect(&v)
+                }
+            })
+            .await?
         }
         "import-pairing" => {
-            let raw = B64.decode(v["record"].as_str().ok_or_else(|| anyhow::anyhow!("Missing pairing file"))?)?;
+            let raw = B64.decode(
+                v["record"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("Missing pairing file"))?,
+            )?;
             anyhow::ensure!(raw.len() <= 65536, "Pairing file too large");
-            let kind = if idevice::pairing_file::PairingFile::from_bytes(&raw).is_ok() { "lockdown" }
-                else { RpPairingFile::from_bytes(&raw).map_err(|_| anyhow::anyhow!("Import a valid pairing file from your computer"))?; "remote" };
+            let kind = if idevice::pairing_file::PairingFile::from_bytes(&raw).is_ok() {
+                "lockdown"
+            } else {
+                RpPairingFile::from_bytes(&raw).map_err(|_| {
+                    anyhow::anyhow!("Import a valid pairing file from your computer")
+                })?;
+                "remote"
+            };
             Ok(json!({"phase":"pairing-imported","record":B64.encode(raw),"pairing_kind":kind}))
-        },
+        }
         "verify" | "install" | "fetch" => transport::run(job, &v).await,
         "prepare" => {
             job.update(json!({"phase":"preparing"}));
@@ -151,8 +203,13 @@ pub unsafe extern "C" fn crumb_device_start(ptr: *const c_char) -> *mut Arc<Job>
                 .enable_all()
                 .build()?;
             rt.block_on(async {
-                if worker.cancelled.load(Ordering::SeqCst) { anyhow::bail!("Cancelled"); }
-                let blocking = matches!(v["operation"].as_str(),Some("prepare" | "sign" | "signing-info"));
+                if worker.cancelled.load(Ordering::SeqCst) {
+                    anyhow::bail!("Cancelled");
+                }
+                let blocking = matches!(
+                    v["operation"].as_str(),
+                    Some("prepare" | "sign" | "signing-info")
+                );
                 let operation = run(&worker, v);
                 tokio::pin!(operation);
                 tokio::select! {

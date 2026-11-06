@@ -35,9 +35,7 @@ struct CrumbApp: App {
                     if let appLink = rawURL.removingPercentEncoding {
                         appData.openAppSelection(appLink)
                         #if DEBUG
-                        #if DEBUG
                         print("Successfully received app link! \(appLink)")
-                        #endif
                         #endif
                     }
                 }

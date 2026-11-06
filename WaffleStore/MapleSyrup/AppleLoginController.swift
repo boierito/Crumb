@@ -68,9 +68,7 @@ extension AppData {
                 authenticationError = authenticationMessage(error)
                 applicationStatus = "Sign-in failed."
                 #if DEBUG
-                #if DEBUG
                 print("Apple sign-in failed (code \((error as NSError).code)).")
-                #endif
                 #endif
             }
             if let preparation {
@@ -185,9 +183,7 @@ extension AppData {
         case .twoFactor: applicationStatus = "Enter your verification code."
         }
         #if DEBUG
-        #if DEBUG
         print("Apple authentication stage: \(stage.rawValue)")
-        #endif
         #endif
     }
     private func applyStoreAccount(_ account: StoreAccount, restored: Bool) {
@@ -199,9 +195,7 @@ extension AppData {
         applicationIcon = "checkmark.circle.fill"
         applicationIconColor = .primary
         #if DEBUG
-        #if DEBUG
         print("Apple authentication: \(restored ? "saved session loaded" : "DSID/token/storefront received and saved in Keychain") [values withheld]")
-        #endif
         #endif
     }
 

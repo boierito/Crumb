@@ -229,36 +229,54 @@ enum Connection {
     Legacy(idevice::provider::TcpProvider),
 }
 impl Connection {
-    async fn new(v:&Value)->anyhow::Result<Self> {
+    async fn new(v: &Value) -> anyhow::Result<Self> {
         if v["pairing_kind"] == "lockdown" {
-            let bytes=B64.decode(v["record"].as_str().ok_or_else(||anyhow::anyhow!("Import pairing file"))?)?;
-            anyhow::ensure!(bytes.len() <= 65536,"Pairing file too large");
-            let pairing_file=idevice::pairing_file::PairingFile::from_bytes(&bytes)?;
+            let bytes = B64.decode(
+                v["record"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("Import pairing file"))?,
+            )?;
+            anyhow::ensure!(bytes.len() <= 65536, "Pairing file too large");
+            let pairing_file = idevice::pairing_file::PairingFile::from_bytes(&bytes)?;
             Ok(Self::Legacy(idevice::provider::TcpProvider {
-                addr: "10.7.0.1".parse()?, scope_id:None, pairing_file, label:"Crumb".into()
+                addr: "10.7.0.1".parse()?,
+                scope_id: None,
+                pairing_file,
+                label: "Crumb".into(),
             }))
-        } else { let (a,h)=tunnel(v).await?; Ok(Self::Remote(a,h)) }
+        } else {
+            let (a, h) = tunnel(v).await?;
+            Ok(Self::Remote(a, h))
+        }
     }
-    async fn installation(&mut self)->Result<InstallationProxyClient,idevice::IdeviceError> {
+    async fn installation(&mut self) -> Result<InstallationProxyClient, idevice::IdeviceError> {
         use idevice::IdeviceService;
-        match self { Self::Remote(a,h)=>InstallationProxyClient::connect_rsd(a,h).await,
-            Self::Legacy(p)=>InstallationProxyClient::connect(p).await }
+        match self {
+            Self::Remote(a, h) => InstallationProxyClient::connect_rsd(a, h).await,
+            Self::Legacy(p) => InstallationProxyClient::connect(p).await,
+        }
     }
-    async fn documents(&mut self)->Result<HouseArrestClient,idevice::IdeviceError> {
+    async fn documents(&mut self) -> Result<HouseArrestClient, idevice::IdeviceError> {
         use idevice::IdeviceService;
-        match self { Self::Remote(a,h)=>HouseArrestClient::connect_rsd(a,h).await,
-            Self::Legacy(p)=>HouseArrestClient::connect(p).await }
+        match self {
+            Self::Remote(a, h) => HouseArrestClient::connect_rsd(a, h).await,
+            Self::Legacy(p) => HouseArrestClient::connect(p).await,
+        }
     }
-    async fn afc(&mut self)->Result<AfcClient,idevice::IdeviceError> {
+    async fn afc(&mut self) -> Result<AfcClient, idevice::IdeviceError> {
         use idevice::IdeviceService;
-        match self { Self::Remote(a,h)=>AfcClient::connect_rsd(a,h).await,
-            Self::Legacy(p)=>AfcClient::connect(p).await }
+        match self {
+            Self::Remote(a, h) => AfcClient::connect_rsd(a, h).await,
+            Self::Legacy(p) => AfcClient::connect(p).await,
+        }
     }
 }
 pub(super) async fn run(job: &Arc<Job>, v: &Value) -> anyhow::Result<Value> {
     job.update(json!({"phase":"connecting"}));
-    let mut connection = tokio::time::timeout(Duration::from_secs(30),Connection::new(v)).await??;
-    let mut proxy = connection.installation()
+    let mut connection =
+        tokio::time::timeout(Duration::from_secs(30), Connection::new(v)).await??;
+    let mut proxy = connection
+        .installation()
         .await
         .map_err(|e| device_error("Installation service", e))?;
     let apps = proxy
@@ -279,7 +297,8 @@ pub(super) async fn run(job: &Arc<Job>, v: &Value) -> anyhow::Result<Value> {
     let proof = v["proof"]
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("Missing local installation proof"))?;
-    let own = connection.documents()
+    let own = connection
+        .documents()
         .await
         .map_err(|e| device_error("Container service", e))?;
     let mut own = own
