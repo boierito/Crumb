@@ -30,6 +30,9 @@ fn profile_fixture(root: &Path, name: &str, pattern: &str) -> PathBuf {
     );
     let mut p = plist::Dictionary::new();
     p.insert("Name".into(), name.into());
+    if name == "enterprise" {
+        p.insert("ProvisionsAllDevices".into(), true.into());
+    }
     p.insert("Entitlements".into(), grants.into());
     p.insert(
         "TeamIdentifier".into(),
@@ -215,6 +218,47 @@ fn signs_main_and_extension_with_real_cms_without_mutating_source_or_losing_sett
         .unwrap();
     z.finish().unwrap();
     let source_bytes = fs::read(&source).unwrap();
+    let enterprise_profile = profile_fixture(&root, "enterprise", "com.certlium.crumb.decrypt");
+    let mut enterprise = request(&root, &source, &enterprise_profile, "enterprise-work");
+    let enterprise_plan = preview(&enterprise, &job()).unwrap();
+    assert_eq!(enterprise_plan["bundle_id"], "us.humanzoo.pinlist");
+    assert_eq!(enterprise_plan["bundle_count"], 2);
+    enterprise["prepared"] = json!(true);
+    sign(&enterprise, &job()).unwrap();
+    let mut z =
+        zip::ZipArchive::new(fs::File::open(enterprise["output"].as_str().unwrap()).unwrap())
+            .unwrap();
+    for (path, id) in [
+        ("Payload/Pinlist.app", "us.humanzoo.pinlist"),
+        (
+            "Payload/Pinlist.app/PlugIns/Widget.appex",
+            "us.humanzoo.pinlist.Widget",
+        ),
+    ] {
+        let mut bytes = Vec::new();
+        z.by_name(&format!("{path}/Info.plist"))
+            .unwrap()
+            .read_to_end(&mut bytes)
+            .unwrap();
+        assert_eq!(
+            plist::Value::from_reader(std::io::Cursor::new(bytes))
+                .unwrap()
+                .as_dictionary()
+                .unwrap()["CFBundleIdentifier"]
+                .as_string(),
+            Some(id)
+        );
+        let mut bytes = Vec::new();
+        z.by_name(&format!("{path}/Program"))
+            .unwrap()
+            .read_to_end(&mut bytes)
+            .unwrap();
+        assert_eq!(
+            signing::entitlements(&bytes).unwrap()["application-identifier"].as_string(),
+            Some("PREFIX.com.certlium.crumb.decrypt")
+        );
+    }
+    drop(z);
     let bad = request(&root, &source, &main_profile, "missing-extension");
     assert!(
         preview(&bad, &job())

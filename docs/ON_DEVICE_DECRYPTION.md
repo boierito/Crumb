@@ -4,7 +4,13 @@ App installation has its own identity/profile/password store, initially seeded
 from existing settings once. Editing it does not alter helper provisioning.
 Main and extension profiles must match the selected certificate and signing team.
 
-Wildcard profiles preserve the source identifier when allowed. Scoped wildcard
+Enterprise (`ProvisionsAllDevices`) profiles support profile-derived signing
+identity while retaining original app and extension bundle IDs, following the
+zsign entitlement-template pattern. This does not rewrite the profile or grant
+permissions outside it; final acceptance is still decided by iOS.
+
+For development/ad hoc profiles, wildcard profiles preserve the source identifier
+when allowed. Scoped wildcard
 profiles derive a stable permitted identifier; explicit profiles select their
 permitted identifier. A custom per-install ID is available in Signing options.
 Crumb and its helper cannot be overwritten. Nested extension IDs and Watch

@@ -31,8 +31,8 @@ struct InstallationSigningView: View {
         Form {
             Section("Signing identity") {
                 if device.installationReady && !editing {
-                    Label(device.installationCertificateName, systemImage:"checkmark.seal.fill").lineLimit(1)
-                    Label(device.installationProfileName, systemImage:"doc.badge.gearshape").lineLimit(1)
+                    Label(device.installationCertificateName.isEmpty ? "Certificate".localized : device.installationCertificateName, systemImage:"checkmark.seal.fill").lineLimit(1)
+                    Label(device.installationProfileName.isEmpty ? "Provisioning profile".localized : device.installationProfileName, systemImage:"doc.badge.gearshape").lineLimit(1)
                     HStack { Label("Password saved",systemImage:"lock.fill"); Spacer(); Button("Change") { editing = true } }
                 } else {
                     fileRow("Certificate",name:device.installationCertificateName,kind:"install-p12")

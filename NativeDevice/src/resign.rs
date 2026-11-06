@@ -132,12 +132,25 @@ fn compatible_entitlements(
     new_main: &str,
     bundle: &str,
 ) -> Result<(plist::Dictionary, Vec<String>)> {
+    compatible_with_identity(original, grants, team, old_main, new_main, bundle, None)
+}
+fn compatible_with_identity(
+    original: plist::Dictionary,
+    grants: &plist::Dictionary,
+    team: &str,
+    old_main: &str,
+    new_main: &str,
+    bundle: &str,
+    profile_identity: Option<&str>,
+) -> Result<(plist::Dictionary, Vec<String>)> {
     let (prefix, _) = pattern(grants)?;
     ensure!(
-        permits_id(grants, bundle),
+        profile_identity.is_some() || permits_id(grants, bundle),
         "No profile authorizes extension {bundle}. Import a matching extension profile."
     );
-    let appid = format!("{prefix}.{bundle}");
+    let appid = profile_identity
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("{prefix}.{bundle}"));
     let mut result = plist::Dictionary::new();
     let mut changed = BTreeSet::new();
     for (key, mut value) in original {
@@ -279,12 +292,35 @@ fn build_plan(work: &Path, v: &Value, ctx: &ContextData) -> Result<Plan> {
             protected.push(value.as_str().context("Invalid protected app identity")?);
         }
     }
-    let id = select_main(
-        ctx.profiles[0].parsed.entitlements(),
-        &original,
-        v["bundle_id"].as_str(),
-        &protected,
-    )?;
+    // zsign derives signing entitlements from the profile. Enterprise profiles
+    // may use that identity while retaining each app/extension CFBundleIdentifier.
+    // Device-bound profiles continue to use their explicit/wildcard app scope.
+    let enterprise = ctx.profiles[0]
+        .parsed
+        .plist()
+        .get("ProvisionsAllDevices")
+        .and_then(|v| v.as_boolean())
+        == Some(true);
+    let id = if enterprise {
+        let id = v["bundle_id"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(&original)
+            .to_owned();
+        ensure!(valid_id(&id), "Enter a valid application identifier");
+        ensure!(
+            !protected.iter().any(|p| id.eq_ignore_ascii_case(p)),
+            "Cannot replace Crumb or its helper"
+        );
+        id
+    } else {
+        select_main(
+            ctx.profiles[0].parsed.entitlements(),
+            &original,
+            v["bundle_id"].as_str(),
+            &protected,
+        )?
+    };
     let mut bundles = Vec::new();
     let mut ids = BTreeSet::new();
     let mut changes = BTreeSet::new();
@@ -324,17 +360,28 @@ fn build_plan(work: &Path, v: &Value, ctx: &ContextData) -> Result<Plan> {
             ctx.profiles
                 .iter()
                 .enumerate()
-                .filter(|(_, p)| permits_id(p.parsed.entitlements(), &target))
+                .filter(|(_, p)| {
+                    permits_id(p.parsed.entitlements(), &target)
+                        || p.parsed
+                            .plist()
+                            .get("ProvisionsAllDevices")
+                            .and_then(|v| v.as_boolean())
+                            == Some(true)
+                })
                 .max_by_key(|(_, p)| {
-                    pattern(p.parsed.entitlements())
-                        .map(|(_, p)| {
-                            if p.ends_with('*') {
-                                p.len()
-                            } else {
-                                usize::MAX
-                            }
-                        })
-                        .unwrap_or(0)
+                    if !permits_id(p.parsed.entitlements(), &target) {
+                        0
+                    } else {
+                        pattern(p.parsed.entitlements())
+                            .map(|(_, p)| {
+                                if p.ends_with('*') {
+                                    p.len() + 1
+                                } else {
+                                    usize::MAX
+                                }
+                            })
+                            .unwrap_or(0)
+                    }
                 })
                 .map(|(i, _)| i)
                 .with_context(|| {
@@ -356,13 +403,29 @@ fn build_plan(work: &Path, v: &Value, ctx: &ContextData) -> Result<Plan> {
         let ent = signing::entitlements(&bytes)?;
         let old_keychain = string_values(&ent, "keychain-access-groups");
         let old_groups = string_values(&ent, "com.apple.security.application-groups");
-        let (entitlements, removed) = compatible_entitlements(
+        let chosen = &ctx.profiles[profile].parsed;
+        let profile_identity = if !permits_id(chosen.entitlements(), &target)
+            && chosen
+                .plist()
+                .get("ProvisionsAllDevices")
+                .and_then(|v| v.as_boolean())
+                == Some(true)
+        {
+            chosen
+                .entitlements()
+                .get("application-identifier")
+                .and_then(|v| v.as_string())
+        } else {
+            None
+        };
+        let (entitlements, removed) = compatible_with_identity(
             ent,
             ctx.profiles[profile].parsed.entitlements(),
             ctx.profiles[profile].parsed.team_id(),
             &original,
             &id,
             &target,
+            profile_identity,
         )?;
         changes.extend(removed);
         bundles.push(BundlePlan {
