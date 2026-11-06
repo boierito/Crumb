@@ -9,3 +9,7 @@ __pycache__/
 
 NativeDevice/target/
 NativeDevice/vendor/apple-codesign-quick/target/
+
+# Local Xcode UI state is not part of the shared project.
+xcuserdata/
+*.xcuserstate

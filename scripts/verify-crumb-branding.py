@@ -11,8 +11,11 @@ notices = {'CREDITS.md','THIRD_PARTY_NOTICES.md','Crumb/Resources/ThirdPartyNoti
 for name in filter(None, paths):
     assert old not in name.lower(), f'Obsolete project path: {name}'
     if name in notices: continue
-    try: text = (root/name).read_text()
-    except UnicodeError: continue
+    data = (root/name).read_bytes()
+    try: text = data.decode('utf-8')
+    except UnicodeError:
+        assert old.encode() not in data.lower(), f'Obsolete product metadata: {name}'
+        continue
     if name == 'README.md': text = text.split('## Origins and credits')[0]
     if name == 'index.html':
         start = text.index('<section id="credits">')
