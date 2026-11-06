@@ -14,7 +14,7 @@ const MAX_LICENSE_TOTAL: u64 = 16 * 1024 * 1024;
 fn input<'a>(v: &'a Value, key: &str) -> Result<&'a str> {
     v[key].as_str().with_context(|| format!("Missing {key}"))
 }
-fn extract(ipa: &Path, dest: &Path) -> Result<()> {
+pub(super) fn extract(ipa: &Path, dest: &Path) -> Result<()> {
     let mut z = ZipArchive::new(fs::File::open(ipa)?)?;
     ensure!(z.len() <= 100000, "Too many archive entries");
     let mut total = 0u64;
@@ -84,7 +84,7 @@ pub(super) fn validate_helper_id(bundle: &str, own: &str) -> Result<()> {
     );
     Ok(())
 }
-fn helper_application_id(profile: &plist::Dictionary, bundle: &str, own: &str) -> Result<String> {
+pub(super) fn helper_application_id(profile: &plist::Dictionary, bundle: &str, own: &str) -> Result<String> {
     validate_helper_id(bundle, own)?;
     let appid = profile
         .get("Entitlements")
@@ -300,6 +300,8 @@ pub fn prepare(v: &Value) -> Result<String> {
             "Invalid payload"
         );
         let app_info = plist(&source.join("Info.plist"))?;
+        ensure!(strval(&app_info,"CFBundleIdentifier")? != bundle,
+            "The helper needs its own profile or a wildcard profile; it cannot use the target app identifier");
         let template = Path::new(input(v, "template")?);
         let helper = work.join("CrumbDecrypt.app");
         copy_tree(template, &helper)?;

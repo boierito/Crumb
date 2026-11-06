@@ -46,7 +46,7 @@ struct SettingsView: View {
                     }
                 }
                 
-                Section { NavigationLink("Device connection") { DeviceSetupView() } }
+                Section { NavigationLink("Decrypter") { DeviceSetupView() } }
 
                 Section(header: HeaderLabel(text: "Language".localized, icon: "globe"), footer:
                     Button(action: {

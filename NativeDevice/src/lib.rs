@@ -1,5 +1,6 @@
 mod package;
 mod transport;
+mod signing;
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use idevice::remote_pairing::{PairableHost, PairableHostInfo, RpPairingFile, RpPairingSocket};
 use serde_json::{Value, json};
@@ -98,6 +99,20 @@ async fn pair(job: &Arc<Job>, v: &Value) -> anyhow::Result<Value> {
 async fn run(job: &Arc<Job>, v: Value) -> anyhow::Result<Value> {
     match v["operation"].as_str().unwrap_or("") {
         "pair" => pair(job, &v).await,
+        "signing-info" | "sign" => {
+            job.update(json!({"phase":"signing"}));
+            let job = job.clone();
+            tokio::task::spawn_blocking(move || {
+                if v["operation"] == "sign" { signing::sign(&v, &job) } else { signing::inspect(&v) }
+            }).await?
+        }
+        "import-pairing" => {
+            let raw = B64.decode(v["record"].as_str().ok_or_else(|| anyhow::anyhow!("Missing pairing file"))?)?;
+            anyhow::ensure!(raw.len() <= 65536, "Pairing file too large");
+            let kind = if idevice::pairing_file::PairingFile::from_bytes(&raw).is_ok() { "lockdown" }
+                else { RpPairingFile::from_bytes(&raw).map_err(|_| anyhow::anyhow!("Import a valid pairing file from your computer"))?; "remote" };
+            Ok(json!({"phase":"pairing-imported","record":B64.encode(raw),"pairing_kind":kind}))
+        },
         "verify" | "install" | "fetch" => transport::run(job, &v).await,
         "prepare" => {
             job.update(json!({"phase":"preparing"}));
@@ -137,9 +152,21 @@ pub unsafe extern "C" fn crumb_device_start(ptr: *const c_char) -> *mut Arc<Job>
                 .build()?;
             rt.block_on(async {
                 if worker.cancelled.load(Ordering::SeqCst) { anyhow::bail!("Cancelled"); }
+                let blocking = matches!(v["operation"].as_str(),Some("prepare" | "sign" | "signing-info"));
+                let operation = run(&worker, v);
+                tokio::pin!(operation);
                 tokio::select! {
-                    _ = worker.notify.notified() => anyhow::bail!("Cancelled"),
-                    result = tokio::time::timeout(Duration::from_secs(600), run(&worker, v)) => result?,
+                    _ = worker.notify.notified() => {
+                        // Blocking signers must release their workspace before Swift removes it.
+                        if blocking { let _ = operation.await; }
+                        anyhow::bail!("Cancelled")
+                    },
+                    _ = tokio::time::sleep(Duration::from_secs(600)) => {
+                        worker.cancelled.store(true, Ordering::SeqCst);
+                        if blocking { let _ = operation.await; }
+                        anyhow::bail!("Operation timed out")
+                    },
+                    result = &mut operation => result,
                 }
             })
         }));

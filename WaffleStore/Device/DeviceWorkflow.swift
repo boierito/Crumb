@@ -3,6 +3,7 @@ import Combine
 import UIKit
 import SwiftUI
 import Zip
+import Network
 
 enum DeviceOperationError: LocalizedError {
     case message(String)
@@ -32,7 +33,23 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     @Published private(set) var helperInstalled = false
     @Published private(set) var hasCertificate = false
     @Published private(set) var hasProfile = false
-    @Published var helperBundle = "com.certlium.crumb.decrypt"
+    @Published var setupNeeded = false
+    @Published var errorMessage = ""
+    @Published private(set) var signingReady = false
+    @Published private(set) var certificateName = ""
+    @Published private(set) var profileName = ""
+    @Published var signingPassword = ""
+    @Published private(set) var onCellular = false
+    @Published private(set) var progress: Double?
+    @Published private(set) var activeRecord: DownloadRecord?
+    @Published private(set) var waitingForHelper = false
+    private var installAfterDecrypt = false
+    private var queuedRecord: DownloadRecord?
+    private var signingRecord: DownloadRecord?
+    private var queuedInstall: DownloadRecord?
+    private let network = NWPathMonitor()
+    private var lastAutoCheck = Date.distantPast
+    @Published private(set) var helperBundle = "com.certlium.crumb.decrypt"
     private let route = "10.7.0.1"
     private var service: NetService?
     private var job: UnsafeMutableRawPointer?
@@ -57,11 +74,32 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
             paired = try DeviceKeychain.read("pairing") != nil
             hasCertificate = try DeviceKeychain.read("p12") != nil
             hasProfile = try DeviceKeychain.read("profile") != nil
+            signingPassword = String(data: try DeviceKeychain.read("password") ?? Data(), encoding: .utf8) ?? ""
+            certificateName = String(data: try DeviceKeychain.read("p12-name") ?? Data(), encoding: .utf8) ?? ""
+            profileName = String(data: try DeviceKeychain.read("profile-name") ?? Data(), encoding: .utf8) ?? ""
+            if let data = try DeviceKeychain.read("signing-info"),
+               let info = try JSONSerialization.jsonObject(with: data) as? [String: String], hasCertificate && hasProfile {
+                helperBundle = info["helper_bundle"] ?? helperBundle
+                signingReady = true
+            }
             if let data = try DeviceKeychain.read("pending"),
                let value = try JSONSerialization.jsonObject(with: data) as? [String: String] {
-                pending = value; helperBundle = value["helper_bundle"] ?? helperBundle; helperInstalled = true
+                pending = value; helperInstalled = true; waitingForHelper = true
+                installAfterDecrypt = value["install"] == "true"
+                if let text = value["record"], let data = Data(base64Encoded: text) {
+                    activeRecord = try? JSONDecoder().decode(DownloadRecord.self, from: data)
+                }
             }
         } catch { message = "Could not read protected device settings." }
+        network.pathUpdateHandler = { [weak self] path in
+            let cellular = path.usesInterfaceType(.cellular) && !path.usesInterfaceType(.wifi)
+            Task { @MainActor in
+                self?.onCellular = cellular
+                self?.connected = false
+                self?.autoConnect(force: true)
+            }
+        }
+        network.start(queue: DispatchQueue(label: "Crumb.network"))
     }
     func importFile(_ url: URL, kind: String) {
         guard !busy else { return }
@@ -69,10 +107,19 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         do {
             let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
             guard size > 0 && size <= 2 * 1024 * 1024 else { throw DeviceOperationError.message("Signing file must be between 1 byte and 2 MiB.") }
-            try DeviceKeychain.write(Data(contentsOf: url), account: kind)
+            let data = try Data(contentsOf: url)
+            if kind == "pairing" {
+                guard data.count <= 65536 else { throw DeviceOperationError.message("Pairing file is too large.") }
+                start(["operation":"import-pairing", "record":data.base64EncodedString()]); return
+            }
+            try DeviceKeychain.write(data, account: kind)
+            try DeviceKeychain.write(Data(url.lastPathComponent.utf8), account: kind + "-name")
+            try DeviceKeychain.remove("signing-info")
+            signingReady = false
+            if kind == "p12" { certificateName = url.lastPathComponent } else { profileName = url.lastPathComponent }
             if kind == "p12" { hasCertificate = true } else { hasProfile = true }
             message = "Signing file stored on this device."
-        } catch { message = error.localizedDescription }
+        } catch { errorMessage = error.localizedDescription }
     }
     private func credentials() throws -> [String: Any] {
         guard let data = try DeviceKeychain.read("pairing"),
@@ -86,9 +133,80 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         start(request)
     }
     func verify() { deviceOperation("verify") }
+    var ready: Bool { paired && signingReady }
+    var activityTitle: String {
+        if waitingForHelper { return "Decrypting" }
+        switch phase {
+        case "preparing": return "Preparing decrypter"
+        case "installing": return "Installing decrypter"
+        case "fetching": return "Saving app"
+        case "signing": return "Signing app"
+        default: return "Connecting"
+        }
+    }
+    func autoConnect(force: Bool = false) {
+        guard paired, !busy, !connected, !onCellular,
+              force || Date().timeIntervalSince(lastAutoCheck) > 15 else { return }
+        lastAutoCheck = Date()
+        verify()
+    }
+    private func signingRequest(operation: String) throws -> [String: Any] {
+        let fm = FileManager.default
+        let base = try fm.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("DeviceJobs", isDirectory: true)
+        try fm.createDirectory(at: base, withIntermediateDirectories: true, attributes: [.protectionKey:FileProtectionType.complete])
+        let root = base.appendingPathComponent(UUID().uuidString, isDirectory:true)
+        try fm.createDirectory(at: root, withIntermediateDirectories:false, attributes:[.protectionKey:FileProtectionType.complete])
+        var excluded = URLResourceValues(); excluded.isExcludedFromBackup = true
+        var protectedRoot = root; try protectedRoot.setResourceValues(excluded)
+        staged = root
+        guard let cert = try DeviceKeychain.read("p12"), let profile = try DeviceKeychain.read("profile") else { throw DeviceOperationError.message("Import your signing files.") }
+        let p12 = root.appendingPathComponent("identity.p12"), mobile = root.appendingPathComponent("profile.mobileprovision")
+        try cert.write(to:p12,options:[.atomic,.completeFileProtection]); try profile.write(to:mobile,options:[.atomic,.completeFileProtection])
+        return ["operation":operation,"p12":p12.path,"profile":mobile.path,"password":signingPassword,
+                "own_bundle":Bundle.main.bundleIdentifier ?? "com.certlium.crumb", "work":root.appendingPathComponent("work").path]
+    }
+    func invalidateSigning() {
+        signingReady = false
+        try? DeviceKeychain.remove("signing-info")
+    }
+    func saveSigning() {
+        guard !busy else { return }
+        do { start(try signingRequest(operation:"signing-info")) }
+        catch { cleanup(); errorMessage = error.localizedDescription }
+    }
+    func decrypt(_ record: DownloadRecord, install: Bool = false) {
+        guard !busy, !waitingForHelper else { errorMessage = "Finish the current app first."; return }
+        guard Self.decryptSupported else { errorMessage = "Decryption is supported on iOS 27.0.1. Pairing on other versions does not enable this method."; return }
+        queuedRecord = record; installAfterDecrypt = install
+        continueQueued()
+    }
+    func continueQueued() {
+        if ready && connected { setupNeeded = false }
+        if ready && !busy, let record = queuedInstall {
+            queuedInstall = nil; setupNeeded = false; install(record); return
+        }
+        guard let record = queuedRecord, !busy else { return }
+        guard ready else { setupNeeded = true; return }
+        guard connected else { autoConnect(force:true); return }
+        queuedRecord = nil; activeRecord = record
+        prepare(record, password:signingPassword)
+    }
+    func install(_ record: DownloadRecord) {
+        guard !busy, !waitingForHelper else { errorMessage = "Finish the current app first."; return }
+        guard record.isDecrypted else { AppData.shared.installationRequest = record; return }
+        guard signingReady else { queuedInstall = record; setupNeeded = true; return }
+        do {
+            guard let url = record.fileURL else { throw CocoaError(.fileNoSuchFile) }
+            var request = try signingRequest(operation:"sign")
+            request["ipa"] = url.path; request["output"] = url.path
+            signingRecord = record; activeRecord = record
+            start(request)
+        } catch { cleanup(); errorMessage = error.localizedDescription }
+    }
+
     private func deviceOperation(_ operation: String, extra: [String: Any] = [:]) {
         guard !busy else { return }
-        guard Self.pairingSupported else { message = "This system version has not been enabled for the device connection."; return }
+        guard paired else { setupNeeded = true; return }
         performDeviceOperation(operation, extra: extra, ports: [49152])
     }
 
@@ -103,7 +221,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
             request["proof"] = proof
             request["route"] = route; request["own_bundle"] = Bundle.main.bundleIdentifier
             extra.forEach { request[$0.key] = $0.value }; start(request)
-        } catch { message = error.localizedDescription }
+        } catch { errorMessage = error.localizedDescription }
     }
     func prepare(_ record: DownloadRecord, password: String) {
         guard !busy, connected, Self.decryptSupported else { message = "Connect on iOS 27.0.1 before preparing a helper."; return }
@@ -130,9 +248,10 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
                 "password":password, "helper_bundle":helperBundle, "job_id":id, "own_bundle":Bundle.main.bundleIdentifier ?? "com.certlium.crumb"]
             let outputDir = base.appendingPathComponent("Decrypted", isDirectory: true)
             try fm.createDirectory(at: outputDir, withIntermediateDirectories: true)
-            pending = ["job_id":id, "helper_bundle":helperBundle, "output":outputDir.appendingPathComponent(id + "-decrypted.ipa").path]
+            pending = ["job_id":id, "helper_bundle":helperBundle, "output":outputDir.appendingPathComponent(id + "-decrypted.ipa").path,
+                       "record":try JSONEncoder().encode(record).base64EncodedString(), "install":installAfterDecrypt ? "true" : "false"]
             output = nil; helperInstalled = false; start(request)
-        } catch { cleanup(); message = error.localizedDescription }
+        } catch { cleanup(); activeRecord = nil; errorMessage = error.localizedDescription }
     }
     @discardableResult func receiveResultURL(_ url: URL) -> Bool {
         guard url.host == "device-result",
@@ -142,13 +261,13 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         return true
     }
     func retrieve() {
-        guard Self.decryptSupported, let pending else { return }
+        guard !busy, Self.decryptSupported, let pending else { return }
         deviceOperation("fetch", extra: pending)
     }
     func openHelper() {
         guard helperInstalled else { return }
         UIApplication.shared.open(URL(string: "crumb-decrypt-helper://run")!, options: [:]) { [weak self] ok in
-            if !ok { Task { @MainActor in self?.message = "Open Crumb Decrypt from the Home Screen, then return to retrieve the result." } }
+            if !ok { Task { @MainActor in self?.errorMessage = "Open Crumb Decrypt from the Home Screen, then return to retrieve the result." } }
         }
     }
     func forgetPairing() {
@@ -158,7 +277,9 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     }
     func forgetSigning() {
         guard !busy else { return }
-        do { try DeviceKeychain.remove("p12"); try DeviceKeychain.remove("profile"); hasCertificate = false; hasProfile = false }
+        do { try DeviceKeychain.remove("p12"); try DeviceKeychain.remove("profile"); try DeviceKeychain.remove("password"); try DeviceKeychain.remove("signing-info")
+            try DeviceKeychain.remove("p12-name"); try DeviceKeychain.remove("profile-name")
+            signingReady = false; signingPassword = ""; certificateName = ""; profileName = ""; hasCertificate = false; hasProfile = false }
         catch { message = error.localizedDescription }
     }
     func cancel() {
@@ -174,7 +295,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         do {
             let data = try JSONSerialization.data(withJSONObject: request)
             guard let json = String(data: data, encoding: .utf8), let handle = crumb_device_start(json) else { throw DeviceOperationError.message("Could not start device operation.") }
-            job = handle; busy = true; phase = "starting"; message = ""; pin = nil
+            job = handle; progress = nil; busy = true; phase = "starting"; message = ""; pin = nil
             lastRequest = request.filter { $0.key != "password" && $0.key != "record" && $0.key != "host_irk" }
             background = UIApplication.shared.beginBackgroundTask(withName: "Crumb device operation") { [weak self] in
                 Task { @MainActor in self?.cancel(); self?.endBackground(); self?.message = "iOS ended the background session. Return to Crumb and retry." }
@@ -192,13 +313,14 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
                 }
             }
         } catch {
-            message = error.localizedDescription; busy = false
-            if ["prepare", "install"].contains(request["operation"] as? String ?? "") { cleanup() }
+            errorMessage = error.localizedDescription; busy = false
+            if ["prepare", "install", "sign", "signing-info"].contains(request["operation"] as? String ?? "") { cleanup() }
         }
     }
     private func receive(_ value: [String: Any]) {
         guard let phase = value["phase"] as? String else { return }
         self.phase = phase
+        if let bytes = value["bytes"] as? Double, let total = value["total"] as? Double, total > 0 { progress = min(1,bytes / total) }
         if phase == "waiting" || phase == "pin" {
             if service == nil, let name = value["service"] as? String, let port = value["port"] as? Int,
                let txt = value["txt"] as? [String: String] {
@@ -209,17 +331,33 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
             pin = value["pin"] as? String
             return
         }
-        guard ["paired", "connected", "prepared", "installed", "complete", "failed", "cancelled"].contains(phase) else { return }
+        guard ["pairing-imported", "signing-ready", "signed", "paired", "connected", "prepared", "installed", "complete", "failed", "cancelled"].contains(phase) else { return }
         let request = lastRequest
         if let job { crumb_device_free(job); self.job = nil }
         busy = false; stopAdvertising(); endBackground(); pin = nil; lastRequest = [:]
         do {
             switch phase {
+            case "pairing-imported":
+                guard let record = value["record"] as? String, let kind = value["pairing_kind"] as? String else { throw DeviceOperationError.message("Invalid pairing file.") }
+                try DeviceKeychain.write(JSONSerialization.data(withJSONObject:["record":record,"pairing_kind":kind]),account:"pairing")
+                paired = true; connected = false; autoConnect(force:true)
+            case "signing-ready":
+                guard let bundle = value["helper_bundle"] as? String else { throw DeviceOperationError.message("Invalid signing identity.") }
+                helperBundle = bundle
+                try DeviceKeychain.write(Data(signingPassword.utf8), account:"password")
+                try DeviceKeychain.write(JSONSerialization.data(withJSONObject:["helper_bundle":bundle]), account:"signing-info")
+                signingReady = true; cleanup(); continueQueued()
+            case "signed":
+                guard var record = signingRecord else { throw DeviceOperationError.message("Missing signed app.") }
+                record.signed = true; try record.save()
+                signingRecord = nil; activeRecord = nil; cleanup()
+                AppData.shared.restoreDownloadedIPA(); AppData.shared.installationRequest = record
+
             case "paired":
                 guard let record = value["record"] as? String, let irk = value["host_irk"] as? String else { throw DeviceOperationError.message("Missing pairing credentials.") }
                 try DeviceKeychain.write(JSONSerialization.data(withJSONObject: ["record":record, "host_irk":irk]), account: "pairing")
-                paired = true; message = "Paired. Connect LocalDevVPN and check the connection."
-            case "connected": connected = true; message = "Authenticated device connection available."
+                paired = true; autoConnect(force:true)
+            case "connected": connected = true; continueQueued()
             case "prepared":
                 guard let path = value["path"] as? String else { throw DeviceOperationError.message("Missing prepared helper.") }
                 if let staged {
@@ -230,26 +368,47 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
             case "installed":
                 try DeviceKeychain.write(Data(helperBundle.utf8), account: "managed-helper")
                 managedHelper = helperBundle
-                helperInstalled = true
+                helperInstalled = true; waitingForHelper = true
                 if let pending { try DeviceKeychain.write(JSONSerialization.data(withJSONObject: pending), account: "pending") }
                 cleanup(); message = "Helper installed. Keep Crumb Decrypt on screen until it finishes."
                 openHelper()
             case "complete":
                 guard let path = value["path"] as? String else { throw DeviceOperationError.message("Missing verified result.") }
-                output = URL(fileURLWithPath: path); message = "Your decrypted IPA is ready to save. Sign it with a compatible certificate and profile before installing."
+                guard let source = activeRecord else { throw DeviceOperationError.message("Missing download record.") }
+                let name = UUID().uuidString + "-decrypted.ipa"
+                let directory = FileManager.default.urls(for:.documentDirectory,in:.userDomainMask)[0].appendingPathComponent("Downloads",isDirectory:true)
+                try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
+                let destination = directory.appendingPathComponent(name)
+                try FileManager.default.moveItem(at:URL(fileURLWithPath:path),to:destination)
+                var record = DownloadRecord(filename:name,appID:source.appID,appName:source.appName,bundleID:source.bundleID,version:source.version,build:source.build,externalVersionID:source.externalVersionID,date:Date())
+                record.decrypted = true
+                do { try record.save() } catch { try? FileManager.default.removeItem(at:destination); throw error }
+                output = destination; helperInstalled = false; waitingForHelper = false; activeRecord = nil; pending = nil
+                try DeviceKeychain.remove("pending")
+                AppData.shared.restoreDownloadedIPA()
+                if installAfterDecrypt { install(record) }
+
             case "failed":
                 // Local signing failures do not invalidate the verified route.
-                if request["operation"] as? String != "prepare" { connected = false }
-                message = (value["message"] as? String) ?? "Device operation failed."
-                if ["prepare", "install"].contains(request["operation"] as? String ?? "") { cleanup() }
-            default: cleanup(); message = "Operation cancelled."
+                let operation = request["operation"] as? String ?? ""
+                if ["verify","install","fetch"].contains(operation) { connected = false }
+                message = (value["message"] as? String) ?? "Could not finish."
+                if operation != "verify" { errorMessage = message }
+                if operation == "signing-info" { signingReady = false }
+                if operation != "fetch" { activeRecord = nil }
+                if operation == "sign" || operation == "signing-info" { cleanup() }
+                if ["prepare", "install", "sign", "signing-info"].contains(request["operation"] as? String ?? "") { cleanup() }
+            default:
+                cleanup(); message = "Operation cancelled."
+                if !waitingForHelper { activeRecord = nil }
+                queuedRecord = nil; queuedInstall = nil
             }
-        } catch { message = error.localizedDescription; cleanup() }
+        } catch { errorMessage = error.localizedDescription; cleanup() }
     }
     private func stopAdvertising() { service?.stop(); service = nil }
     private func endBackground() { if background != .invalid { UIApplication.shared.endBackgroundTask(background); background = .invalid } }
     private func cleanup() { if let staged { try? FileManager.default.removeItem(at: staged) }; staged = nil }
     nonisolated func netService(_ sender: NetService, didNotPublish errorDict: [String: NSNumber]) {
-        Task { @MainActor in self.cancel(); self.message = "Could not advertise the pairing host. Allow Local Network access in Settings." }
+        Task { @MainActor in self.cancel(); self.errorMessage = "Allow Local Network access in Settings, then pair again." }
     }
 }

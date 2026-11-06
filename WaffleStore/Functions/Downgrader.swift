@@ -18,7 +18,7 @@ func resetDowngradeProgress() {
     appData.isDowngrading = false; appData.showsDowngradeProgress = false
 }
 extension AppData {
-    func download(app: StoreApp, version: String, tool: IPATool, expectedVersion: String? = nil, installWhenReady: Bool = false) {
+    func download(app: StoreApp, version: String, tool: IPATool, expectedVersion: String? = nil, installWhenReady: Bool = false, decryptWhenReady: Bool = false) {
         guard storeTask == nil else { return }
         activeDownloadName = app.name
         isDowngrading = true; showsDowngradeProgress = true; downgradeProgress = 0
@@ -89,7 +89,8 @@ extension AppData {
                 downloadedIPAURL = destination; hasAppBeenServed = true
                 appBundleID = info.bundleID; appVersion = info.version
                 storeStage("IPA verified and saved. Ready to install or export.")
-                if installWhenReady { installationRequest = record }
+                if decryptWhenReady { DeviceWorkflow.shared.decrypt(record,install:installWhenReady) }
+                else if installWhenReady { installationRequest = record }
                 else { downloadReady = record }
 
                 downgradeProgress = 1; applicationIcon = "checkmark.circle.fill"

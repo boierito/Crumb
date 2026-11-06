@@ -7,7 +7,6 @@ struct DownloadedAppsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var device = DeviceWorkflow.shared
-    @State private var installation: DownloadRecord?
     @State private var deletion: DownloadRecord?
     @State private var confirmDeleteAll = false
     @State private var confirmDeletion = false
@@ -47,65 +46,36 @@ struct DownloadedAppsView: View {
                     }
                 }
 
-                if device.busy || device.helperInstalled || device.output != nil {
-                    DeviceStatusSection()
-                }
-
-                if appData.completedDownloads.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label("No downloads yet", systemImage: "square.and.arrow.down")
-                            .font(.headline)
-                        Text("Choose an app and download a version. Its IPA will appear here for installation or export.")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                ForEach(appData.completedDownloads) { record in
+                if let record = device.activeRecord {
                     Section {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack(alignment: .top, spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing:12) {
+                            ProgressView()
+                            VStack(alignment:.leading,spacing:4) {
                                 Text(record.appName).font(.headline)
-                                Text("Version \(record.version)").font(.subheadline).foregroundStyle(.secondary)
+                                Text(device.activityTitle).font(.subheadline).foregroundStyle(.secondary)
                             }
-                            Spacer(minLength: 0)
-                            Menu {
-                                Button(role: .destructive) { requestDeletion(record) } label: {
-                                    Label("Delete IPA", systemImage: "trash")
-                                }
-                            } label: {
-                                Image(systemName: "ellipsis").frame(minWidth: 44, minHeight: 44)
-                            }
-                            .buttonStyle(.borderless)
-                            .accessibilityLabel("Options for \(record.appName), version \(record.version)")
+                            Spacer()
+                            if device.busy { Button { device.cancel() } label: { Image(systemName:"xmark.circle.fill") }.buttonStyle(.borderless).accessibilityLabel("Cancel") }
                         }
-                        HStack(spacing: 10) {
-                            Button { installation = record } label: { Label("Install", systemImage: "arrow.down.app") }
-                            if let url = record.fileURL {
-                                ShareLink(item: url) { Label("Export", systemImage: "square.and.arrow.up") }
-                            }
-                        }
-                        .buttonStyle(TranslucentButtonStyle())
-                        if DeviceWorkflow.decryptSupported {
-                            NavigationLink("Decrypt on this device") { DeviceDecryptView(record: record) }
-                        }
-                        DisclosureGroup("Details") {
-                            if let build = record.build { Text("Build \(build)").font(.caption) }
-                            Text(record.bundleID).font(.caption).textSelection(.enabled)
-                            Text(record.date, style: .date).font(.caption)
-                            if let url = record.fileURL,
-                               let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize {
-                                Text(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)).font(.caption)
-                            }
-                            Text("Version and build read from the downloaded IPA.").font(.caption).foregroundStyle(.secondary)
+                        if let progress = device.progress { ProgressView(value:progress) }
+                        if device.waitingForHelper && !device.busy {
+                            HStack {
+                                Button("Open decrypter") { device.openHelper() }
+                                Spacer()
+                                Button("Save result") { device.retrieve() }
+                            }.font(.subheadline).buttonStyle(.borderless)
                         }
                     }
-                    .padding(.vertical, 4)
-                    .swipeActions(allowsFullSwipe: false) {
-                        // A destructive swipe optimistically removes the row before confirmation.
-                        Button { requestDeletion(record) } label: { Label("Delete", systemImage: "trash") }
-                            .tint(.red)
-                    }
-                    }
+                }
+                Section("Encrypted") {
+                    let records = appData.completedDownloads.filter { !$0.isDecrypted }
+                    if records.isEmpty { Text("No encrypted apps").foregroundStyle(.secondary) }
+                    ForEach(records) { record in downloadRow(record) }
+                }
+                Section("Decrypted") {
+                    let records = appData.completedDownloads.filter { $0.isDecrypted }
+                    if records.isEmpty { Text("No decrypted apps").foregroundStyle(.secondary) }
+                    ForEach(records) { record in downloadRow(record) }
                 }
                 if !appData.completedDownloads.isEmpty || appData.downloadedIPAURL != nil {
                     Section {
@@ -114,13 +84,13 @@ struct DownloadedAppsView: View {
                     }
                 }
             }
-            .navigationTitle("Downloaded apps")
+            .navigationTitle("Downloads")
             .navigationBarTitleDisplayMode(.inline)
             .listStyle(.insetGrouped)
              .toolbar {
                 if !embedded { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
             }
-            .sheet(item: $installation) { OTAInstallationView(record: $0, startImmediately: true) }
+
             .alert("Delete downloaded IPA?", isPresented: $confirmDeletion) {
                 if let record = deletion {
                     Button("Delete IPA", role: .destructive) {
@@ -159,6 +129,39 @@ struct DownloadedAppsView: View {
                     Button("OK") { deletionError = "" }
                 } message: { Text(deletionError) }
             .onAppear { appData.restoreDownloadedIPA() }
+        }
+    }
+    private func downloadRow(_ record: DownloadRecord) -> some View {
+        VStack(alignment:.leading,spacing:12) {
+            HStack(spacing:12) {
+                Image(systemName:record.isDecrypted ? "lock.open.fill" : "app.fill")
+                    .font(.title3).foregroundStyle(.tint)
+                    .frame(width:42,height:42).background(Color.accentColor.opacity(0.1),in:RoundedRectangle(cornerRadius:10))
+                VStack(alignment:.leading,spacing:3) {
+                    Text(record.appName).font(.headline)
+                    Text(record.version).font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer(minLength:8)
+                Menu {
+                    if !record.isDecrypted && DeviceWorkflow.decryptSupported {
+                        Button("Decrypt") { device.decrypt(record) }
+                        Button("Decrypt and install") { device.decrypt(record,install:true) }
+                    }
+                    Button("Delete",role:.destructive) { requestDeletion(record) }
+                } label: { Image(systemName:"ellipsis").frame(width:44,height:44) }
+                    .accessibilityLabel("Options for \(record.appName)")
+            }
+            HStack(spacing:12) {
+                Button { device.install(record) } label: { Label("Install",systemImage:"arrow.down.app").frame(maxWidth:.infinity) }
+                    .disabled(device.busy || device.waitingForHelper)
+                if let url = record.fileURL {
+                    ShareLink(item:url) { Label("Export",systemImage:"square.and.arrow.up").frame(maxWidth:.infinity) }
+                }
+            }.buttonStyle(.bordered).controlSize(.regular)
+        }
+        .padding(.vertical,8)
+        .swipeActions(allowsFullSwipe:false) {
+            Button { requestDeletion(record) } label: { Label("Delete",systemImage:"trash") }.tint(.red)
         }
     }
     private func requestDeletion(_ record: DownloadRecord) {

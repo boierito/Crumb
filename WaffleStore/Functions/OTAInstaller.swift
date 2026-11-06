@@ -65,7 +65,7 @@ final class OTAInstaller: ObservableObject {
                 }
             }
             pageURL = URL(string: "http://127.0.0.1:9090\(path)/install")!
-            status = "Serving the verified IPA. iOS decides whether installation is allowed."
+            status = "Ready to install"
             expiration = Task {
                 try? await Task.sleep(for: .seconds(600))
                 guard !Task.isCancelled else { return }
@@ -96,16 +96,12 @@ struct OTAInstallationView: View {
                 if let url = installer.pageURL { InstallationSafari(url: url) }
                 else {
                     Form {
-                        Section("Verified download") {
-                            Text(record.appName)
-                            Text("Version \(record.version) · ID \(record.externalVersionID)")
-                            if let build = record.build { Text("IPA build \(build)") }
-                            Text(record.bundleID).font(.caption)
+                        Section {
+                            Text(record.appName).font(.headline)
+                            Text(record.version).foregroundStyle(.secondary)
                         }
-                        Text("Uses WaffleStore's original Safari installation method and api.palera.in for the HTTPS manifest. It sends the app name, bundle ID, build and loopback URL; your account and IPA are not uploaded. Keep this screen open. iOS may refuse protected App Store packages or downgrades.")
-                            .font(.caption)
                         if !installer.status.isEmpty { Text(installer.status) }
-                        Button("Request iOS installation") {
+                        Button("Install") {
                             requestInstallation()
                         }
                         if let url = record.fileURL { ShareLink(item: url) { Label("Export IPA instead", systemImage: "square.and.arrow.up") } }

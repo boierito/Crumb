@@ -150,16 +150,18 @@ struct StoreVersionsView: View {
                                 LabeledContent("External version ID", value: choice.id).font(.caption).textSelection(.enabled)
                             }
                         }
-                        Section {
-                            Button { download(choice, install: true) } label: {
-                                Label("Download and install", systemImage: "arrow.down.app")
-                            }
-                            Button { download(choice, install: false) } label: {
-                                Label("Download IPA", systemImage: "square.and.arrow.down")
-                            }
-                        } footer: {
-                            Text("iOS will ask you to confirm installation after the download.")
+                        Section("Encrypted") {
+                            Button { download(choice, install:false) } label: { Label("Download encrypted",systemImage:"arrow.down.circle") }
+                            Button { download(choice, install:true) } label: { Label("Download encrypted and install",systemImage:"arrow.down.app") }
                         }
+                        Section("Decrypted") {
+                            Button { download(choice, install:false, decrypt:true) } label: { Label("Download decrypted",systemImage:"lock.open") }
+                                .disabled(!DeviceWorkflow.decryptSupported)
+                            Button { download(choice, install:true, decrypt:true) } label: { Label("Download decrypted and install",systemImage:"arrow.down.app") }
+                                .disabled(!DeviceWorkflow.decryptSupported)
+                            NavigationLink("Decrypter settings") { DeviceSetupView() }
+                        }
+
                     }
                     .navigationTitle("Selected version")
                     .navigationBarTitleDisplayMode(.inline)
@@ -196,7 +198,7 @@ struct StoreVersionsView: View {
             appData.favourites = FavouritesStore.add(FavouriteApp(appLink: appData.appLink, bundleId: app.bundleID, appName: app.name, catalogCountry: app.catalogCountry))
         }
     }
-    private func download(_ choice: VersionSelection, install: Bool) {
+    private func download(_ choice: VersionSelection, install: Bool, decrypt: Bool = false) {
         guard let app, let tool = appData.ipaTool else { return }
         let expected = labels.info[choice.id]?.version
         labels.stop()
@@ -204,7 +206,7 @@ struct StoreVersionsView: View {
         Task {
             await labels.finish()
             appData.download(app: app, version: choice.id, tool: tool,
-                expectedVersion: expected, installWhenReady: install)
+                expectedVersion: expected, installWhenReady: install, decryptWhenReady: decrypt)
             appData.selectedTab = .downloads
             dismiss()
         }

@@ -10,6 +10,14 @@ import Foundation
             DownloadRecord(filename: name, appID: "1", appName: "Fixture", bundleID: "test.fixture",
                 version: "1.4.0", build: "14", externalVersionID: "123", date: Date())
         }
+        var decoded = record("legacy.ipa")
+        let oldData = try JSONEncoder().encode(decoded)
+        let legacy = try JSONDecoder().decode(DownloadRecord.self,from:oldData)
+        precondition(!legacy.isDecrypted)
+        decoded.decrypted = true; decoded.signed = true
+        let newData = try JSONEncoder().encode(decoded)
+        let restored = try JSONDecoder().decode(DownloadRecord.self,from:newData)
+        precondition(restored.isDecrypted && restored.signed == true)
         for name in ["selected.ipa", "selected.json", "keep.ipa", "keep.json"] {
             try Data("fixture".utf8).write(to: root.appendingPathComponent(name))
         }

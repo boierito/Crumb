@@ -1,3 +1,31 @@
+# Build 23032: user decrypter workflow
+
+- One Decrypter setup screen with automatic connection checks, compact signing-file
+  summaries, validated password persistence in device-only Keychain, automatic
+  helper ID derived from provisioning-profile scope, and cellular/PIN guidance.
+- Four version actions: encrypted/decrypted, each with download or download/install.
+- Persistent encrypted and decrypted history with export and installation actions.
+  Decrypted installation signs the main app and nested app extensions, validates
+  profile scopes and original capabilities, then uses the existing iOS OTA handoff.
+  A profile that cannot authorize an extension/capability fails without dropping it.
+- The helper uses the approved branding/Crumb-AppIcon-1024.png artwork.
+- User-provided FilePickerFix.dylib is embedded in Crumb (not target apps) through
+  an arm64 LC_LOAD_DYLIB command before ordinary signing. The build checks its
+  exact bytes and load path. Runtime behavior still needs physical testing.
+- Older-iOS connection setup can import a computer-generated Lockdown pairing
+  plist (e.g. mobiledevicepairing), stored in Keychain, and uses authenticated
+  Lockdown over LocalDevVPN. Remote-pairing plist import is also accepted.
+  Same-installation nonce validation remains mandatory for either transport.
+  This adds an older-iOS connection route, not evidence of decryption support:
+  the FairPlay method remains enabled only on iOS 27.0.1.
+
+Physical testing must confirm saved-password reuse, automatic reconnection,
+helper icon/progress, main/framework/extension decryption, persistent decrypted
+history and signed installation. Credentials are never committed or logged.
+Historical implementation notes follow; the 23032 workflow supersedes their UI.
+
+---
+
 # Current user-flow revision
 
 Base: `feature/on-device-pairing-decryption` (4a3ca40).

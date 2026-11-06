@@ -4,6 +4,8 @@ import MapleSAP
 
 struct ContentView: View {
     @EnvironmentObject var appData: AppData
+    @StateObject private var device = DeviceWorkflow.shared
+    @Environment(\.scenePhase) private var scenePhase
     @State private var confirmLogout = false
 
     var body: some View {
@@ -19,6 +21,13 @@ struct ContentView: View {
             SettingsView(embedded: true)
                 .tabItem { Label("Settings".localized, systemImage: "gearshape") }.tag(AppTab.settings)
         }
+        .sheet(isPresented:$device.setupNeeded,onDismiss:{ device.continueQueued() }) {
+            NavigationStack { DeviceSetupView().toolbar { ToolbarItem(placement:.confirmationAction) { Button("Done") { device.setupNeeded = false } } } }
+        }
+        .alert("Could not finish", isPresented:Binding(get:{ !device.errorMessage.isEmpty },set:{ if !$0 { device.errorMessage = "" } })) {
+            Button("OK") { device.errorMessage = "" }
+        } message: { Text(device.errorMessage) }
+        .onChange(of:scenePhase) { phase in if phase == .active { device.autoConnect(force:true) } }
         .sheet(isPresented: $appData.showStoreVersions) { StoreVersionsView() }
         .sheet(item: $appData.downloadReady) { DownloadReadyView(record: $0) }
         .sheet(item: $appData.installationRequest) { OTAInstallationView(record: $0, startImmediately: true) }

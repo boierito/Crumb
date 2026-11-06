@@ -224,10 +224,41 @@ async fn tunnel_at(v: &Value, addr: SocketAddr) -> anyhow::Result<(AdapterHandle
         .map_err(|e| device_error("RSD handshake", e))?;
     Ok((handle, handshake))
 }
+enum Connection {
+    Remote(AdapterHandle, RsdHandshake),
+    Legacy(idevice::provider::TcpProvider),
+}
+impl Connection {
+    async fn new(v:&Value)->anyhow::Result<Self> {
+        if v["pairing_kind"] == "lockdown" {
+            let bytes=B64.decode(v["record"].as_str().ok_or_else(||anyhow::anyhow!("Import pairing file"))?)?;
+            anyhow::ensure!(bytes.len() <= 65536,"Pairing file too large");
+            let pairing_file=idevice::pairing_file::PairingFile::from_bytes(&bytes)?;
+            Ok(Self::Legacy(idevice::provider::TcpProvider {
+                addr: "10.7.0.1".parse()?, scope_id:None, pairing_file, label:"Crumb".into()
+            }))
+        } else { let (a,h)=tunnel(v).await?; Ok(Self::Remote(a,h)) }
+    }
+    async fn installation(&mut self)->Result<InstallationProxyClient,idevice::IdeviceError> {
+        use idevice::IdeviceService;
+        match self { Self::Remote(a,h)=>InstallationProxyClient::connect_rsd(a,h).await,
+            Self::Legacy(p)=>InstallationProxyClient::connect(p).await }
+    }
+    async fn documents(&mut self)->Result<HouseArrestClient,idevice::IdeviceError> {
+        use idevice::IdeviceService;
+        match self { Self::Remote(a,h)=>HouseArrestClient::connect_rsd(a,h).await,
+            Self::Legacy(p)=>HouseArrestClient::connect(p).await }
+    }
+    async fn afc(&mut self)->Result<AfcClient,idevice::IdeviceError> {
+        use idevice::IdeviceService;
+        match self { Self::Remote(a,h)=>AfcClient::connect_rsd(a,h).await,
+            Self::Legacy(p)=>AfcClient::connect(p).await }
+    }
+}
 pub(super) async fn run(job: &Arc<Job>, v: &Value) -> anyhow::Result<Value> {
     job.update(json!({"phase":"connecting"}));
-    let (mut adapter, mut handshake) = tunnel(v).await?;
-    let mut proxy = InstallationProxyClient::connect_rsd(&mut adapter, &mut handshake)
+    let mut connection = tokio::time::timeout(Duration::from_secs(30),Connection::new(v)).await??;
+    let mut proxy = connection.installation()
         .await
         .map_err(|e| device_error("Installation service", e))?;
     let apps = proxy
@@ -248,7 +279,7 @@ pub(super) async fn run(job: &Arc<Job>, v: &Value) -> anyhow::Result<Value> {
     let proof = v["proof"]
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("Missing local installation proof"))?;
-    let own = HouseArrestClient::connect_rsd(&mut adapter, &mut handshake)
+    let own = connection.documents()
         .await
         .map_err(|e| device_error("Container service", e))?;
     let mut own = own
@@ -286,7 +317,7 @@ pub(super) async fn run(job: &Arc<Job>, v: &Value) -> anyhow::Result<Value> {
                 "Install requires a prepared helper bundle"
             );
             job.update(json!({"phase":"installing"}));
-            let mut afc = AfcClient::connect_rsd(&mut adapter, &mut handshake).await?;
+            let mut afc = connection.afc().await?;
             // Only Crumb's own staging directory is removed. Interrupted uploads
             // are reclaimed on the next attempt after same-installation proof.
             let staging = "PublicStaging/Crumb-DevicePipeline";
@@ -334,7 +365,7 @@ pub(super) async fn run(job: &Arc<Job>, v: &Value) -> anyhow::Result<Value> {
                     .as_str()
                     .ok_or_else(|| anyhow::anyhow!("Missing output"))?,
             );
-            let client = HouseArrestClient::connect_rsd(&mut adapter, &mut handshake).await?;
+            let client = connection.documents().await?;
             let mut afc = client.vend_documents(id).await?;
             let manifest_size = afc
                 .get_file_info(AppDocument::Manifest.path())

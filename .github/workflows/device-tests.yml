@@ -16,3 +16,4 @@ jobs:
       - run: cargo test --locked --manifest-path NativeDevice/Cargo.toml -p apple-codesign-quick --lib
       - run: python3 scripts/test-device-macho.py
       - run: python3 scripts/test-device-file-access.py
+      - run: python3 scripts/test-file-picker-injection.py

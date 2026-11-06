@@ -74,6 +74,7 @@
 				E6F5D40F30168FCC00FEEC8A /* Sources */,
 				E6F5D41030168FCC00FEEC8A /* Frameworks */,
 				E6F5D41130168FCC00FEEC8A /* Resources */,
+				B0010000000000000000000B /* Embed picker fix */,
 			);
 			buildRules = (
 			);
@@ -161,6 +162,17 @@
 			shellPath = /bin/bash;
 			shellScript = "bash \"$SRCROOT/scripts/ensure-native.sh\"\n";
 		};
+        B0010000000000000000000B /* Embed picker fix */ = {
+            isa = PBXShellScriptBuildPhase;
+            alwaysOutOfDate = 1;
+            buildActionMask = 2147483647;
+            files = ();
+            inputPaths = ("$(TARGET_BUILD_DIR)/$(EXECUTABLE_PATH)", "$(SRCROOT)/EmbeddedLibraries/FilePickerFix.dylib");
+            outputPaths = ("$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/FilePickerFix.dylib");
+            runOnlyForDeploymentPostprocessing = 0;
+            shellPath = /bin/bash;
+            shellScript = "python3 \"$SRCROOT/scripts/embed-file-picker-fix.py\" \"$TARGET_BUILD_DIR/$WRAPPER_NAME\"\n";
+        };
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -301,7 +313,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 23031;
+				CURRENT_PROJECT_VERSION = 23032;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -346,7 +358,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 23031;
+				CURRENT_PROJECT_VERSION = 23032;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;

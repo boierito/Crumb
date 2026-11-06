@@ -66,6 +66,9 @@ jobs:
           cargo test --locked --manifest-path NativeDevice/Cargo.toml
           python3 scripts/test-device-macho.py
           python3 scripts/test-device-file-access.py
+          python3 scripts/test-file-picker-injection.py
+          swiftc WaffleStore/DownloadRecord.swift scripts/test-download-record.swift -o "$RUNNER_TEMP/DownloadRecordTests"
+          "$RUNNER_TEMP/DownloadRecordTests"
           xcodebuild -version | tee artifacts/toolchain.txt
           xcodebuild -project WaffleStore.xcodeproj -scheme WaffleStore \
             -configuration "$CONFIGURATION" -sdk iphoneos \

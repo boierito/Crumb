@@ -29,6 +29,9 @@ with zipfile.ZipFile(ipa) as archive:
     assert info.get("CFBundleIcons", {}).get("CFBundlePrimaryIcon", {}).get("CFBundleIconFiles"), "App icon missing"
     executable = archive.read(root + info["CFBundleExecutable"])
     assert struct.unpack("<II", executable[:8]) == (0xFEEDFACF, 0x0100000C), "Expected arm64 Mach-O"
+    picker = archive.read(root + "Frameworks/FilePickerFix.dylib")
+    assert hashlib.sha256(picker).digest() == hashlib.sha256(pathlib.Path("EmbeddedLibraries/FilePickerFix.dylib").read_bytes()).digest(), "Picker fix changed"
+    assert b"@executable_path/Frameworks/FilePickerFix.dylib\0" in executable, "Picker fix load command missing"
     assert not any(n.endswith("embedded.mobileprovision") for n in archive.namelist()), "IPA must be resignable"
     assert "_remotepairing-pairable-host._tcp" in info.get("NSBonjourServices", []), "Pairing service declaration missing"
     assert "_remotepairing._tcp" in info.get("NSBonjourServices", []), "Pairing port discovery declaration missing"

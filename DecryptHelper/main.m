@@ -262,7 +262,7 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
   [super viewDidLoad];
   UIApplication.sharedApplication.idleTimerDisabled = YES;
   self.view.backgroundColor = UIColor.systemBackgroundColor;
-  self.view.tintColor = [UIColor colorWithRed:0.16 green:0.43 blue:0.76 alpha:1];
+  self.view.tintColor = [UIColor colorWithRed:0 green:0.66 blue:0.88 alpha:1];
   UIImageView *icon = [[UIImageView alloc] initWithImage:[UIImage imageNamed:@"Icon60@3x.png"]];
   icon.contentMode = UIViewContentModeScaleAspectFit;
   icon.layer.cornerRadius = 22;
@@ -277,15 +277,10 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
   self.label.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
   self.label.adjustsFontForContentSizeCategory = YES;
   self.label.numberOfLines = 0;
-  self.label.text = @"Preparing your app. Keep this screen open.";
+  self.label.text = @"Preparing app…";
   self.progress = [[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];
   self.progress.accessibilityLabel = @"Decryption progress";
-  UILabel *note = [UILabel new];
-  note.font = [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
-  note.textColor = UIColor.secondaryLabelColor;
-  note.numberOfLines = 0;
-  note.text = @"Your app returns to Crumb automatically when it is ready. You can then save the IPA and sign it for installation.";
-  UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[icon,self.titleLabel,self.label,self.progress,note]];
+  UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[icon,self.titleLabel,self.label,self.progress]];
   stack.axis = UILayoutConstraintAxisVertical;
   stack.spacing = 24;
   stack.translatesAutoresizingMaskIntoConstraints = NO;
@@ -567,7 +562,7 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
     UIApplication.sharedApplication.idleTimerDisabled = NO;
     if (ok) self.progress.progress = 1;
     self.titleLabel.text = ok ? @"Your app is ready" : @"Could not finish";
-    self.label.text=ok?@"Returning to Crumb to save your IPA. If Crumb does not open, return to it and choose Retrieve result.":error.localizedDescription?:@"Decryption failed. No completed IPA was produced.";
+    self.label.text=ok?@"Saving to Crumb…":error.localizedDescription?:@"Decryption failed. No completed IPA was produced.";
     if (ok) {
       NSURLComponents *callback = [NSURLComponents new];
       callback.scheme = @"crumb";

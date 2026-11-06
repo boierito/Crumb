@@ -12,12 +12,19 @@ struct DownloadRecord: Codable, Identifiable {
     let build: String?
     let externalVersionID: String
     let date: Date
+    var decrypted: Bool? = nil
+    var signed: Bool? = nil
+    var isDecrypted: Bool { decrypted == true }
     var fileURL: URL? {
         guard filename == URL(fileURLWithPath: filename).lastPathComponent,
               filename.hasSuffix(".ipa"), !filename.contains(".."),
               let docs = try? FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false) else { return nil }
         let url = docs.appendingPathComponent("Downloads").appendingPathComponent(filename)
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+    func save() throws {
+        guard let url = fileURL else { throw CocoaError(.fileNoSuchFile) }
+        try JSONEncoder().encode(self).write(to: url.deletingPathExtension().appendingPathExtension("json"), options: .atomic)
     }
     // Delete only the IPA and matching nonsecret sidecar in Downloads. A stale
     // record is safe to remove even if Files already deleted its IPA.
