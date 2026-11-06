@@ -190,9 +190,36 @@ pub(super) fn permits(grant: &plist::Value, request: &plist::Value) -> bool {
         _ => grant == request,
     }
 }
+// Profiles can list allowed iCloud environments; binaries select one string.
+// Do not generalize this across entitlements with different value semantics.
+pub(super) fn permits_entitlement(key: &str, grant: &plist::Value, request: &plist::Value) -> bool {
+    if key == "com.apple.developer.icloud-container-environment" {
+        if let (Some(allowed), Some(selected)) = (grant.as_array(), request.as_string()) {
+            return allowed.iter().any(|v| v.as_string() == Some(selected));
+        }
+    }
+    permits(grant, request)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn icloud_environment_selects_one_of_profile_alternatives() {
+        let options = plist::Value::Array(vec!["Development".into(), "Production".into()]);
+        let key = "com.apple.developer.icloud-container-environment";
+        assert!(permits_entitlement(key, &options, &"Production".into()));
+        assert!(!permits_entitlement(key, &options, &"Unknown".into()));
+        assert!(!permits_entitlement(
+            key,
+            &plist::Value::Array(vec!["Development".into()]),
+            &"Production".into()
+        ));
+        assert!(!permits_entitlement(
+            "unrelated",
+            &options,
+            &"Production".into()
+        ));
+    }
     #[test]
     fn wildcard_grants_are_scoped() {
         assert!(permits(

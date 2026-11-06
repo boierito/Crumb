@@ -97,6 +97,7 @@ struct SigningSummary: Codable {
     var keychainGroups: [String]? = nil
     var originalAppGroups: [String]? = nil
     var appGroups: [String]? = nil
+    var cloudKitDiagnostics: String? = nil
     static func capabilityName(_ key:String)->String {
         if key == "com.apple.security.application-groups" { return "App Groups" }
         if key == "keychain-access-groups" { return "Shared Keychain" }
@@ -106,6 +107,6 @@ struct SigningSummary: Codable {
         return key
     }
     var report: String {
-        "Crumb signing report\nOriginal: \(originalBundleID)\nSigned: \(bundleID)\nProfile: \(profileName)\nDate: \(date)\nAdjusted capabilities:\n" + capabilities.joined(separator:"\n") + "\nTeam: \(teamID ?? "")\nApplication identifier: \(applicationIdentifier ?? "")\nOriginal Keychain: \((originalKeychainGroups ?? []).joined(separator:", "))\nSigned Keychain: \((keychainGroups ?? []).joined(separator:", "))\nOriginal App Groups: \((originalAppGroups ?? []).joined(separator:", "))\nSigned App Groups: \((appGroups ?? []).joined(separator:", "))"
+        "Crumb signing report\nOriginal: \(originalBundleID)\nSigned: \(bundleID)\nProfile: \(profileName)\nDate: \(date)\nAdjusted capabilities:\n" + capabilities.joined(separator:"\n") + "\nTeam: \(teamID ?? "")\nApplication identifier: \(applicationIdentifier ?? "")\nOriginal Keychain: \((originalKeychainGroups ?? []).joined(separator:", "))\nSigned Keychain: \((keychainGroups ?? []).joined(separator:", "))\nOriginal App Groups: \((originalAppGroups ?? []).joined(separator:", "))\nSigned App Groups: \((appGroups ?? []).joined(separator:", "))\nCloudKit entitlements (original / profile / signed):\n\(cloudKitDiagnostics ?? "Not recorded")"
     }
 }

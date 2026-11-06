@@ -168,7 +168,7 @@ fn compatible_with_identity(
             changed.insert(key.clone());
         }
         if let Some(grant) = grants.get(&key) {
-            if signing::permits(grant, &value) {
+            if signing::permits_entitlement(&key, grant, &value) {
                 result.insert(key, value);
                 continue;
             }
@@ -213,6 +213,7 @@ struct BundlePlan {
     entitlements: plist::Dictionary,
     old_keychain: Vec<String>,
     old_groups: Vec<String>,
+    original_cloud: plist::Dictionary,
 }
 struct Plan {
     app: PathBuf,
@@ -362,6 +363,7 @@ fn build_plan(work: &Path, v: &Value, ctx: &ContextData) -> Result<Plan> {
         let ent = signing::entitlements(&bytes)?;
         let old_keychain = string_values(&ent, "keychain-access-groups");
         let old_groups = string_values(&ent, "com.apple.security.application-groups");
+        let original_cloud = cloud_entitlements(&ent);
         let chosen = &ctx.profiles[profile].parsed;
         let profile_identity = if !permits_id(chosen.entitlements(), &target) {
             chosen
@@ -389,6 +391,7 @@ fn build_plan(work: &Path, v: &Value, ctx: &ContextData) -> Result<Plan> {
             entitlements,
             old_keychain,
             old_groups,
+            original_cloud,
         });
     }
     ensure!(!bundles.is_empty(), "Missing app executable");
@@ -410,6 +413,15 @@ fn string_values(dict: &plist::Dictionary, key: &str) -> Vec<String> {
         })
         .unwrap_or_default()
 }
+fn cloud_entitlements(dict: &plist::Dictionary) -> plist::Dictionary {
+    dict.iter()
+        .filter(|(k, _)| {
+            k.starts_with("com.apple.developer.icloud-")
+                || k.starts_with("com.apple.developer.ubiquity-")
+        })
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect()
+}
 fn report(plan: &Plan, ctx: &ContextData) -> Value {
     let main = plan
         .bundles
@@ -422,7 +434,12 @@ fn report(plan: &Plan, ctx: &ContextData) -> Value {
       "signing_team":ctx.profiles[0].parsed.team_id(),"application_identifier":main.entitlements.get("application-identifier").and_then(|v|v.as_string()),
       "original_keychain_groups":main.old_keychain,"original_app_groups":main.old_groups,
       "keychain_groups":string_values(&main.entitlements,"keychain-access-groups"),
-      "app_groups":string_values(&main.entitlements,"com.apple.security.application-groups")})
+      "app_groups":string_values(&main.entitlements,"com.apple.security.application-groups"),
+      "cloudkit_diagnostics":plan.bundles.iter().filter(|b| !b.original_cloud.is_empty()).map(|b| json!({
+          "bundle_id":b.id,"original":b.original_cloud,
+          "profile":cloud_entitlements(ctx.profiles[b.profile].parsed.entitlements()),
+          "signed":cloud_entitlements(&b.entitlements)
+      })).collect::<Vec<_>>()})
 }
 
 pub fn preview(v: &Value, job: &super::Job) -> Result<Value> {
@@ -638,6 +655,66 @@ mod tests {
                 &["com.certlium.crumb"]
             )
             .is_err()
+        );
+    }
+    #[test]
+    fn retains_complete_authorized_icloud_capabilities_without_changing_container() {
+        let mut cloud = plist::Dictionary::new();
+        cloud.insert(
+            "com.apple.developer.icloud-container-environment".into(),
+            "Production".into(),
+        );
+        cloud.insert(
+            "com.apple.developer.icloud-container-identifiers".into(),
+            vec![plist::Value::from("iCloud.us.humanzoo.pinlist")].into(),
+        );
+        cloud.insert(
+            "com.apple.developer.icloud-services".into(),
+            vec![plist::Value::from("CloudKit")].into(),
+        );
+        cloud.insert(
+            "com.apple.developer.ubiquity-kvstore-identifier".into(),
+            "OLD.us.humanzoo.pinlist".into(),
+        );
+        let mut allowed = grants("*");
+        allowed.extend(cloud.clone());
+        allowed.insert(
+            "com.apple.developer.icloud-container-environment".into(),
+            vec![
+                plist::Value::from("Development"),
+                plist::Value::from("Production"),
+            ]
+            .into(),
+        );
+        let (signed, changed) = compatible_entitlements(
+            cloud.clone(),
+            &allowed,
+            "TEAM",
+            "us.humanzoo.pinlist",
+            "us.humanzoo.pinlist",
+            "us.humanzoo.pinlist",
+        )
+        .unwrap();
+        assert_eq!(cloud_entitlements(&signed), cloud);
+        assert!(changed.is_empty());
+        // Environment permission alone cannot authorize a different container.
+        allowed.insert(
+            "com.apple.developer.icloud-container-identifiers".into(),
+            vec![plist::Value::from("iCloud.other")].into(),
+        );
+        let (signed, changed) = compatible_entitlements(
+            cloud,
+            &allowed,
+            "TEAM",
+            "us.humanzoo.pinlist",
+            "us.humanzoo.pinlist",
+            "us.humanzoo.pinlist",
+        )
+        .unwrap();
+        assert!(!signed.contains_key("com.apple.developer.icloud-container-identifiers"));
+        assert_eq!(
+            changed,
+            vec!["com.apple.developer.icloud-container-identifiers"]
         );
     }
     #[test]

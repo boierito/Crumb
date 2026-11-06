@@ -114,6 +114,10 @@ fn image() -> Vec<u8> {
         "com.apple.security.application-groups".into(),
         vec![plist::Value::String("group.original".into())].into(),
     );
+    original.insert(
+        "com.apple.developer.icloud-container-environment".into(),
+        "Production".into(),
+    );
     let config = apple_codesign_quick::MachOSigningConfig::new(
         "us.humanzoo.pinlist",
         "OLD",
@@ -297,6 +301,17 @@ fn signs_main_and_extension_with_real_cms_without_mutating_source_or_losing_sett
     let plan = preview(&v, &job()).unwrap();
     assert_eq!(plan["bundle_id"], "us.humanzoo.pinlist");
     assert_eq!(plan["bundle_count"], 2);
+    let diagnostics = plan["cloudkit_diagnostics"].as_array().unwrap();
+    assert_eq!(diagnostics.len(), 2);
+    for bundle in diagnostics {
+        assert_eq!(
+            bundle["original"]["com.apple.developer.icloud-container-environment"],
+            "Production"
+        );
+        assert!(bundle["profile"].as_object().unwrap().is_empty());
+        assert!(bundle["signed"].as_object().unwrap().is_empty());
+    }
+
     assert!(
         plan["adjusted_capabilities"]
             .as_array()

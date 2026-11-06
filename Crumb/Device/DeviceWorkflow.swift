@@ -542,6 +542,10 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
                     teamID:value["signing_team"] as? String,applicationIdentifier:value["application_identifier"] as? String,
                     originalKeychainGroups:value["original_keychain_groups"] as? [String],keychainGroups:value["keychain_groups"] as? [String],
                     originalAppGroups:value["original_app_groups"] as? [String],appGroups:value["app_groups"] as? [String])
+                if let diagnostics = value["cloudkit_diagnostics"], JSONSerialization.isValidJSONObject(diagnostics) {
+                    let data = try JSONSerialization.data(withJSONObject:diagnostics,options:[.prettyPrinted,.sortedKeys])
+                    original.lastSigning?.cloudKitDiagnostics = String(data:data,encoding:.utf8)
+                }
                 try original.save()
                 let record = DownloadRecord(filename:original.filename,appID:original.appID,appName:original.appName,bundleID:bundle,
                     version:original.version,build:original.build,externalVersionID:original.externalVersionID,date:original.date,decrypted:true,signed:true)

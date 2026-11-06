@@ -16,10 +16,12 @@ import Foundation
         precondition(!legacy.isDecrypted)
         decoded.decrypted = true; decoded.signed = true
         decoded.lastSigning = SigningSummary(bundleID:"new.fixture",originalBundleID:"test.fixture",profileName:"Fixture profile",capabilities:["com.apple.security.application-groups"],date:Date())
+        decoded.lastSigning?.cloudKitDiagnostics = "fixture cloud entitlement comparison"
         let newData = try JSONEncoder().encode(decoded)
         let restored = try JSONDecoder().decode(DownloadRecord.self,from:newData)
         precondition(restored.isDecrypted && restored.signed == true)
         precondition(restored.lastSigning?.bundleID == "new.fixture")
+        precondition(restored.lastSigning?.cloudKitDiagnostics == "fixture cloud entitlement comparison")
         precondition(restored.lastSigning?.capabilities == ["com.apple.security.application-groups"])
         for name in ["selected.ipa", "selected.json", "keep.ipa", "keep.json"] {
             try Data("fixture".utf8).write(to: root.appendingPathComponent(name))

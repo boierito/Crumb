@@ -1,3 +1,18 @@
+# Build 23037: correctly match iCloud environment grants
+
+Profiles may authorize iCloud environments as an array while the signed app
+selects one string. The signer now recognizes this key-specific representation
+and preserves the original selected environment when authorized. It does not
+switch production/development environments or rewrite CloudKit container IDs.
+Tests preserve all four reported iCloud capabilities when granted and reject
+unrelated containers. This fixes a matcher defect, not confirmed Pinlist recovery.
+
+The shareable signing report now includes per-bundle original/profile/signed
+iCloud and ubiquity values. It contains no private key or certificate password.
+This distinguishes missing profile authorization from erroneous entitlement loss.
+Actual Pinlist profile/signature comparison and device runtime validation remain
+necessary; preserving unprovisioned entitlements cannot grant original CloudKit access.
+
 # Build 23036: one signing identity
 
 A single .p12, .mobileprovision and saved password now sign both the helper and
