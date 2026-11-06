@@ -1,3 +1,25 @@
+# Build 23038: scalar wildcard grants and scoped KVS migration
+
+The supplied profile encodes iCloud services and associated domains as a scalar
+wildcard, while app requests use string arrays. The matcher now checks each
+string against that pattern, preserving allowed lists. Empty allowed-container
+arrays remain empty grants, not wildcards. Mixed non-string lists are rejected.
+No user profile, device identifiers, certificate or private key is committed.
+
+An original ubiquity KVS identifier is retained when authorized. Otherwise the
+signer attempts the selected team prefix and per-install app identifier, and
+uses it only if explicitly allowed by the profile. The existing capability
+review/signing report records this namespace change. A new KVS namespace does
+not migrate data from the original developer's namespace or grant CloudKit
+container access.
+
+The supplied profile has no iCloud environment entitlement and empty iCloud
+container arrays. The wildcard services grant does not supply these missing
+permissions. These matcher fixes do not establish recovery of Pinlist Settings
+or its original CloudKit service. Synthetic shape-equivalent tests cover
+preserved services/domains, authorized and denied KVS remapping and rejection
+of the missing container/environment permissions.
+
 # Build 23037: correctly match iCloud environment grants
 
 Profiles may authorize iCloud environments as an array while the signed app

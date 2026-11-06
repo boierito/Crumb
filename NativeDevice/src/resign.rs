@@ -164,6 +164,21 @@ fn compatible_with_identity(
                 }
             }
         }
+        if key == "com.apple.developer.ubiquity-kvstore-identifier" {
+            if let (Some(grant), Some(old)) = (grants.get(&key), value.as_string()) {
+                if !signing::permits(grant, &value) {
+                    if let Some((_, suffix)) = old.split_once('.') {
+                        let candidate = plist::Value::String(format!(
+                            "{team}.{}",
+                            remap_id(suffix, old_main, new_main)
+                        ));
+                        if signing::permits(grant, &candidate) {
+                            value = candidate;
+                        }
+                    }
+                }
+            }
+        }
         if value != original_value {
             changed.insert(key.clone());
         }
@@ -656,6 +671,92 @@ mod tests {
             )
             .is_err()
         );
+    }
+    #[test]
+    fn wildcard_services_and_kvstore_do_not_grant_empty_cloudkit_containers() {
+        // Synthetic equivalent of the supplied profile's permission shapes.
+        let mut allowed = grants("*");
+        allowed.insert("com.apple.developer.icloud-services".into(), "*".into());
+        allowed.insert(
+            "com.apple.developer.icloud-container-identifiers".into(),
+            plist::Value::Array(vec![]),
+        );
+        allowed.insert(
+            "com.apple.developer.ubiquity-kvstore-identifier".into(),
+            "TEAM.*".into(),
+        );
+        allowed.insert("com.apple.developer.associated-domains".into(), "*".into());
+        let mut original = plist::Dictionary::new();
+        original.insert(
+            "com.apple.developer.icloud-services".into(),
+            vec![plist::Value::from("CloudKit")].into(),
+        );
+        original.insert(
+            "com.apple.developer.icloud-container-identifiers".into(),
+            vec![plist::Value::from("iCloud.example.app")].into(),
+        );
+        original.insert(
+            "com.apple.developer.icloud-container-environment".into(),
+            "Production".into(),
+        );
+        original.insert(
+            "com.apple.developer.ubiquity-kvstore-identifier".into(),
+            "OLD.example.app".into(),
+        );
+        original.insert(
+            "com.apple.developer.associated-domains".into(),
+            vec![plist::Value::from("applinks:example.com")].into(),
+        );
+        let (signed, changed) = compatible_entitlements(
+            original,
+            &allowed,
+            "TEAM",
+            "example.app",
+            "custom.app",
+            "custom.app",
+        )
+        .unwrap();
+        assert_eq!(
+            signed["com.apple.developer.icloud-services"],
+            plist::Value::Array(vec!["CloudKit".into()])
+        );
+        assert_eq!(
+            signed["com.apple.developer.associated-domains"],
+            plist::Value::Array(vec!["applinks:example.com".into()])
+        );
+        assert_eq!(
+            signed["com.apple.developer.ubiquity-kvstore-identifier"].as_string(),
+            Some("TEAM.custom.app")
+        );
+        assert!(!signed.contains_key("com.apple.developer.icloud-container-identifiers"));
+        assert!(!signed.contains_key("com.apple.developer.icloud-container-environment"));
+        assert_eq!(
+            changed,
+            vec![
+                "com.apple.developer.icloud-container-environment",
+                "com.apple.developer.icloud-container-identifiers",
+                "com.apple.developer.ubiquity-kvstore-identifier"
+            ]
+        );
+        allowed.insert(
+            "com.apple.developer.ubiquity-kvstore-identifier".into(),
+            "TEAM.other".into(),
+        );
+        let mut original = plist::Dictionary::new();
+        original.insert(
+            "com.apple.developer.ubiquity-kvstore-identifier".into(),
+            "OLD.example.app".into(),
+        );
+        let (signed, _) = compatible_entitlements(
+            original,
+            &allowed,
+            "TEAM",
+            "example.app",
+            "custom.app",
+            "custom.app",
+        )
+        .unwrap();
+        assert!(!signed.contains_key("com.apple.developer.ubiquity-kvstore-identifier"));
     }
     #[test]
     fn retains_complete_authorized_icloud_capabilities_without_changing_container() {

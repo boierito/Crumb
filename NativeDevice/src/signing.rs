@@ -184,6 +184,12 @@ pub(super) fn permits(grant: &plist::Value, request: &plist::Value) -> bool {
         (plist::Value::String(g), plist::Value::String(r)) => {
             g == r || g.strip_suffix('*').is_some_and(|p| r.starts_with(p))
         }
+        (plist::Value::String(_), plist::Value::Array(rs)) => {
+            // Provisioning profiles can encode a string wildcard for a list
+            // entitlement (for example iCloud services or associated domains).
+            rs.iter()
+                .all(|r| r.as_string().is_some() && permits(grant, r))
+        }
         (plist::Value::Array(gs), plist::Value::Array(rs)) => {
             rs.iter().all(|r| gs.iter().any(|g| permits(g, r)))
         }
@@ -203,6 +209,25 @@ pub(super) fn permits_entitlement(key: &str, grant: &plist::Value, request: &pli
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn scalar_profile_patterns_authorize_only_matching_string_list_members() {
+        let services = plist::Value::Array(vec!["CloudKit".into(), "CloudDocuments".into()]);
+        assert!(permits(&"*".into(), &services));
+        assert!(!permits(&"CloudKit".into(), &services));
+        assert!(permits(
+            &"applinks:*".into(),
+            &plist::Value::Array(vec!["applinks:example.com".into()])
+        ));
+        assert!(!permits(
+            &"applinks:*".into(),
+            &plist::Value::Array(vec!["webcredentials:example.com".into()])
+        ));
+        assert!(!permits(
+            &"*".into(),
+            &plist::Value::Array(vec![true.into()])
+        ));
+        assert!(!permits(&plist::Value::Array(vec![]), &services));
+    }
     #[test]
     fn icloud_environment_selects_one_of_profile_alternatives() {
         let options = plist::Value::Array(vec!["Development".into(), "Production".into()]);

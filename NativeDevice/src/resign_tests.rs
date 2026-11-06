@@ -28,6 +28,7 @@ fn profile_fixture(root: &Path, name: &str, pattern: &str) -> PathBuf {
         "keychain-access-groups".into(),
         vec![plist::Value::String("PREFIX.*".into())].into(),
     );
+    grants.insert("com.apple.developer.icloud-services".into(), "*".into());
     let mut p = plist::Dictionary::new();
     p.insert("Name".into(), name.into());
     if name == "enterprise" {
@@ -117,6 +118,10 @@ fn image() -> Vec<u8> {
     original.insert(
         "com.apple.developer.icloud-container-environment".into(),
         "Production".into(),
+    );
+    original.insert(
+        "com.apple.developer.icloud-services".into(),
+        vec![plist::Value::from("CloudKit")].into(),
     );
     let config = apple_codesign_quick::MachOSigningConfig::new(
         "us.humanzoo.pinlist",
@@ -308,8 +313,19 @@ fn signs_main_and_extension_with_real_cms_without_mutating_source_or_losing_sett
             bundle["original"]["com.apple.developer.icloud-container-environment"],
             "Production"
         );
-        assert!(bundle["profile"].as_object().unwrap().is_empty());
-        assert!(bundle["signed"].as_object().unwrap().is_empty());
+        assert_eq!(
+            bundle["profile"]["com.apple.developer.icloud-services"],
+            "*"
+        );
+        assert_eq!(
+            bundle["signed"]["com.apple.developer.icloud-services"],
+            json!(["CloudKit"])
+        );
+        assert!(
+            bundle["signed"]
+                .get("com.apple.developer.icloud-container-environment")
+                .is_none()
+        );
     }
 
     assert!(
@@ -356,6 +372,10 @@ fn signs_main_and_extension_with_real_cms_without_mutating_source_or_losing_sett
         assert_eq!(
             ent["application-identifier"].as_string(),
             Some(format!("PREFIX.{id}").as_str())
+        );
+        assert_eq!(
+            ent["com.apple.developer.icloud-services"],
+            plist::Value::Array(vec!["CloudKit".into()])
         );
         assert!(!ent.contains_key("com.apple.security.application-groups"));
         assert!(
