@@ -302,6 +302,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         catch { message = error.localizedDescription }
     }
     func cancel() {
+        resultRequest = DeviceResultRequest()
         guard let job else { return }
         crumb_device_cancel(job)
         message = "Cancelling…"

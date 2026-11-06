@@ -36,6 +36,9 @@ import Foundation
         precondition(!result.claim(busy:false,hasPendingJob:true))
         result.enqueue()
         precondition(!result.claim(busy:false,hasPendingJob:false))
+        precondition(!result.requested) // completing a job must not suppress future connection checks
+        precondition(!result.claim(busy:false,hasPendingJob:true))
+        result.enqueue()
         precondition(result.claim(busy:false,hasPendingJob:true))
         print("Connection scheduling and saved-result credential regressions passed")
     }

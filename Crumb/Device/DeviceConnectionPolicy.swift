@@ -36,7 +36,8 @@ struct DeviceResultRequest {
     private(set) var requested = false
     mutating func enqueue() { requested = true }
     mutating func claim(busy: Bool, hasPendingJob: Bool) -> Bool {
-        guard requested, !busy, hasPendingJob else { return false }
+        guard hasPendingJob else { requested = false; return false }
+        guard requested, !busy else { return false }
         requested = false
         return true
     }
