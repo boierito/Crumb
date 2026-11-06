@@ -432,6 +432,7 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
         if (encrypted)
           decrypted++;
         processed++;
+        if (processed == 1 || processed % 25 == 0)
         [self status:[NSString stringWithFormat:@"Processing your app · %lu files", (unsigned long)processed]
              progress:0.8f * MIN(1.0f, (float)processed / MAX(1, inventory.count))];
       }
@@ -566,7 +567,7 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
     UIApplication.sharedApplication.idleTimerDisabled = NO;
     if (ok) self.progress.progress = 1;
     self.titleLabel.text = ok ? @"Your app is ready" : @"Could not finish";
-    self.label.text=ok?@"Decryption finished. Return to Crumb and tap Retrieve result.":error.localizedDescription?:@"Decryption failed. No completed IPA was produced.";
+    self.label.text=ok?@"Returning to Crumb to save your IPA. If Crumb does not open, return to it and choose Retrieve result.":error.localizedDescription?:@"Decryption failed. No completed IPA was produced.";
     if (ok) {
       NSURLComponents *callback = [NSURLComponents new];
       callback.scheme = @"crumb";
