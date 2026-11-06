@@ -12,7 +12,8 @@ The native signing/fetch code already checks cancellation before publication.
 New helpers support a job-bound cancel URL and a Stop button. Cancellation is
 persisted per job, checked between files, encrypted pages and verification stages,
 and reported to Crumb. A later job does not inherit an old cancellation. Crumb
-also unlocks with an older helper that lacks this protocol. iOS system calls
+also unlocks with an older helper that lacks this protocol, without reopening
+that older app. New jobs advertise the cancellation capability explicitly. iOS system calls
 already in progress cannot be forcibly interrupted; cancellation is cooperative
 at the next checkpoint, while Crumb itself is immediately available again.
 

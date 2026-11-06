@@ -3,11 +3,11 @@ import Foundation
     static func main() throws {
         let credentials: [String:Any] = ["record":"PAIRING-PLIST", "operation":"fetch", "route":"10.7.0.1"]
         // Reproduce the old saved-job collision: JSON download metadata named record.
-        let pending = ["record":"DOWNLOAD-JSON", "download_record":"DOWNLOAD-JSON", "job_id":"job", "helper_bundle":"helper", "output":"/result.ipa", "install":"true"]
+        let pending = ["record":"DOWNLOAD-JSON", "download_record":"DOWNLOAD-JSON", "job_id":"job", "helper_bundle":"helper", "output":"/result.ipa", "install":"true", "cancel_protocol":"1"]
         let request = try DeviceRequest.adding(DeviceRequest.retrievalParameters(pending), to:credentials)
         precondition(request["record"] as? String == "PAIRING-PLIST")
         precondition(request["job_id"] as? String == "job")
-        precondition(request["download_record"] == nil && request["install"] == nil)
+        precondition(request["download_record"] == nil && request["install"] == nil && request["cancel_protocol"] == nil)
         for key in DeviceRequest.reserved {
             do { _ = try DeviceRequest.adding([key:"overridden"],to:credentials); fatalError("Credential override allowed") }
             catch { }

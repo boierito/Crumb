@@ -263,7 +263,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
             let outputDir = base.appendingPathComponent("Decrypted", isDirectory: true)
             try fm.createDirectory(at: outputDir, withIntermediateDirectories: true)
             pending = ["job_id":id, "helper_bundle":helperBundle, "output":outputDir.appendingPathComponent(id + "-decrypted.ipa").path,
-                       "download_record":try JSONEncoder().encode(record).base64EncodedString(), "install":installAfterDecrypt ? "true" : "false"]
+                       "download_record":try JSONEncoder().encode(record).base64EncodedString(), "install":installAfterDecrypt ? "true" : "false", "cancel_protocol":"1"]
             output = nil; helperInstalled = false; start(request)
         } catch { cleanup(); activeRecord = nil; errorMessage = error.localizedDescription }
     }
@@ -312,7 +312,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     // Abandon the UI session immediately, including an external helper with no
     // native Job. A cancelled worker owns its workspace until it has stopped.
     func stopDecryption(notifyHelper: Bool = true) {
-        let helperJob = waitingForHelper ? pending?["job_id"] : nil
+        let helperJob = waitingForHelper && pending?["cancel_protocol"] == "1" ? pending?["job_id"] : nil
         let retiredJob = job
         let retiredWorkspace = staged
         generation = UUID()
