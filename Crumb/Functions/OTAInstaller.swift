@@ -106,13 +106,21 @@ struct OTAInstallationView: View {
                         Button("Install") {
                             requestInstallation()
                         }
-                        if let url = record.fileURL { ShareLink(item: url) { Label("Export IPA instead", systemImage: "square.and.arrow.up") } }
+                        if let url = source ?? record.fileURL { ShareLink(item: url) { Label("Export IPA instead", systemImage: "square.and.arrow.up") } }
                     }
                 }
             }
             .navigationTitle("Install app")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { installer.stop(); dismiss() } } }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Close") { installer.stop(); dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    if let url = source ?? record.fileURL {
+                        ShareLink(item:url) { Image(systemName:"square.and.arrow.up") }
+                            .accessibilityLabel(source == nil ? "Export IPA" : "Export signed IPA")
+                    }
+                }
+            }
             .task { if startImmediately && !started { requestInstallation() } }
             .onDisappear { installer.stop(); if let cleanup { try? FileManager.default.removeItem(at:cleanup) } }
         }
