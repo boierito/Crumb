@@ -91,6 +91,14 @@ pub fn inspect(v: &Value) -> Result<Value> {
             json!({"phase":"installation-signing-ready", "name":profile.plist().get("Name").and_then(|v|v.as_string()).unwrap_or("Signing profile")}),
         );
     }
+    if v["purpose"] == "shared" {
+        let helper = choose_helper(
+            profile.plist(),
+            v["own_bundle"].as_str().unwrap_or("com.certlium.crumb"),
+        );
+        return Ok(json!({"phase":"signing-ready", "helper_bundle":helper.ok(),
+            "name":profile.plist().get("Name").and_then(|x| x.as_string()).unwrap_or("Signing identity")}));
+    }
     let bundle = choose_helper(
         profile.plist(),
         v["own_bundle"].as_str().unwrap_or("com.certlium.crumb"),
@@ -126,9 +134,9 @@ pub(super) fn entitlements(bytes: &[u8]) -> Result<plist::Dictionary> {
                 be(sig, 0)? == 0xfade0cc0 && be(sig, 4)? <= sig.len(),
                 "Invalid code signature"
             );
-            let length=be(sig,4)?;
-            ensure!(length>=12,"Invalid signature length");
-            let sig=&sig[..length];
+            let length = be(sig, 4)?;
+            ensure!(length >= 12, "Invalid signature length");
+            let sig = &sig[..length];
             let count = be(sig, 8)?;
             ensure!(count <= 128, "Too many signature blobs");
             let mut der = None;

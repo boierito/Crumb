@@ -100,8 +100,6 @@
 "Stop" = "Detener";
 
 /* App signing */
-"Helper signing" = "Firma del helper";
-"App installation" = "Instalación de apps";
 "Signing identity" = "Identidad de firma";
 "Extension profiles" = "Perfiles de extensiones";
 "Add profiles" = "Añadir perfiles";

@@ -3,7 +3,6 @@ use super::signing;
 use anyhow::{Context, Result, ensure};
 use apple_codesign_quick::{BundleSigningSettings, ProvisioningProfile};
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeSet,
     fs,
@@ -87,32 +86,15 @@ fn select_main(
     protected: &[&str],
 ) -> Result<String> {
     ensure!(valid_id(original), "Invalid original app identifier");
-    let (_, p) = pattern(grants)?;
-    let result = if let Some(custom) = custom.filter(|s| !s.is_empty()) {
-        ensure!(valid_id(custom), "Enter a valid bundle identifier");
-        ensure!(
-            permits_id(grants, custom),
-            "This profile does not authorize {custom}"
-        );
-        custom.to_owned()
-    } else if permits_id(grants, original) {
-        original.to_owned()
-    } else if let Some(prefix) = p.strip_suffix('*') {
-        let suffix = format!(
-            "app-{}",
-            &format!("{:x}", Sha256::digest(original.as_bytes()))[..12]
-        );
-        format!("{prefix}{suffix}")
-    } else {
-        p.to_owned()
-    };
-    ensure!(
-        valid_id(&result),
-        "Profile cannot produce a valid application identifier"
-    );
+    pattern(grants)?;
+    let result = custom
+        .filter(|s| !s.is_empty())
+        .unwrap_or(original)
+        .to_owned();
+    ensure!(valid_id(&result), "Enter a valid bundle identifier");
     ensure!(
         !protected.iter().any(|id| result.eq_ignore_ascii_case(id)),
-        "This profile is reserved for Crumb or its helper. Select a separate app profile in App installation."
+        "Cannot replace Crumb or its helper"
     );
     Ok(result)
 }
@@ -293,35 +275,13 @@ fn build_plan(work: &Path, v: &Value, ctx: &ContextData) -> Result<Plan> {
             protected.push(value.as_str().context("Invalid protected app identity")?);
         }
     }
-    // zsign derives signing entitlements from the profile. Enterprise profiles
-    // may use that identity while retaining each app/extension CFBundleIdentifier.
-    // Device-bound profiles continue to use their explicit/wildcard app scope.
-    let enterprise = ctx.profiles[0]
-        .parsed
-        .plist()
-        .get("ProvisionsAllDevices")
-        .and_then(|v| v.as_boolean())
-        == Some(true);
-    let id = if enterprise {
-        let id = v["bundle_id"]
-            .as_str()
-            .filter(|s| !s.is_empty())
-            .unwrap_or(&original)
-            .to_owned();
-        ensure!(valid_id(&id), "Enter a valid application identifier");
-        ensure!(
-            !protected.iter().any(|p| id.eq_ignore_ascii_case(p)),
-            "Cannot replace Crumb or its helper"
-        );
-        id
-    } else {
-        select_main(
-            ctx.profiles[0].parsed.entitlements(),
-            &original,
-            v["bundle_id"].as_str(),
-            &protected,
-        )?
-    };
+    // Like zsign, keep CFBundleIdentifier separate from profile signing identity.
+    let id = select_main(
+        ctx.profiles[0].parsed.entitlements(),
+        &original,
+        v["bundle_id"].as_str(),
+        &protected,
+    )?;
     let mut bundles = Vec::new();
     let mut ids = BTreeSet::new();
     let mut changes = BTreeSet::new();
@@ -385,9 +345,7 @@ fn build_plan(work: &Path, v: &Value, ctx: &ContextData) -> Result<Plan> {
                     }
                 })
                 .map(|(i, _)| i)
-                .with_context(|| {
-                    format!("Import an extension profile for {target} in App installation")
-                })?
+                .unwrap_or(0)
         };
         let executable = text(&metadata, "CFBundleExecutable")?;
         ensure!(
@@ -405,13 +363,7 @@ fn build_plan(work: &Path, v: &Value, ctx: &ContextData) -> Result<Plan> {
         let old_keychain = string_values(&ent, "keychain-access-groups");
         let old_groups = string_values(&ent, "com.apple.security.application-groups");
         let chosen = &ctx.profiles[profile].parsed;
-        let profile_identity = if !permits_id(chosen.entitlements(), &target)
-            && chosen
-                .plist()
-                .get("ProvisionsAllDevices")
-                .and_then(|v| v.as_boolean())
-                == Some(true)
-        {
+        let profile_identity = if !permits_id(chosen.entitlements(), &target) {
             chosen
                 .entitlements()
                 .get("application-identifier")
@@ -641,17 +593,17 @@ mod tests {
         d
     }
     #[test]
-    fn ids_preserve_remap_and_protect_helper() {
+    fn ids_preserve_original_or_custom_with_shared_profile() {
         assert_eq!(
             select_main(&grants("*"), "us.humanzoo.pinlist", None, &[]).unwrap(),
             "us.humanzoo.pinlist"
         );
         assert_eq!(
             select_main(&grants("org.example.app"), "us.humanzoo.pinlist", None, &[]).unwrap(),
-            "org.example.app"
+            "us.humanzoo.pinlist"
         );
         let a = select_main(&grants("org.example.*"), "us.humanzoo.pinlist", None, &[]).unwrap();
-        assert!(a.starts_with("org.example.app-"));
+        assert_eq!(a, "us.humanzoo.pinlist");
         assert_eq!(
             a,
             select_main(&grants("org.example.*"), "us.humanzoo.pinlist", None, &[]).unwrap()
@@ -663,7 +615,8 @@ mod tests {
                 None,
                 &["com.certlium.crumb.decrypt"]
             )
-            .is_err()
+            .unwrap()
+                == "us.humanzoo.pinlist"
         );
         assert!(
             select_main(
@@ -671,6 +624,18 @@ mod tests {
                 "us.humanzoo.pinlist",
                 Some("us.humanzoo.pinlist"),
                 &[]
+            )
+            .is_ok()
+        );
+    }
+    #[test]
+    fn actual_crumb_bundle_collision_is_rejected_without_reserving_its_profile() {
+        assert!(
+            select_main(
+                &grants("com.certlium.crumb.decrypt"),
+                "us.humanzoo.pinlist",
+                Some("com.certlium.crumb"),
+                &["com.certlium.crumb"]
             )
             .is_err()
         );

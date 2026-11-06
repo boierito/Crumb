@@ -224,66 +224,78 @@ fn signs_main_and_extension_with_real_cms_without_mutating_source_or_losing_sett
         .unwrap();
     z.finish().unwrap();
     let source_bytes = fs::read(&source).unwrap();
-    let enterprise_profile = profile_fixture(&root, "enterprise", "com.certlium.crumb.decrypt");
-    let mut enterprise = request(&root, &source, &enterprise_profile, "enterprise-work");
-    let enterprise_plan = preview(&enterprise, &job()).unwrap();
-    assert_eq!(enterprise_plan["bundle_id"], "us.humanzoo.pinlist");
-    assert_eq!(enterprise_plan["bundle_count"], 2);
-    enterprise["prepared"] = json!(true);
-    sign(&enterprise, &job()).unwrap();
-    let mut z =
-        zip::ZipArchive::new(fs::File::open(enterprise["output"].as_str().unwrap()).unwrap())
-            .unwrap();
-    for (path, id) in [
-        ("Payload/Pinlist.app", "us.humanzoo.pinlist"),
-        (
-            "Payload/Pinlist.app/PlugIns/Widget.appex",
-            "us.humanzoo.pinlist.Widget",
-        ),
+    for (profile_name, custom) in [
+        ("enterprise", None),
+        ("reused-helper", Some("any.custom.identifier")),
     ] {
-        let mut bytes = Vec::new();
-        z.by_name(&format!("{path}/Info.plist"))
-            .unwrap()
-            .read_to_end(&mut bytes)
-            .unwrap();
-        assert_eq!(
-            plist::Value::from_reader(std::io::Cursor::new(bytes))
-                .unwrap()
-                .as_dictionary()
-                .unwrap()["CFBundleIdentifier"]
-                .as_string(),
-            Some(id)
+        let enterprise_profile = profile_fixture(&root, profile_name, "com.certlium.crumb.decrypt");
+        let mut enterprise = request(
+            &root,
+            &source,
+            &enterprise_profile,
+            &format!("{profile_name}-work"),
         );
-        let mut bytes = Vec::new();
-        assert_eq!(
+        enterprise["protected_bundle_ids"] = json!(["com.certlium.crumb.decrypt"]);
+        if let Some(custom) = custom {
+            enterprise["bundle_id"] = json!(custom);
+        }
+        let expected = custom.unwrap_or("us.humanzoo.pinlist");
+        let enterprise_plan = preview(&enterprise, &job()).unwrap();
+        assert_eq!(enterprise_plan["bundle_id"], expected);
+        assert_eq!(enterprise_plan["bundle_count"], 2);
+        enterprise["prepared"] = json!(true);
+        sign(&enterprise, &job()).unwrap();
+        let mut z =
+            zip::ZipArchive::new(fs::File::open(enterprise["output"].as_str().unwrap()).unwrap())
+                .unwrap();
+        for (path, id) in [
+            ("Payload/Pinlist.app", expected.to_owned()),
+            (
+                "Payload/Pinlist.app/PlugIns/Widget.appex",
+                format!("{expected}.Widget"),
+            ),
+        ] {
+            let mut bytes = Vec::new();
+            z.by_name(&format!("{path}/Info.plist"))
+                .unwrap()
+                .read_to_end(&mut bytes)
+                .unwrap();
+            assert_eq!(
+                plist::Value::from_reader(std::io::Cursor::new(bytes))
+                    .unwrap()
+                    .as_dictionary()
+                    .unwrap()["CFBundleIdentifier"]
+                    .as_string(),
+                Some(id.as_str())
+            );
+            let mut bytes = Vec::new();
+            assert_eq!(
+                z.by_name(&format!("{path}/Program"))
+                    .unwrap()
+                    .unix_mode()
+                    .unwrap()
+                    & 0o777,
+                0o755
+            );
             z.by_name(&format!("{path}/Program"))
                 .unwrap()
-                .unix_mode()
-                .unwrap()
-                & 0o777,
-            0o755
-        );
-        z.by_name(&format!("{path}/Program"))
-            .unwrap()
-            .read_to_end(&mut bytes)
-            .unwrap();
-        assert_eq!(
-            signing::entitlements(&bytes).unwrap()["application-identifier"].as_string(),
-            Some("PREFIX.com.certlium.crumb.decrypt")
-        );
+                .read_to_end(&mut bytes)
+                .unwrap();
+            assert_eq!(
+                signing::entitlements(&bytes).unwrap()["application-identifier"].as_string(),
+                Some("PREFIX.com.certlium.crumb.decrypt")
+            );
+        }
+        drop(z);
     }
-    drop(z);
     let bad = request(&root, &source, &main_profile, "missing-extension");
-    assert!(
-        preview(&bad, &job())
-            .unwrap_err()
-            .to_string()
-            .contains("extension profile")
-    );
+    let fallback = preview(&bad, &job()).unwrap();
+    assert_eq!(fallback["bundle_id"], "us.humanzoo.pinlist");
+    fs::remove_dir_all(bad["work"].as_str().unwrap()).unwrap();
     let mut v = request(&root, &source, &main_profile, "prepared");
     v["profiles"] = json!([extension_profile]);
     let plan = preview(&v, &job()).unwrap();
-    assert_eq!(plan["bundle_id"], "org.example.pinlist");
+    assert_eq!(plan["bundle_id"], "us.humanzoo.pinlist");
     assert_eq!(plan["bundle_count"], 2);
     assert!(
         plan["adjusted_capabilities"]
@@ -293,7 +305,7 @@ fn signs_main_and_extension_with_real_cms_without_mutating_source_or_losing_sett
             .any(|v| v == "com.apple.security.application-groups")
     );
     v["prepared"] = json!(true);
-    v["bundle_id"] = json!("not.permitted.identifier");
+    v["bundle_id"] = json!("invalid identifier");
     assert!(preview(&v, &job()).is_err());
     assert!(Path::new(v["work"].as_str().unwrap()).is_dir());
     v["bundle_id"] = json!("org.example.pinlist");

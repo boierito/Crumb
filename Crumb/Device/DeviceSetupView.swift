@@ -5,7 +5,6 @@ struct DeviceSetupView: View {
     @StateObject private var device = DeviceWorkflow.shared
     @State private var importKind = "p12"
     @State private var importing = false
-    @State private var editingSigning = false
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -56,26 +55,7 @@ struct DeviceSetupView: View {
                     }.disabled(device.busy || device.waitingForHelper)
                 }
             }
-            Section { NavigationLink("App installation") { InstallationSigningView() } }
-            Section("Helper signing") {
-                if device.signingReady && !editingSigning {
-                    Label(device.certificateName.isEmpty ? "Certificate" : device.certificateName, systemImage:"checkmark.seal.fill")
-                        .lineLimit(1).foregroundStyle(.primary)
-                    Label(device.profileName.isEmpty ? "Provisioning profile" : device.profileName, systemImage:"doc.badge.gearshape")
-                        .lineLimit(1)
-                    HStack { Label("Password saved", systemImage:"lock.fill"); Spacer(); Button("Change") { editingSigning = true } }
-                        .font(.subheadline).foregroundStyle(.secondary)
-                } else {
-                    signingFile(title:"Certificate", name:device.certificateName, present:device.hasCertificate, kind:"p12")
-                    signingFile(title:"Provisioning profile", name:device.profileName, present:device.hasProfile, kind:"profile")
-                    SecureField("Certificate password", text:$device.signingPassword)
-                        .textContentType(.password)
-                        .onChange(of:device.signingPassword) { _ in device.invalidateSigning() }
-                    Button { device.saveSigning() } label: {
-                        HStack { Text("Save signing"); Spacer(); if device.busy && device.phase == "signing" { ProgressView() } }
-                    }.disabled(device.busy || !device.hasCertificate || !device.hasProfile)
-                }
-            }
+            SigningIdentitySections()
         }
         .navigationTitle("Decrypter")
         .navigationBarTitleDisplayMode(.inline)
@@ -84,7 +64,6 @@ struct DeviceSetupView: View {
         .alert("Could not finish",isPresented:Binding(get:{ !device.errorMessage.isEmpty },set:{ if !$0 { device.errorMessage = "" } })) {
             Button("OK") { device.errorMessage = "" }
         } message: { Text(device.errorMessage) }
-        .onChange(of:device.signingReady) { ready in if ready { editingSigning = false } }
         .onChange(of:scenePhase) { phase in if phase == .active { device.autoConnect() } }
         .task { device.autoConnect() }
         .fileImporter(isPresented:$importing,allowedContentTypes:[.data],allowsMultipleSelection:false) { result in
@@ -92,19 +71,7 @@ struct DeviceSetupView: View {
         }
     }
     private func pick(_ kind: String) { importKind = kind; importing = true }
-    private func signingFile(title:String,name:String,present:Bool,kind:String) -> some View {
-        Button { pick(kind) } label: {
-            HStack(spacing:12) {
-                Image(systemName:present ? "checkmark.circle.fill" : "plus.circle").foregroundStyle(present ? .green : .accentColor)
-                VStack(alignment:.leading,spacing:2) {
-                    Text(title.localized).foregroundStyle(.primary)
-                    if !name.isEmpty { Text(name).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
-                }
-                Spacer()
-                Image(systemName:"chevron.right").font(.caption).foregroundStyle(.tertiary)
-            }
-        }.disabled(device.busy || device.waitingForHelper)
-    }
+
 }
 
 struct DeviceDecryptView: View {

@@ -32,7 +32,7 @@ struct ContentView: View {
             if phase == .active { device.autoConnect() }
         }
         .sheet(isPresented:$device.installationSetupNeeded,onDismiss:{ device.installationSetupDismissed() }) {
-            NavigationStack { InstallationSigningView().toolbar { ToolbarItem(placement:.confirmationAction) { Button("Done") { device.installationSetupNeeded = false } } } }
+            NavigationStack { SigningSettingsView().toolbar { ToolbarItem(placement:.confirmationAction) { Button("Done") { device.installationSetupNeeded = false } } } }
         }
         .sheet(item:$device.signingReview,onDismiss:{ device.signingReviewDismissed() }) { SigningReviewView(review:$0) }
         .sheet(item:$device.signedInstallation) { artifact in

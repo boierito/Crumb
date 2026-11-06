@@ -1,37 +1,30 @@
-# Build 23035: independent application resigning
+# Build 23036: one signing identity
 
-App installation has its own identity/profile/password store, initially seeded
-from existing settings once. Editing it does not alter helper provisioning.
-Main and extension profiles must match the selected certificate and signing team.
+A single .p12, .mobileprovision and saved password now sign both the helper and
+local decrypted IPAs. The existing helper identity takes precedence on upgrade;
+the old installation identity is a migration fallback only. There is no second
+app-installation identity editor. Both settings entry points reuse one view.
 
-Enterprise (`ProvisionsAllDevices`) profiles support profile-derived signing
-identity while retaining original app and extension bundle IDs, following the
-zsign entitlement-template pattern. This does not rewrite the profile or grant
-permissions outside it; final acceptance is still decided by iOS.
+CFBundleIdentifier is preserved by default and can be customized for installation.
+Like zsign's default profile-entitlement template, an explicit profile identity
+can be used for signing without forcing the app's CFBundleIdentifier to match it.
+This applies to all profile types, not only enterprise profiles. Nested bundles
+prefer an available matching profile and otherwise reuse the selected profile.
+Crumb does not reserve a profile for itself/helper; actual replacement of the
+running app or its managed helper is still rejected. The profile CMS is never
+altered. Final profile/device/capability acceptance is determined by iOS.
 
-For development/ad hoc profiles, wildcard profiles preserve the source identifier
-when allowed. Scoped wildcard
-profiles derive a stable permitted identifier; explicit profiles select their
-permitted identifier. A custom per-install ID is available in Signing options.
-Crumb and its helper cannot be overwritten. Nested extension IDs and Watch
-companion metadata follow boundary-aware root-ID mappings. Explicit extension
-profiles or a covering wildcard are required; no extension/files are deleted
-to work around a missing profile. Watch/AppClips are included in nested signing.
+Supported entitlements/resources/extensions are retained. Adjusted capabilities
+are reviewed before signing. The original decrypted IPA is never overwritten;
+the separate signed artifact can be installed/exported. Original and custom IDs,
+main/extension signatures, explicit helper-profile reuse for non-enterprise and
+enterprise profiles, resources, executable modes and cancellation are covered by
+synthetic OpenSSL/CMS fixtures. These do not establish device installation.
 
-Application entitlements are normalized to the selected profile and identity.
-Supported capabilities are retained, including provisioned App Groups; unsupported
-capabilities are listed before signing so the user can cancel or supply another
-profile. A shared container, push service or iCloud feature cannot be recreated
-by a code signature without the required grants. DER-only original entitlements
-are decoded rather than discarded. All images are checked for remaining encrypted
-ranges before signing. Malformed signatures still fail closed.
-
-The original decrypted IPA is never overwritten. A separate signed artifact is
-packed with preserved resource permissions and executable Mach-O permissions,
-including archives whose executable entries originally lacked that mode. It is
-used for installation, with its actual bundle ID in the OTA manifest. The signed
-cache is cleaned when installation UI closes. A nonsecret signing summary is
-stored with the original download and can be shared for crash diagnosis.
+Pinlist's provided crash report has an uncaught Objective-C exception inside
+CloudKit; missing/incompatible iCloud authorization is a hypothesis, not a
+confirmed decryption defect or resolved crash. A third-party signing identity
+cannot create access to the original developer's CloudKit containers.
 
 References consulted: zsign profile-derived entitlements in
 https://github.com/zhlynn/zsign/blob/master/src/openssl.cpp and nested identifier
@@ -41,7 +34,7 @@ Implementation remains in the existing Rust signer; these projects are not vendo
 
 An integration fixture generates a temporary self-signed test certificate/profile,
 signs a main app and extension with actual CMS, verifies output identifiers and
-entitlements, missing-profile rejection, preview retry, cancellation, unchanged
+entitlements, shared-profile reuse, preview retry, cancellation, unchanged
 source bytes and preservation of Settings resources/empty folders. It is not an
 Apple-approved profile or a physical-device acceptance test.
 

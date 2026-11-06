@@ -22,28 +22,38 @@ struct SignedInstallation: Identifiable {
     let source: URL
     let workspace: URL
 }
-struct InstallationSigningView: View {
+struct SigningSettingsView: View {
+    @StateObject private var device = DeviceWorkflow.shared
+    var body: some View {
+        Form { SigningIdentitySections() }
+            .navigationTitle("Signing identity").navigationBarTitleDisplayMode(.inline)
+        .alert("Could not finish",isPresented:Binding(get:{ !device.errorMessage.isEmpty },set:{ if !$0 { device.errorMessage = "" } })) {
+            Button("OK") { device.errorMessage = "" }
+        } message: { Text(device.errorMessage) }
+    }
+}
+struct SigningIdentitySections: View {
     @StateObject private var device = DeviceWorkflow.shared
     @State private var importing = false
-    @State private var kind = "install-p12"
+    @State private var kind = "p12"
     @State private var editing = false
     var body: some View {
-        Form {
+        Group {
             Section("Signing identity") {
                 if device.installationReady && !editing {
-                    Label(device.installationCertificateName.isEmpty ? "Certificate".localized : device.installationCertificateName, systemImage:"checkmark.seal.fill").lineLimit(1)
-                    Label(device.installationProfileName.isEmpty ? "Provisioning profile".localized : device.installationProfileName, systemImage:"doc.badge.gearshape").lineLimit(1)
+                    Label(device.certificateName.isEmpty ? "Certificate".localized : device.certificateName, systemImage:"checkmark.seal.fill").lineLimit(1)
+                    Label(device.profileName.isEmpty ? "Provisioning profile".localized : device.profileName, systemImage:"doc.badge.gearshape").lineLimit(1)
                     HStack { Label("Password saved",systemImage:"lock.fill"); Spacer(); Button("Change") { editing = true } }
                 } else {
-                    fileRow("Certificate",name:device.installationCertificateName,kind:"install-p12")
-                    fileRow("Provisioning profile",name:device.installationProfileName,kind:"install-profile")
-                    SecureField("Certificate password",text:$device.installationPassword)
-                        .onChange(of:device.installationPassword) { _ in device.invalidateInstallationSigning() }
-                    Button("Save signing") { device.saveInstallationSigning() }
-                        .disabled(device.busy || !device.hasInstallationCertificate || !device.hasInstallationProfile)
+                    fileRow("Certificate",name:device.certificateName,kind:"p12")
+                    fileRow("Provisioning profile",name:device.profileName,kind:"profile")
+                    SecureField("Certificate password",text:$device.signingPassword)
+                        .onChange(of:device.signingPassword) { _ in device.invalidateSigning() }
+                    Button("Save signing") { device.saveSigning() }
+                        .disabled(device.busy || !device.hasCertificate || !device.hasProfile)
                 }
             }
-            Section("Extension profiles") {
+            Section {
                 ForEach(device.installationProfiles) { profile in
                     HStack {
                         Text(profile.name).lineLimit(1)
@@ -56,13 +66,9 @@ struct InstallationSigningView: View {
             }
             if device.busy { Section { ProgressView("Checking identity…") } }
         }
-        .navigationTitle("App installation").navigationBarTitleDisplayMode(.inline)
-        .onAppear { device.setupVisible = true; device.seedInstallationSigning() }
+        .onAppear { device.setupVisible = true; device.loadSharedSigning() }
         .onDisappear { device.setupVisible = false }
         .onChange(of:device.installationReady) { if $0 { editing = false } }
-        .alert("Could not finish",isPresented:Binding(get:{ !device.errorMessage.isEmpty },set:{ if !$0 { device.errorMessage = "" } })) {
-            Button("OK") { device.errorMessage = "" }
-        } message: { Text(device.errorMessage) }
         .fileImporter(isPresented:$importing,allowedContentTypes:[.data],allowsMultipleSelection:kind == "install-extra-profile") { result in
             if case .success(let urls) = result { for url in urls { device.importFile(url,kind:kind) } }
         }

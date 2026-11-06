@@ -162,8 +162,6 @@
 "Stop" = "Stop";
 
 /* App signing */
-"Helper signing" = "Helper signing";
-"App installation" = "App installation";
 "Signing identity" = "Signing identity";
 "Extension profiles" = "Extension profiles";
 "Add profiles" = "Add profiles";
