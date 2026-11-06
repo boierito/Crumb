@@ -55,7 +55,9 @@ struct DownloadedAppsView: View {
                                 Text(device.activityTitle.localized).font(.subheadline).foregroundStyle(.secondary)
                             }
                             Spacer()
-                            if device.busy { Button { device.cancel() } label: { Image(systemName:"xmark.circle.fill") }.buttonStyle(.borderless).accessibilityLabel("Cancel") }
+                            Button("Stop", role: .destructive) { device.stopDecryption() }
+                                .buttonStyle(.borderless)
+                                .frame(minWidth: 44, minHeight: 44)
                         }
                         if let progress = device.progress { ProgressView(value:progress) }
                         if device.waitingForHelper && !device.busy {

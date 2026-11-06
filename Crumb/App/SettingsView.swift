@@ -6,6 +6,7 @@ struct SettingsView: View {
     @EnvironmentObject var appData: AppData
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     
     @AppStorage("autoCleanApp") var autoCleanApp: Bool = true
     @StateObject private var localizationManager = LocalizationManager.shared
@@ -22,20 +23,23 @@ struct SettingsView: View {
                 Section(header: HeaderLabel(text: "About".localized, icon: "info.circle")) {
                     VStack(alignment: .leading, spacing: 10) {
                         AppInfoCell()
-                        HStack {
-                            Button(action: {
-                                openURL(URL(string: "https://discord.com/invite/tweakbreak-1443331342799601666")!)
-                            }) {
-                                ButtonLabel(text: "Original community", icon: "discord", useImage: true)
+                        let linksLayout = dynamicTypeSize.isAccessibilitySize
+                            ? AnyLayout(VStackLayout(spacing: 10))
+                            : AnyLayout(HStackLayout(spacing: 10))
+                        linksLayout {
+                            Button { openURL(URL(string: "https://t.me/certlium")!) } label: {
+                                Label("Telegram", systemImage: "paperplane.fill")
                             }
-                            .buttonStyle(TranslucentButtonStyle(color: .discord))
-                            Button(action: {
-                                openURL(URL(string: "https://github.com/boierito/Crumb")!)
-                            }) {
-                                ButtonLabel(text: "GitHub".localized, icon: "github", useImage: true)
+                            .buttonStyle(CommunityButtonStyle())
+                            Button { openURL(URL(string: "https://github.com/boierito/Crumb")!) } label: {
+                                HStack(spacing: 8) {
+                                    Image("github").renderingMode(.template).resizable().scaledToFit().frame(width: 20, height: 20)
+                                    Text("GitHub")
+                                }
                             }
-                            .buttonStyle(TranslucentButtonStyle(color: .github))
+                            .buttonStyle(CommunityButtonStyle())
                         }
+
                     }
                 }
                 
@@ -86,5 +90,19 @@ struct SettingsView: View {
                 } }
             }
         }
+    }
+}
+
+private struct CommunityButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .lineLimit(1)
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, minHeight: 50)
+            .foregroundStyle(Color.accentColor)
+            .background(Color.accentColor.opacity(configuration.isPressed ? 0.20 : 0.10), in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.accentColor.opacity(0.22), lineWidth: 1))
+            .contentShape(RoundedRectangle(cornerRadius: 14))
     }
 }

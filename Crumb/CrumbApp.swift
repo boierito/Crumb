@@ -27,7 +27,7 @@ struct CrumbApp: App {
                     }
                 }
                 .onOpenURL { schemedURL in
-                    if schemedURL.host == "device-result" {
+                    if ["device-result", "device-cancelled"].contains(schemedURL.host ?? "") {
                         if DeviceWorkflow.shared.receiveResultURL(schemedURL) { appData.selectedTab = .downloads }
                         return
                     }

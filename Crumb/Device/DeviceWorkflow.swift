@@ -268,10 +268,10 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         } catch { cleanup(); activeRecord = nil; errorMessage = error.localizedDescription }
     }
     @discardableResult func receiveResultURL(_ url: URL) -> Bool {
-        guard url.host == "device-result",
+        guard ["device-result", "device-cancelled"].contains(url.host ?? ""),
               let jobID = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "job" })?.value,
               UUID(uuidString: jobID) != nil, pending?["job_id"] == jobID else { return false }
-        retrieve()
+        if url.host == "device-cancelled" { stopDecryption(notifyHelper: false) } else { retrieve() }
         return true
     }
     func retrieve() {
@@ -302,13 +302,54 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         catch { message = error.localizedDescription }
     }
     func cancel() {
-        resultRequest = DeviceResultRequest()
         guard let job else { return }
+        resultRequest = DeviceResultRequest()
         crumb_device_cancel(job)
-        message = "Cancelling…"
-        connected = false
+        message = "Cancelling…"; connected = false
         stopAdvertising(); pin = nil
-        // Keep polling until the worker has stopped before deleting its workspace.
+    }
+
+    // Abandon the UI session immediately, including an external helper with no
+    // native Job. A cancelled worker owns its workspace until it has stopped.
+    func stopDecryption(notifyHelper: Bool = true) {
+        let helperJob = waitingForHelper ? pending?["job_id"] : nil
+        let retiredJob = job
+        let retiredWorkspace = staged
+        generation = UUID()
+        polling?.cancel(); polling = nil; job = nil; staged = nil
+        if let retiredJob { crumb_device_cancel(retiredJob) }
+        resultRequest = DeviceResultRequest()
+        queuedRecord = nil; queuedInstall = nil; signingRecord = nil
+        pending = nil; activeRecord = nil; helperInstalled = false; waitingForHelper = false
+        busy = false; progress = nil; pin = nil; phase = "idle"; message = ""; errorMessage = ""
+        connected = false; connectionPolicy.becameInactive(); lastRequest = [:]
+        stopAdvertising(); endBackground()
+        do { try DeviceKeychain.remove("pending") }
+        catch { errorMessage = "Could not remove the saved job. Please retry." }
+        if let retiredJob {
+            Task { @MainActor in
+                while true {
+                    if let pointer = crumb_device_poll(retiredJob) {
+                        let data = Data(String(cString: pointer).utf8)
+                        crumb_device_string_free(pointer)
+                        if let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                           let phase = value["phase"] as? String,
+                           DeviceJobState.terminalPhases.contains(phase) {
+                            crumb_device_free(retiredJob)
+                            if let retiredWorkspace { try? FileManager.default.removeItem(at: retiredWorkspace) }
+                            return
+                        }
+                    }
+                    try? await Task.sleep(for: .milliseconds(250))
+                }
+            }
+        } else if let retiredWorkspace { try? FileManager.default.removeItem(at: retiredWorkspace) }
+        if notifyHelper, let helperJob {
+            var url = URLComponents()
+            url.scheme = "crumb-decrypt-helper"; url.host = "cancel"
+            url.queryItems = [URLQueryItem(name: "job", value: helperJob)]
+            if let target = url.url { UIApplication.shared.open(target, options: [:], completionHandler: nil) }
+        }
     }
     private func start(_ request: [String: Any]) {
         guard !busy else { return }
@@ -317,10 +358,14 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
             guard let json = String(data: data, encoding: .utf8), let handle = crumb_device_start(json) else { throw DeviceOperationError.message("Could not start device operation.") }
             job = handle; progress = nil; busy = true; phase = "starting"; message = ""; pin = nil
             lastRequest = request.filter { $0.key != "password" && $0.key != "record" && $0.key != "host_irk" }
-            background = UIApplication.shared.beginBackgroundTask(withName: "Crumb device operation") { [weak self] in
-                Task { @MainActor in self?.cancel(); self?.endBackground(); self?.message = "iOS ended the background session. Return to Crumb and retry." }
-            }
             let operationID = UUID(); generation = operationID
+            background = UIApplication.shared.beginBackgroundTask(withName: "Crumb device operation") { [weak self] in
+                Task { @MainActor in
+                    guard let self, self.generation == operationID else { return }
+                    self.cancel(); self.endBackground()
+                    self.message = "iOS ended the background session. Return to Crumb and retry."
+                }
+            }
             polling = Task { [weak self] in
                 while !Task.isCancelled {
                     guard let self, self.generation == operationID, let job = self.job else { return }
@@ -351,7 +396,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
             pin = value["pin"] as? String
             return
         }
-        guard ["legacy-result", "pairing-imported", "signing-ready", "signed", "paired", "connected", "prepared", "installed", "complete", "failed", "cancelled"].contains(phase) else { return }
+        guard DeviceJobState.terminalPhases.contains(phase) else { return }
         defer { drainResultRequest() }
         let request = lastRequest
         if let job { crumb_device_free(job); self.job = nil }

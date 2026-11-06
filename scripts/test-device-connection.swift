@@ -40,6 +40,11 @@ import Foundation
         precondition(!result.claim(busy:false,hasPendingJob:true))
         result.enqueue()
         precondition(result.claim(busy:false,hasPendingJob:true))
+        precondition(DeviceJobState.terminalPhases.contains("cancelled"))
+        precondition(DeviceJobState.terminalPhases.contains("prepared"))
+        for phase in ["starting", "preparing", "fetching", "installing", "signing"] {
+            precondition(!DeviceJobState.terminalPhases.contains(phase))
+        }
         print("Connection scheduling and saved-result credential regressions passed")
     }
 }

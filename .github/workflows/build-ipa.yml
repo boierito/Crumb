@@ -43,7 +43,11 @@ jobs:
         with:
           targets: aarch64-apple-ios
       - name: Compile and link helper against the iOS SDK
-        run: xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.4 -fobjc-arc -framework UIKit -framework Foundation -framework CoreGraphics -lz DecryptHelper/main.m DecryptHelper/CrumbMachO.c DecryptHelper/CrumbFileAccess.c DecryptHelper/CrumbLicenseResources.m DecryptHelper/CrumbIPAArchive.m -o "$RUNNER_TEMP/CrumbDecrypt-link-check"
+        run: xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.4 -fobjc-arc -framework UIKit -framework Foundation -framework CoreGraphics -lz DecryptHelper/main.m DecryptHelper/CrumbJobControl.m DecryptHelper/CrumbMachO.c DecryptHelper/CrumbFileAccess.c DecryptHelper/CrumbLicenseResources.m DecryptHelper/CrumbIPAArchive.m -o "$RUNNER_TEMP/CrumbDecrypt-link-check"
+      - name: Test helper cancellation and restart isolation
+        run: |
+          xcrun --sdk macosx clang -fobjc-arc -framework Foundation tests/CrumbJobControlTests.m DecryptHelper/CrumbJobControl.m -o "$RUNNER_TEMP/CrumbJobControlTests"
+          "$RUNNER_TEMP/CrumbJobControlTests"
       - name: Test preserved resources and original IPA layout
         run: |
           xcrun --sdk macosx clang -g -fsanitize=address -fno-omit-frame-pointer -fobjc-arc -framework Foundation -lz tests/CrumbLicenseResourcesTests.m DecryptHelper/CrumbLicenseResources.m DecryptHelper/CrumbMachO.c DecryptHelper/CrumbFileAccess.c DecryptHelper/CrumbIPAArchive.m -o "$RUNNER_TEMP/CrumbLicenseResources-tests"

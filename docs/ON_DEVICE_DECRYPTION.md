@@ -1,3 +1,27 @@
+# Build 23034: stop and recover
+
+Downloads always exposes Stop for an active decrypter session, including the
+external-helper waiting state. Stop invalidates the callback generation, clears
+pending metadata/queues and frees the UI immediately. It retains signing,
+pairing, completed downloads and the managed-helper identity for the next job.
+
+Cancelled native workers are retired independently. Their workspace is deleted
+only after their terminal state; they cannot publish into a newer UI session.
+The native signing/fetch code already checks cancellation before publication.
+
+New helpers support a job-bound cancel URL and a Stop button. Cancellation is
+persisted per job, checked between files, encrypted pages and verification stages,
+and reported to Crumb. A later job does not inherit an old cancellation. Crumb
+also unlocks with an older helper that lacks this protocol. iOS system calls
+already in progress cannot be forcibly interrupted; cancellation is cooperative
+at the next checkpoint, while Crumb itself is immediately available again.
+
+Settings uses equal-height Telegram/GitHub controls with an internal border,
+with a vertical layout for accessibility text sizes. Links point to
+https://t.me/certlium and https://github.com/boierito/Crumb.
+
+---
+
 # Build 23033: result retrieval and connection scheduling
 
 The 23032 pending job stored download metadata in `record`, the same field used

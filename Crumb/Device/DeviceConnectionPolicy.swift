@@ -42,3 +42,9 @@ struct DeviceResultRequest {
         return true
     }
 }
+
+// Shared by foreground publication and retired-worker cleanup. A retired worker
+// can release only its captured workspace, never a newer session's state.
+enum DeviceJobState {
+    static let terminalPhases: Set<String> = ["legacy-result", "pairing-imported", "signing-ready", "signed", "paired", "connected", "prepared", "installed", "complete", "failed", "cancelled"]
+}

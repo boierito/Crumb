@@ -2,6 +2,10 @@
 #import "CrumbIPAArchive.h"
 #import "CrumbLicenseResources.h"
 #import "CrumbMachO.h"
+#import "CrumbJobControl.h"
+#import <stdatomic.h>
+#import <stdbool.h>
+static atomic_bool jobCancelled = false;
 #import <CommonCrypto/CommonDigest.h>
 #import <UIKit/UIKit.h>
 #import <dlfcn.h>
@@ -108,6 +112,7 @@ static BOOL register_signature(int fd, const uint8_t *header, size_t size) {
 }
 static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
                     NSError **error) {
+  if (atomic_load(&jobCancelled)) { *error = failure(@"Cancelled"); return NO; }
   CrumbFileAccess access;
   int fd = crumb_open_installed_image(source.fileSystemRepresentation, &access);
   if (fd < 0) {
@@ -190,7 +195,7 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
   }
   errno = 0;
   int remap_status =
-      map == MAP_FAILED
+      (map == MAP_FAILED || atomic_load(&jobCancelled))
           ? -1
           : remap_image(map + enc.offset, enc.length, enc.cpu, enc.subtype);
   int remap_errno = errno;
@@ -203,6 +208,7 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
   if (!plain || !cipher)
     ok = NO;
   for (size_t p = 0; ok && p < enc.length; p += pg) {
+    if (atomic_load(&jobCancelled)) { ok = NO; break; }
     size_t len = MIN(pg, enc.length - p);
     vm_size_t got = 0;
     kern_return_t kr = vm_read_overwrite(mach_task_self(),
@@ -232,7 +238,7 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
     munmap(map, size);
   close(fd);
   // Conservative heuristics supplement complete fault-free FairPlay page reads.
-  ok = ok && changed && histogram_entropy(before, enc.length) > 7.9 &&
+  ok = ok && !atomic_load(&jobCancelled) && changed && histogram_entropy(before, enc.length) > 7.9 &&
        histogram_entropy(after, enc.length) < 7.5 && newwords > oldwords;
   if (ok) {
     uint32_t zero = 0;
@@ -255,6 +261,7 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
 @property(nonatomic, strong) UIProgressView *progress;
 @property(nonatomic, strong) UILabel *titleLabel;
 - (void)status:(NSString *)text progress:(float)progress;
+- (void)cancelDecryption;
 
 @end
 @implementation CrumbHelper
@@ -291,7 +298,13 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
   self.label.text = @"Preparing app…";
   self.progress = [[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];
   self.progress.accessibilityLabel = @"Decryption progress";
-  UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[brand,self.titleLabel,self.label,self.progress]];
+  UIButton *stop = [UIButton buttonWithType:UIButtonTypeSystem];
+  [stop setTitle:NSLocalizedString(@"Stop",nil) forState:UIControlStateNormal];
+  stop.titleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+  stop.tintColor = UIColor.systemRedColor;
+  [stop.heightAnchor constraintGreaterThanOrEqualToConstant:44].active = YES;
+  [stop addTarget:self action:@selector(cancelDecryption) forControlEvents:UIControlEventTouchUpInside];
+  UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[brand,self.titleLabel,self.label,self.progress,stop]];
   stack.axis = UILayoutConstraintAxisVertical;
   stack.spacing = 24;
   stack.translatesAutoresizingMaskIntoConstraints = NO;
@@ -327,9 +340,23 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
 }
 - (void)status:(NSString *)text progress:(float)progress {
   dispatch_async(dispatch_get_main_queue(), ^{
+    if (atomic_load(&jobCancelled)) return;
     self.label.text = text;
     [self.progress setProgress:progress animated:!UIAccessibilityIsReduceMotionEnabled()];
   });
+}
+- (void)cancelDecryption {
+  atomic_store(&jobCancelled, true);
+  UIApplication.sharedApplication.idleTimerDisabled = NO;
+  NSDictionary *job = [NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfURL:[NSBundle.mainBundle.bundleURL URLByAppendingPathComponent:@"job.json"]] options:0 error:nil];
+  NSURL *docs = [NSFileManager.defaultManager URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask].firstObject;
+  crumb_store_cancellation(docs,job[@"job_id"],nil);
+  self.titleLabel.text = @"Stopped";
+  self.label.text = @"Returning to Crumb…";
+  NSURLComponents *callback = [NSURLComponents new];
+  callback.scheme = @"crumb"; callback.host = @"device-cancelled";
+  callback.queryItems = @[[NSURLQueryItem queryItemWithName:@"job" value:job[@"job_id"]]];
+  [UIApplication.sharedApplication openURL:callback.URL options:@{} completionHandler:nil];
 }
 - (void)run {
   NSFileManager *fm = NSFileManager.defaultManager;
@@ -350,6 +377,7 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
                                      URLByAppendingPathComponent:@"job.json"]]
                  options:0
                    error:&error];
+  if (crumb_job_was_cancelled(docs,job[@"job_id"])) atomic_store(&jobCancelled,true);
   NSString *app = job[@"app_name"];
   NSDictionary *licenses = job[@"license_resources"];
   NSDictionary *archiveResources = job[@"archive_resources"];
@@ -358,7 +386,7 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
   __block NSUInteger processed = 0;
   BOOL ok =
       [inventory isKindOfClass:NSDictionary.class] && inventory.count > 0 && inventory.count <= 100000 &&
-      job && [app isKindOfClass:NSString.class] &&
+      !atomic_load(&jobCancelled) && job && [app isKindOfClass:NSString.class] &&
       [app.lastPathComponent isEqualToString:app] && [app hasSuffix:@".app"] &&
       [job[@"schema"] integerValue] == 3 &&
       [licenses isKindOfClass:NSDictionary.class] && licenses.count <= 4096 &&
@@ -398,6 +426,7 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
   if (ok)
     for (NSURL *url in entries) {
       @autoreleasepool {
+        if (atomic_load(&jobCancelled)) { error = failure(@"Cancelled"); ok = NO; break; }
         NSString *relative = [url.path substringFromIndex:src.path.length + 1];
         // Leave installed SC_Info to FairPlay. Export the exact pre-install
         // metadata from sealed resource copies after processing the images.
@@ -468,6 +497,7 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
   uint64_t licenseTotal = 0;
   if (ok)
     for (NSString *relative in licenses) {
+      if (atomic_load(&jobCancelled)) { ok = NO; break; }
       NSDictionary *resource = licenses[relative];
       if (![resource isKindOfClass:NSDictionary.class] ||
           ![resource[@"size"] isKindOfClass:NSNumber.class]) {
@@ -501,6 +531,7 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
   }
   if (ok)
     for (NSString *relative in archiveDirectories) {
+      if (atomic_load(&jobCancelled)) { ok = NO; break; }
       if (!crumb_create_archive_directory(root, relative, &error)) {
         ok = NO;
         break;
@@ -508,6 +539,7 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
     }
   if (ok)
     for (NSString *relative in archiveResources) {
+      if (atomic_load(&jobCancelled)) { ok = NO; break; }
       NSDictionary *resource = archiveResources[relative];
       if (![resource isKindOfClass:NSDictionary.class] ||
           ![resource[@"size"] isKindOfClass:NSNumber.class]) {
@@ -537,6 +569,7 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
   // Compare every pre-install payload entry, including extensions and empty folders.
   [self status:@"Checking all original app files…" progress:0.9];
   if (ok) for (NSString *relative in inventory) {
+    if (atomic_load(&jobCancelled)) { ok = NO; break; }
     NSDictionary *expected = inventory[relative];
     NSURL *url = [dest URLByAppendingPathComponent:relative];
     NSDictionary *actual = [url resourceValuesForKeys:keys error:&error];
@@ -551,8 +584,8 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
       NSInputStream *stream = [NSInputStream inputStreamWithURL:url];
       [stream open];
       CC_SHA256_CTX context; CC_SHA256_Init(&context);
-      uint8_t buffer[65536]; NSInteger count;
-      while ((count = [stream read:buffer maxLength:sizeof(buffer)]) > 0)
+      uint8_t buffer[65536]; NSInteger count = 0;
+      while (!atomic_load(&jobCancelled) && (count = [stream read:buffer maxLength:sizeof(buffer)]) > 0)
         CC_SHA256_Update(&context, buffer, (CC_LONG)count);
       [stream close];
       unsigned char bytes[CC_SHA256_DIGEST_LENGTH]; CC_SHA256_Final(bytes, &context);
@@ -566,9 +599,14 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
     }
   }
   [self status:@"Packaging your IPA…" progress:0.95];
+  if (atomic_load(&jobCancelled)) ok = NO;
   if (ok)
     ok = crumb_pack_ipa(root, [docs URLByAppendingPathComponent:@"result.ipa"],
                         hashes, &error);
+  if (atomic_load(&jobCancelled)) {
+    ok = NO; error = failure(@"Cancelled");
+    [fm removeItemAtURL:[docs URLByAppendingPathComponent:@"result.ipa"] error:nil];
+  }
   NSDictionary *result = @{
     @"schema" : @3,
     @"job_id" : job[@"job_id"] ?: @"",
@@ -588,6 +626,7 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
   [fm removeItemAtURL:root error:nil];
   dispatch_async(dispatch_get_main_queue(), ^{
     UIApplication.sharedApplication.idleTimerDisabled = NO;
+    if (atomic_load(&jobCancelled)) { self.titleLabel.text = @"Stopped"; return; }
     if (ok) self.progress.progress = 1;
     self.titleLabel.text = ok ? @"Your app is ready" : @"Could not finish";
     self.label.text=ok?@"Saving to Crumb…":error.localizedDescription?:@"Decryption failed. No completed IPA was produced.";
@@ -618,6 +657,10 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
 - (BOOL)application:(UIApplication *)app
             openURL:(NSURL *)url
             options:(NSDictionary *)options {
+  NSDictionary *job = [NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfURL:[NSBundle.mainBundle.bundleURL URLByAppendingPathComponent:@"job.json"]] options:0 error:nil];
+  if (crumb_matches_cancel_url(url,job[@"job_id"])) {
+    [(CrumbHelper *)self.window.rootViewController cancelDecryption];
+  }
   return YES;
 }
 @end
