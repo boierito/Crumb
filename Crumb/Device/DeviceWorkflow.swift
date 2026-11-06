@@ -301,7 +301,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     }
     func installationSetupDismissed() {
         if installationReady { continueQueued() }
-        else { queuedInstall = nil; if !busy { activeRecord = nil } }
+        else { queuedInstall = nil; if !busy && !waitingForHelper { activeRecord = nil } }
     }
     func replanSigning(bundleID:String) {
         guard !busy, var context = signingContext else { return }
@@ -541,12 +541,15 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
                 guard var original = signingRecord, let bundle = value["bundle_id"] as? String,
                       let path = value["path"] as? String, let workspace = staged else { throw DeviceOperationError.message("Missing signed app.") }
                 original.lastSigning = SigningSummary(bundleID:bundle,originalBundleID:value["original_bundle_id"] as? String ?? original.bundleID,
-                    profileName:value["profile_name"] as? String ?? "",capabilities:value["adjusted_capabilities"] as? [String] ?? [],date:Date())
+                    profileName:value["profile_name"] as? String ?? "",capabilities:value["adjusted_capabilities"] as? [String] ?? [],date:Date(),
+                    teamID:value["signing_team"] as? String,applicationIdentifier:value["application_identifier"] as? String,
+                    originalKeychainGroups:value["original_keychain_groups"] as? [String],keychainGroups:value["keychain_groups"] as? [String],
+                    originalAppGroups:value["original_app_groups"] as? [String],appGroups:value["app_groups"] as? [String])
                 try original.save()
                 let record = DownloadRecord(filename:original.filename,appID:original.appID,appName:original.appName,bundleID:bundle,
                     version:original.version,build:original.build,externalVersionID:original.externalVersionID,date:original.date,decrypted:true,signed:true)
                 let source = URL(fileURLWithPath:path)
-                for file in try FileManager.default.contentsOfDirectory(at:workspace,includingPropertiesForKeys:nil) where file != source {
+                for file in try FileManager.default.contentsOfDirectory(at:workspace,includingPropertiesForKeys:nil) where file.lastPathComponent != source.lastPathComponent {
                     try? FileManager.default.removeItem(at:file)
                 }
                 staged = nil; signingRecord = nil; activeRecord = nil
@@ -604,7 +607,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
                 }
                 if operation == "verify", queuedRecord != nil { setupNeeded = true }
                 if operation == "signing-info" && request["purpose"] as? String != "installation" { signingReady = false }
-                if operation != "fetch" { activeRecord = nil }
+                if operation != "fetch" && !waitingForHelper { activeRecord = nil }
                 if operation == "sign" || operation == "signing-info" || operation == "signing-plan" { signingContext = nil; cleanup() }
                 if ["prepare", "install", "sign", "signing-info", "signing-plan"].contains(request["operation"] as? String ?? "") { cleanup() }
             default:
@@ -612,7 +615,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
                 if !waitingForHelper { activeRecord = nil }
                 queuedRecord = nil; queuedInstall = nil
             }
-        } catch { signingContext = nil; activeRecord = nil; errorMessage = error.localizedDescription; cleanup() }
+        } catch { signingContext = nil; if !waitingForHelper { activeRecord = nil }; errorMessage = error.localizedDescription; cleanup() }
     }
     private func stopAdvertising() { service?.stop(); service = nil }
     private func endBackground() { if background != .invalid { UIApplication.shared.endBackgroundTask(background); background = .invalid } }

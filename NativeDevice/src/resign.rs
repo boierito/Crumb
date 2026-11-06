@@ -141,6 +141,7 @@ fn compatible_entitlements(
     let mut result = plist::Dictionary::new();
     let mut changed = BTreeSet::new();
     for (key, mut value) in original {
+        let original_value = value.clone();
         if [
             "application-identifier",
             "com.apple.developer.team-identifier",
@@ -166,6 +167,9 @@ fn compatible_entitlements(
                     }
                 }
             }
+        }
+        if value != original_value {
+            changed.insert(key.clone());
         }
         if let Some(grant) = grants.get(&key) {
             if signing::permits(grant, &value) {
@@ -211,6 +215,8 @@ struct BundlePlan {
     id: String,
     profile: usize,
     entitlements: plist::Dictionary,
+    old_keychain: Vec<String>,
+    old_groups: Vec<String>,
 }
 struct Plan {
     app: PathBuf,
@@ -267,9 +273,11 @@ fn build_plan(work: &Path, v: &Value, ctx: &ContextData) -> Result<Plan> {
             .as_str()
             .unwrap_or("com.certlium.crumb.decrypt"),
     ];
-    if let Some(values)=v["protected_bundle_ids"].as_array() {
-        ensure!(values.len()<=16,"Invalid protected app identities");
-        for value in values { protected.push(value.as_str().context("Invalid protected app identity")?); }
+    if let Some(values) = v["protected_bundle_ids"].as_array() {
+        ensure!(values.len() <= 16, "Invalid protected app identities");
+        for value in values {
+            protected.push(value.as_str().context("Invalid protected app identity")?);
+        }
     }
     let id = select_main(
         ctx.profiles[0].parsed.entitlements(),
@@ -346,6 +354,8 @@ fn build_plan(work: &Path, v: &Value, ctx: &ContextData) -> Result<Plan> {
             "This app still contains encrypted code"
         );
         let ent = signing::entitlements(&bytes)?;
+        let old_keychain = string_values(&ent, "keychain-access-groups");
+        let old_groups = string_values(&ent, "com.apple.security.application-groups");
         let (entitlements, removed) = compatible_entitlements(
             ent,
             ctx.profiles[profile].parsed.entitlements(),
@@ -361,6 +371,8 @@ fn build_plan(work: &Path, v: &Value, ctx: &ContextData) -> Result<Plan> {
             id: target,
             profile,
             entitlements,
+            old_keychain,
+            old_groups,
         });
     }
     ensure!(!bundles.is_empty(), "Missing app executable");
@@ -372,11 +384,31 @@ fn build_plan(work: &Path, v: &Value, ctx: &ContextData) -> Result<Plan> {
         changes: changes.into_iter().collect(),
     })
 }
+fn string_values(dict: &plist::Dictionary, key: &str) -> Vec<String> {
+    dict.get(key)
+        .and_then(|v| v.as_array())
+        .map(|vs| {
+            vs.iter()
+                .filter_map(|v| v.as_string().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default()
+}
 fn report(plan: &Plan, ctx: &ContextData) -> Value {
+    let main = plan
+        .bundles
+        .iter()
+        .find(|b| b.path == plan.app)
+        .expect("Main bundle is always planned");
     json!({"phase":"signing-plan","bundle_id":plan.id,"original_bundle_id":plan.original,
       "bundle_count":plan.bundles.len(),"changed_ids":plan.bundles.iter().filter(|b|b.id!=b.original).count(),
-      "adjusted_capabilities":plan.changes,"profile_name":ctx.profiles[0].parsed.plist().get("Name").and_then(|v|v.as_string()).unwrap_or("Signing profile")})
+      "adjusted_capabilities":plan.changes,"profile_name":ctx.profiles[0].parsed.plist().get("Name").and_then(|v|v.as_string()).unwrap_or("Signing profile"),
+      "signing_team":ctx.profiles[0].parsed.team_id(),"application_identifier":main.entitlements.get("application-identifier").and_then(|v|v.as_string()),
+      "original_keychain_groups":main.old_keychain,"original_app_groups":main.old_groups,
+      "keychain_groups":string_values(&main.entitlements,"keychain-access-groups"),
+      "app_groups":string_values(&main.entitlements,"com.apple.security.application-groups")})
 }
+
 pub fn preview(v: &Value, job: &super::Job) -> Result<Value> {
     let work = PathBuf::from(v["work"].as_str().context("Missing signing workspace")?);
     let prepared = v["prepared"] == true;
@@ -599,7 +631,13 @@ mod tests {
             Some("PREFIX.org.example.app")
         );
         assert!(!ent.contains_key("com.apple.security.application-groups"));
-        assert_eq!(changes, vec!["com.apple.security.application-groups"]);
+        assert_eq!(
+            changes,
+            vec![
+                "com.apple.security.application-groups",
+                "keychain-access-groups"
+            ]
+        );
     }
     #[test]
     fn provisioned_app_groups_survive_resigning_for_settings_storage() {
