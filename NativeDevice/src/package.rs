@@ -47,6 +47,14 @@ pub(super) fn extract(ipa: &Path, dest: &Path) -> Result<()> {
             .open(&path)?;
         let size = std::io::copy(&mut (&mut f).take(MAX_BYTES + 1), &mut out)?;
         ensure!(size == f.size(), "Archive entry size mismatch");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(
+                &path,
+                fs::Permissions::from_mode(f.unix_mode().unwrap_or(0o644) & 0o777),
+            )?;
+        }
     }
     Ok(())
 }
@@ -483,7 +491,10 @@ fn copy_tree(from: &Path, to: &Path) -> Result<()> {
 pub fn encrypted_ranges(b: &[u8]) -> Result<Vec<(usize, usize, usize)>> {
     encrypted_ranges_header(b, b.len())
 }
-pub(super) fn encrypted_ranges_header(b: &[u8], file_size: usize) -> Result<Vec<(usize, usize, usize)>> {
+pub(super) fn encrypted_ranges_header(
+    b: &[u8],
+    file_size: usize,
+) -> Result<Vec<(usize, usize, usize)>> {
     fn u32at(b: &[u8], p: usize) -> Result<u32> {
         Ok(u32::from_le_bytes(
             b.get(p..p + 4).context("Truncated Mach-O")?.try_into()?,

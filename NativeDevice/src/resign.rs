@@ -7,6 +7,7 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeSet,
     fs,
+    io::Read,
     path::{Path, PathBuf},
 };
 
@@ -575,7 +576,21 @@ pub fn sign(v: &Value, job: &super::Job) -> Result<Value> {
                 .to_str()
                 .context("Invalid archive path")?
                 .replace('\\', "/");
-            let permissions = if entry.file_type().is_dir() {
+            let mut magic = [0u8; 4];
+            let executable = !entry.file_type().is_dir()
+                && fs::File::open(entry.path())?.read(&mut magic)? == 4
+                && matches!(
+                    u32::from_le_bytes(magic),
+                    0xfeedfacf
+                        | 0xfeedface
+                        | 0xcefaedfe
+                        | 0xcffaedfe
+                        | 0xbebafeca
+                        | 0xcafebabe
+                        | 0xbfbafeca
+                        | 0xcafebabf
+                );
+            let permissions = if entry.file_type().is_dir() || executable {
                 0o755
             } else {
                 #[cfg(unix)]

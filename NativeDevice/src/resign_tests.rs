@@ -207,7 +207,13 @@ fn signs_main_and_extension_with_real_cms_without_mutating_source_or_losing_sett
             .unwrap();
         z.start_file(format!("{path}/Info.plist"), options).unwrap();
         z.write_all(&xml).unwrap();
-        z.start_file(format!("{path}/Program"), options.unix_permissions(0o755))
+        // Archives in the wild can omit executable mode; signing restores it.
+        let mode = if path.ends_with(".appex") {
+            0o644
+        } else {
+            0o755
+        };
+        z.start_file(format!("{path}/Program"), options.unix_permissions(mode))
             .unwrap();
         z.write_all(&executable).unwrap();
     }
@@ -249,6 +255,14 @@ fn signs_main_and_extension_with_real_cms_without_mutating_source_or_losing_sett
             Some(id)
         );
         let mut bytes = Vec::new();
+        assert_eq!(
+            z.by_name(&format!("{path}/Program"))
+                .unwrap()
+                .unix_mode()
+                .unwrap()
+                & 0o777,
+            0o755
+        );
         z.by_name(&format!("{path}/Program"))
             .unwrap()
             .read_to_end(&mut bytes)
@@ -323,6 +337,14 @@ fn signs_main_and_extension_with_real_cms_without_mutating_source_or_losing_sett
         );
     }
     let mut settings = String::new();
+    assert_eq!(
+        z.by_name("Payload/Pinlist.app/Settings.bundle/Root.plist")
+            .unwrap()
+            .unix_mode()
+            .unwrap()
+            & 0o777,
+        0o644
+    );
     z.by_name("Payload/Pinlist.app/Settings.bundle/Root.plist")
         .unwrap()
         .read_to_string(&mut settings)

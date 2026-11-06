@@ -27,6 +27,8 @@ are decoded rather than discarded. All images are checked for remaining encrypte
 ranges before signing. Malformed signatures still fail closed.
 
 The original decrypted IPA is never overwritten. A separate signed artifact is
+packed with preserved resource permissions and executable Mach-O permissions,
+including archives whose executable entries originally lacked that mode. It is
 used for installation, with its actual bundle ID in the OTA manifest. The signed
 cache is cleaned when installation UI closes. A nonsecret signing summary is
 stored with the original download and can be shared for crash diagnosis.
