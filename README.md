@@ -6,7 +6,7 @@
 [![Protocol tests](https://github.com/boierito/Crumb/actions/workflows/sap-tests.yml/badge.svg)](https://github.com/boierito/Crumb/actions/workflows/sap-tests.yml)
 
 Crumb lets you find App Store apps, choose a version and download its IPA on your
-iPhone or iPad. It is based on WaffleStore and runs as a normally sideloaded app,
+iPhone or iPad. It runs as a normally sideloaded app,
 without jailbreak, TrollStore or external JIT.
 
 ## Features

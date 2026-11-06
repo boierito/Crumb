@@ -11,7 +11,7 @@ import sys
 import zipfile
 
 ipa = pathlib.Path(sys.argv[1])
-project = pathlib.Path("WaffleStore.xcodeproj/project.pbxproj").read_text()
+project = pathlib.Path("Crumb.xcodeproj/project.pbxproj").read_text()
 expected_build = re.search(r"CURRENT_PROJECT_VERSION = ([^;]+);", project)[1].strip()
 expected_version = re.search(r"MARKETING_VERSION = ([^;]+);", project)[1].strip()
 with zipfile.ZipFile(ipa) as archive:

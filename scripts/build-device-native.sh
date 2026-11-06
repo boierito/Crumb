@@ -17,9 +17,9 @@ sips -z 180 180 branding/Crumb-AppIcon-1024.png --out "$HELPER/Icon60@3x.png" >/
 sips -z 152 152 branding/Crumb-AppIcon-1024.png --out "$HELPER/Icon76@2x.png" >/dev/null
 sips -z 167 167 branding/Crumb-AppIcon-1024.png --out "$HELPER/Icon83.5@2x.png" >/dev/null
 python3 - "$HELPER/Info.plist" <<'PY'
-import plistlib,sys
+import plistlib,sys,os
 with open(sys.argv[1],'wb') as f:
- plistlib.dump(dict(CFBundleIcons=dict(CFBundlePrimaryIcon=dict(CFBundleIconFiles=['Icon60'],UIPrerenderedIcon=False)), **{'CFBundleIcons~ipad':dict(CFBundlePrimaryIcon=dict(CFBundleIconFiles=['Icon60','Icon76','Icon83.5'],UIPrerenderedIcon=False))}, CFBundleIdentifier='com.certlium.crumb.decrypt',CFBundleExecutable='CrumbDecrypt',CFBundleName='Crumb Decrypt',CFBundleDisplayName='Crumb Decrypt',CFBundlePackageType='APPL',CFBundleVersion='1',CFBundleShortVersionString='1.0',MinimumOSVersion='27.0',UIDeviceFamily=[1,2],UIFileSharingEnabled=True,LSRequiresIPhoneOS=True,UILaunchScreen={},CFBundleURLTypes=[dict(CFBundleURLSchemes=['crumb-decrypt-helper'])]),f)
+ plistlib.dump(dict(CFBundleIcons=dict(CFBundlePrimaryIcon=dict(CFBundleIconFiles=['Icon60'],UIPrerenderedIcon=False)), **{'CFBundleIcons~ipad':dict(CFBundlePrimaryIcon=dict(CFBundleIconFiles=['Icon60','Icon76','Icon83.5'],UIPrerenderedIcon=False))}, CFBundleIdentifier='com.certlium.crumb.decrypt',CFBundleExecutable='CrumbDecrypt',CFBundleName='Crumb Decrypt',CFBundleDisplayName='Crumb Decrypt',CFBundlePackageType='APPL',CFBundleVersion=os.environ.get('CURRENT_PROJECT_VERSION','23033'),CFBundleShortVersionString='1.0',MinimumOSVersion='27.0',UIDeviceFamily=[1,2],UIFileSharingEnabled=True,LSRequiresIPhoneOS=True,UILaunchScreen={},CFBundleURLTypes=[dict(CFBundleURLSchemes=['crumb-decrypt-helper'])]),f)
 PY
 # Store the unsigned template as opaque data, so a sideloader does not sign it
 # as a nested app. Crumb unpacks, customizes and signs it on-device.

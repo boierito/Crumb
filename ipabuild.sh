@@ -4,7 +4,7 @@ set -e
 
 cd "$(dirname "$0")"
 
-APPLICATION_NAME=WaffleStore
+APPLICATION_NAME=Crumb
 
 echo "[*] $APPLICATION_NAME Build Script"
 

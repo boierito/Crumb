@@ -84,7 +84,7 @@
 - Añade diagnóstico de dispositivo y prueba de firma SAP sin credenciales.
 - Login, 2FA, purchase y download modernos pendientes de validar SAP jailed.
 
-No es una release estable ni una afirmación de recuperación de WaffleStore.
+No es una release estable ni una afirmación de recuperación de Crumb.
 
 ## Upstream integration / build 23007
 

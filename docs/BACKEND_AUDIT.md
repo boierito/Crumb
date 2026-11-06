@@ -1,19 +1,19 @@
-# WaffleStore original backend audit
+# Crumb original backend audit
 
-Original: `nxtcoreee3/WaffleStore` / fork `boierito/WaffleStore`,
+Original: the upstream project (see CREDITS.md) / fork `boierito/Crumb`,
 `d508e532e5b40d6470bab003a6cc0026d1ca7c75`.
-Tag `upstream-wafflestore-2.2.2` marks that **original HEAD**, not a claim that
-HEAD is identical to upstream's historical `WaffleStore2.2.2` release tag.
+Tag `d508e53` marks that **original HEAD**, not a claim that
+HEAD is identical to upstream's historical `Crumb2.2.2` release tag.
 
 ## Project inventory
 
-One application target and scheme, `WaffleStore`; bundle ID
-`com.nxtcoreee3.WaffleStore`; deployment target iOS 16.4; Swift language mode 5;
-project objectVersion 77 with a synchronized `WaffleStore/` source group.
+One application target and scheme, `Crumb`; bundle ID
+`com.certlium.crumb`; deployment target iOS 16.4; Swift language mode 5;
+project objectVersion 77 with a synchronized `Crumb/` source group.
 Original marketing version is 2.2, build 2. Project metadata says Xcode 27.0;
 the original actually builds with Xcode 26.0 after resolving Swift 6.2 PartyUI.
 No custom signing entitlements file is configured in the original project.
-The standalone Info.plist declares Files document sharing and the `wafflestore`
+The standalone Info.plist declares Files document sharing and the `crumb`
 URL scheme, but the target generates its plist without using that file. The
 inspected IPA does not contain UIFileSharingEnabled; declarations in that
 unused file must not be treated as verified capabilities.
@@ -30,7 +30,7 @@ same app without destructive cleanup and keeps build logs.
 
 ```text
 ContentView / NavigationButtons / AppData
-  → IPATool (WaffleStore/Functions/IPATool.swift)
+  → IPATool (Crumb/Functions/IPATool.swift)
   → StoreClient.authenticate / getBagEndpoint
   → Apple Bag → native auth → DSID + passwordToken + storefront + pod
   → volumeStoreDownloadProduct
@@ -98,7 +98,7 @@ Linux failed before compilation: xcodebuild is unavailable.
 First macOS run failed resolving PartyUI because Xcode 16.4 has Swift 6.1.
 With Xcode 26.0 the unmodified original builds Debug and Release and both IPA
 artifacts are uploaded:
-https://github.com/boierito/wafflestore/actions/runs/37300555931
+https://github.com/boierito/crumb/actions/runs/37300555931
 See `docs/evidence/original-build-linux.log`, `original-ci-xcode16.log` and
 `original-ci-xcode26.log`. These are build/toolchain outcomes, not Apple backend
 tests. No UI or functional source change was needed for the original build.

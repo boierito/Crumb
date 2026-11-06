@@ -11,6 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.99.1
+      - run: python3 scripts/verify-crumb-branding.py
       - run: cargo test --locked --manifest-path NativeDevice/Cargo.toml
       - run: cargo test --locked --manifest-path NativeDevice/Cargo.toml --release
       - run: cargo test --locked --manifest-path NativeDevice/Cargo.toml -p apple-codesign-quick --lib

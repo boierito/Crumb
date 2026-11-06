@@ -35,7 +35,7 @@ fn decode_record(v: &Value) -> anyhow::Result<RpPairingFile> {
             .ok_or_else(|| anyhow::anyhow!("Pair this device first"))?,
     )?;
     anyhow::ensure!(bytes.len() <= 65536, "Pairing record too large");
-    Ok(RpPairingFile::from_bytes(&bytes)?)
+    RpPairingFile::from_bytes(&bytes).map_err(|_| anyhow::anyhow!("Pairing credentials are unreadable. Pair this iPhone again."))
 }
 async fn pair(job: &Arc<Job>, v: &Value) -> anyhow::Result<Value> {
     let listener = TcpListener::bind((std::net::Ipv4Addr::UNSPECIFIED, 0)).await?;

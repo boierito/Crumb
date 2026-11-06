@@ -264,7 +264,7 @@ extension StoreTests {
 #if canImport(Security)
 extension StoreTests {
     func testAcceptedKBSyncKeychainIsBoundToAccountAndIdentity() throws {
-        let cache = KeychainKBSync(service: "com.wafflestore.tests.kbsync." + UUID().uuidString)
+        let cache = KeychainKBSync(service: "com.crumb.tests.kbsync." + UUID().uuidString)
         defer { try? cache.clear() }
         XCTAssertNil(try cache.load(dsid: "1", guid: "020000000001"))
         try cache.save(Data("fixture".utf8), dsid: "1", guid: "020000000001")

@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       source_ref:
-        description: 'Source revision (original: upstream-wafflestore-2.2.2)'
+        description: 'Optional source revision'
         required: false
         default: ''
       release_tag:
@@ -62,15 +62,18 @@ jobs:
           CONFIGURATION: ${{ matrix.configuration }}
         run: |
           set -o pipefail
+          python3 scripts/verify-crumb-branding.py
           mkdir -p artifacts
           cargo test --locked --manifest-path NativeDevice/Cargo.toml
           python3 scripts/test-device-macho.py
           python3 scripts/test-device-file-access.py
           python3 scripts/test-file-picker-injection.py
-          swiftc WaffleStore/DownloadRecord.swift scripts/test-download-record.swift -o "$RUNNER_TEMP/DownloadRecordTests"
+          swiftc Crumb/Device/DeviceConnectionPolicy.swift scripts/test-device-connection.swift -o "$RUNNER_TEMP/DeviceConnectionTests"
+          "$RUNNER_TEMP/DeviceConnectionTests"
+          swiftc Crumb/DownloadRecord.swift scripts/test-download-record.swift -o "$RUNNER_TEMP/DownloadRecordTests"
           "$RUNNER_TEMP/DownloadRecordTests"
           xcodebuild -version | tee artifacts/toolchain.txt
-          xcodebuild -project WaffleStore.xcodeproj -scheme WaffleStore \
+          xcodebuild -project Crumb.xcodeproj -scheme Crumb \
             -configuration "$CONFIGURATION" -sdk iphoneos \
             -destination 'generic/platform=iOS' -derivedDataPath build/DerivedData \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \

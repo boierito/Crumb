@@ -1,7 +1,7 @@
 # Review of the four supplied screenshots
 
 Scope: user-supplied iPhone screenshots from the current conversation and the
-corresponding native SwiftUI source, compared with original WaffleStore/PartyUI
+corresponding native SwiftUI source, compared with original Crumb/PartyUI
 structure. This is a screenshot-based review, not a live flow/accessibility audit.
 The supplied images were viewed in the conversation; they contain account data
 and are not copied into the repository or redistributed. No simulator rendering

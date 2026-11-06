@@ -1,3 +1,31 @@
+# Build 23033: result retrieval and connection scheduling
+
+The 23032 pending job stored download metadata in `record`, the same field used
+for the authenticated pairing plist. Fetch merged all pending-job fields over
+credentials. This produced the reported `10.7.0.1:49152: io on plist` while
+parsing local data, before TCP—not evidence of a VPN disconnect.
+
+Download metadata now uses `download_record`; retrieval whitelists only job ID,
+helper bundle and output path. Reserved authentication/routing fields cannot be
+overridden by operation parameters. Earlier saved jobs remain readable.
+
+Automatic probes are event-driven: one per foreground/network transition,
+coalescing duplicate notifications, with no periodic setup loop. A pending
+helper/result prevents background verification. Helper callbacks queue retrieval
+if an operation is already running; completion drains it without losing the
+callback. Native operations still establish their own authenticated tunnel;
+this does not keep or control the external VPN app's connection.
+
+Project/source/plist/scheme paths now consistently use Crumb. App bundle ID,
+Keychain namespaces, saved pairing, signing files and download history remain
+compatible. Prior source attribution is preserved in CREDITS.md and notices.
+
+Regression coverage includes the original metadata/credential collision,
+reserved-field protection, duplicate events, cellular/helper suppression and a
+native invalid-record test proving that this failure occurs before TCP.
+
+---
+
 # Build 23032: user decrypter workflow
 
 - One Decrypter setup screen with automatic connection checks, compact signing-file
