@@ -7,8 +7,11 @@ if [[ ${PLATFORM_NAME:-iphoneos} != iphoneos ]]; then
 fi
 FINGERPRINT=$( { shasum -a 256 scripts/prepare-unicorn-tci.py scripts/build-unicorn-tci.sh scripts/build-sap-native.sh $(find MapleSyrup/NativeSAP -name "*.go" -type f | sort); xcrun --sdk iphoneos --show-sdk-version; } | shasum -a 256 | cut -d ' ' -f 1)
 if [[ -f build/Native/fingerprint && -f build/Native/libunicorn.a && -f build/Native/libWaffleSAP.a ]] && [[ $(cat build/Native/fingerprint) == "$FINGERPRINT" ]]; then
+  bash scripts/build-device-native.sh
   exit 0
 fi
 bash scripts/build-unicorn-tci.sh
 bash scripts/build-sap-native.sh
 printf '%s\n' "$FINGERPRINT" > build/Native/fingerprint
+
+bash scripts/build-device-native.sh

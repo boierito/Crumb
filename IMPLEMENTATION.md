@@ -1,6 +1,6 @@
-# WaffleStore login, versions, download and installation repair
+# Crumb login, versions, download and installation repair
 
-This contribution starts from nxtcoreee3/WaffleStore d508e53. The original
+This contribution starts from the upstream snapshot d508e53 (see CREDITS.md). The original
 project, UI, search, favorites, history and sideloading model are retained.
 Code generation was performed with OpenAI Codex (**AI slop**); boierito
 coordinated the work and reported the physical-device results in TESTING.md.
@@ -110,14 +110,14 @@ pinned dependencies. scripts/build-unicorn-tci.sh and scripts/build-sap-native.s
 are invoked by the project's existing native build phase; CI provisions tools.
 
 ```sh
-xcodebuild -project WaffleStore.xcodeproj -scheme WaffleStore \
+xcodebuild -project Crumb.xcodeproj -scheme Crumb \
   -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
   -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO \
   CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' build
 mkdir -p build/package/Payload
-cp -R build/DerivedData/Build/Products/Release-iphoneos/WaffleStore.app build/package/Payload/
-(cd build/package && zip -qry ../../WaffleStore-Release.ipa Payload)
-python3 scripts/verify-ipa.py WaffleStore-Release.ipa
+cp -R build/DerivedData/Build/Products/Release-iphoneos/Crumb.app build/package/Payload/
+(cd build/package && zip -qry ../../Crumb-Release.ipa Payload)
+python3 scripts/verify-ipa.py Crumb-Release.ipa
 ```
 
 GitHub Actions builds Debug/Release unsigned IPAs on macOS and tests Swift,
@@ -127,7 +127,7 @@ numeric 2.3.0; the integration build is 23011. Sign with conventional sideloadin
 keeping the same bundle ID/certificate when updating to preserve local state.
 
 ipatool is MIT; Unicorn/TCI includes GPL-derived code. Preserve notices and
-corresponding sources. Original WaffleStore has no explicit redistribution
+corresponding sources. Original Crumb has no explicit redistribution
 license; upstream PR review does not establish permission to publish unrelated
 redistributed releases. See THIRD_PARTY_NOTICES.md.
 
@@ -256,7 +256,7 @@ with account DSID headers. Its purchase request obtains the storefront from
 APStoreAccount.sharedInstance (0x10004a854 through 0x10004a888), not the selected
 search preference. This supports trying a foreign catalog app with an existing
 account; it is not proof that Apple accepts every cross-region acquisition.
-No DLiPA binary/source code is copied into WaffleStore or redistributed.
+No DLiPA binary/source code is copied into Crumb or redistributed.
 
 Favourites optionally persist the catalog country; old records remain decodable
 and use account country. Login handoff preserves the pending selection country.
@@ -334,11 +334,11 @@ Settings no longer lists downloaded IPAs or global Export IPA/Clean Documents ac
 
 ## Build 23018 — distribution UI without debugging
 
-Release has no Activity log UI, stdout pipe/capture, sign-in attempt counter or installed diagnostic callbacks. App console print statements compile only in Debug; SDK diagnostic hooks remain default no-ops for tests and reuse. Useful progress/cancel/errors, Keychain, SAP and Store recovery behavior are unchanged. Prebranding branch preserves current WaffleStore bundle ID/icon until a name is chosen. Public renaming/redistribution requires resolving missing upstream license; notices and corresponding sources remain intact.
+Release has no Activity log UI, stdout pipe/capture, sign-in attempt counter or installed diagnostic callbacks. App console print statements compile only in Debug; SDK diagnostic hooks remain default no-ops for tests and reuse. Useful progress/cancel/errors, Keychain, SAP and Store recovery behavior are unchanged. Prebranding branch preserves current Crumb bundle ID/icon until a name is chosen. Public renaming/redistribution requires resolving missing upstream license; notices and corresponding sources remain intact.
 
 ## Crumb 1.0.0 (23019)
 
-Crumb 1.0.0 (23019): display/product Crumb, bundle com.certlium.crumb, crumb URL scheme and new Keychain namespace. Original project, scheme, source tree and history retained; no new repo created. Exact approved icon exported 1024px RGB, default/dark; no alpha/pre-rounded mask. Existing WaffleStore can coexist; credentials/downloads/favourites do not migrate automatically. Native auth/SAP/Store behavior unchanged. CI names/product and artifact verifier updated. Credits/notices/AI disclosure retained; original installation provider is still identified honestly. Public redistribution permission remains unresolved.
+Crumb 1.0.0 (23019): display/product Crumb, bundle com.certlium.crumb, crumb URL scheme and new Keychain namespace. Original project, scheme, source tree and history retained; no new repo created. Exact approved icon exported 1024px RGB, default/dark; no alpha/pre-rounded mask. Existing Crumb can coexist; credentials/downloads/favourites do not migrate automatically. Native auth/SAP/Store behavior unchanged. CI names/product and artifact verifier updated. Credits/notices/AI disclosure retained; original installation provider is still identified honestly. Public redistribution permission remains unresolved.
 
 ## Crumb 1.0.0 (23020) — 2FA renewal and incomplete redirects
 

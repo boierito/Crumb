@@ -1,0 +1,20 @@
+name: Device pipeline tests
+on:
+  push:
+    branches: [main, 'feature/**', 'fix/**']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.99.1
+      - run: python3 scripts/verify-crumb-branding.py
+      - run: cargo test --locked --manifest-path NativeDevice/Cargo.toml
+      - run: cargo test --locked --manifest-path NativeDevice/Cargo.toml --release
+      - run: cargo test --locked --manifest-path NativeDevice/Cargo.toml -p apple-codesign-quick --lib
+      - run: python3 scripts/test-device-macho.py
+      - run: python3 scripts/test-device-file-access.py
+      - run: python3 scripts/test-file-picker-injection.py

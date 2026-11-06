@@ -58,11 +58,11 @@ func TestTCIDynamicSAPSmoke(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer signer.Close()
-	first, err := signer.Sign([]byte("WaffleStore no-JIT SAP probe"))
+	first, err := signer.Sign([]byte("Crumb no-JIT SAP probe"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := signer.Sign([]byte("WaffleStore second no-JIT SAP probe"))
+	second, err := signer.Sign([]byte("Crumb second no-JIT SAP probe"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,6 +1,6 @@
 //
 //  ShareViewController.swift
-//  WaffleStore
+//  Crumb
 //
 //  Created by lunginspector on 4/26/26.
 //
@@ -41,7 +41,7 @@ class ShareViewController: UIViewController {
     private func openMainApp(with url: URL) {
         var components = URLComponents()
         
-        components.scheme = "wafflestore"
+        components.scheme = "crumb"
         components.path = url.absoluteString
         
         guard let url = components.url else {

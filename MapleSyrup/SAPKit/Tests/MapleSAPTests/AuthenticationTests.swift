@@ -603,7 +603,7 @@ final class AuthenticationTests: XCTestCase {
 
     #if canImport(Security)
     func testRealKeychainSaveUpdateLoadAndIdempotentLogout() throws {
-        let store = KeychainStoreAccount(service: "com.nxtcoreee3.WaffleStore.tests.\(UUID().uuidString)")
+        let store = KeychainStoreAccount(service: "com.certlium.crumb.tests.\(UUID().uuidString)")
         defer { try? store.clear() }
         XCTAssertNil(try store.load())
         let first = StoreAccount(email: "fixture@example.test", name: "Fixture", dsid: "123", passwordToken: "fixture-token",

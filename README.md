@@ -6,7 +6,7 @@
 [![Protocol tests](https://github.com/boierito/Crumb/actions/workflows/sap-tests.yml/badge.svg)](https://github.com/boierito/Crumb/actions/workflows/sap-tests.yml)
 
 Crumb lets you find App Store apps, choose a version and download its IPA on your
-iPhone or iPad. It is based on WaffleStore and runs as a normally sideloaded app,
+iPhone or iPad. It runs as a normally sideloaded app,
 without jailbreak, TrollStore or external JIT.
 
 ## Features
@@ -46,6 +46,7 @@ authentication and download backend adapts logic from
 - **[Majd Alfhaily / ipatool](https://github.com/majd/ipatool)** — modern backend reference, MIT licensed.
 - **OpenAI Codex and ImageGen** — AI-assisted implementation and app icon. **AI slop.**
 
-For build instructions and technical details, see [IMPLEMENTATION.md](IMPLEMENTATION.md)
-and [TESTING.md](TESTING.md). Licensing and third-party attributions are documented
+For build instructions and technical details, see [IMPLEMENTATION.md](IMPLEMENTATION.md),
+[TESTING.md](TESTING.md), and the [development guide](docs/DEVELOPMENT.md).
+Licensing and third-party attributions are documented
 in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); the project as a whole is not MIT licensed.

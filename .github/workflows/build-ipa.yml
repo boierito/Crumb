@@ -1,19 +1,23 @@
 name: Build IPA
 on:
   push:
-    branches: [main, 'feature/**', 'release/**', 'fix/**']
+    # Feature commits build via pull_request; avoid push/PR macOS cancellation races.
+    branches: [main, 'release/**', 'fix/**']
     tags: ['v*']
   pull_request:
   workflow_dispatch:
     inputs:
       source_ref:
-        description: 'Source revision (original: upstream-wafflestore-2.2.2)'
+        description: 'Optional source revision'
         required: false
         default: ''
       release_tag:
         description: 'Optional existing draft tag to refresh with IPAs and corresponding sources'
         required: false
         default: ''
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -35,14 +39,45 @@ jobs:
         with:
           go-version: '1.25.1'
           cache: false
+      - uses: dtolnay/rust-toolchain@1.99.1
+        with:
+          targets: aarch64-apple-ios
+      - name: Compile and link helper against the iOS SDK
+        run: xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.4 -fobjc-arc -framework UIKit -framework Foundation -framework CoreGraphics -lz DecryptHelper/main.m DecryptHelper/CrumbJobControl.m DecryptHelper/CrumbMachO.c DecryptHelper/CrumbFileAccess.c DecryptHelper/CrumbLicenseResources.m DecryptHelper/CrumbIPAArchive.m -o "$RUNNER_TEMP/CrumbDecrypt-link-check"
+      - name: Test helper cancellation and restart isolation
+        run: |
+          xcrun --sdk macosx clang -fobjc-arc -framework Foundation tests/CrumbJobControlTests.m DecryptHelper/CrumbJobControl.m -o "$RUNNER_TEMP/CrumbJobControlTests"
+          "$RUNNER_TEMP/CrumbJobControlTests"
+      - name: Test preserved resources and original IPA layout
+        run: |
+          xcrun --sdk macosx clang -g -fsanitize=address -fno-omit-frame-pointer -fobjc-arc -framework Foundation -lz tests/CrumbLicenseResourcesTests.m DecryptHelper/CrumbLicenseResources.m DecryptHelper/CrumbMachO.c DecryptHelper/CrumbFileAccess.c DecryptHelper/CrumbIPAArchive.m -o "$RUNNER_TEMP/CrumbLicenseResources-tests"
+          "$RUNNER_TEMP/CrumbLicenseResources-tests" "$RUNNER_TEMP/CrumbArchiveFixture.ipa"
+          python3 scripts/verify-preserved-root-fixture.py "$RUNNER_TEMP/CrumbArchiveFixture.ipa"
+      - uses: actions/cache/restore@v4
+        id: device-cache
+        with:
+          path: |
+            NativeDevice/target
+            build/Native
+          key: native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('NativeDevice/Cargo.lock', 'NativeDevice/vendor/**', 'MapleSyrup/NativeSAP/**', 'scripts/build-sap-native.sh', 'scripts/build-unicorn-tci.sh', 'scripts/prepare-unicorn-tci.py') }}
+          restore-keys: device-${{ runner.os }}-${{ hashFiles('NativeDevice/Cargo.lock', 'NativeDevice/vendor/**') }}
       - name: Build and package unsigned IPA
         env:
           CONFIGURATION: ${{ matrix.configuration }}
         run: |
           set -o pipefail
+          python3 scripts/verify-crumb-branding.py
           mkdir -p artifacts
+          cargo test --locked --manifest-path NativeDevice/Cargo.toml
+          python3 scripts/test-device-macho.py
+          python3 scripts/test-device-file-access.py
+          python3 scripts/test-file-picker-injection.py
+          swiftc Crumb/Device/DeviceConnectionPolicy.swift scripts/test-device-connection.swift -o "$RUNNER_TEMP/DeviceConnectionTests"
+          "$RUNNER_TEMP/DeviceConnectionTests"
+          swiftc Crumb/DownloadRecord.swift scripts/test-download-record.swift -o "$RUNNER_TEMP/DownloadRecordTests"
+          "$RUNNER_TEMP/DownloadRecordTests"
           xcodebuild -version | tee artifacts/toolchain.txt
-          xcodebuild -project WaffleStore.xcodeproj -scheme WaffleStore \
+          xcodebuild -project Crumb.xcodeproj -scheme Crumb \
             -configuration "$CONFIGURATION" -sdk iphoneos \
             -destination 'generic/platform=iOS' -derivedDataPath build/DerivedData \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
@@ -56,6 +91,7 @@ jobs:
           if [ -f scripts/verify-ipa.py ]; then
             python3 scripts/verify-ipa.py "artifacts/Crumb-$CONFIGURATION.ipa" | tee "artifacts/verification-$CONFIGURATION.json"
           fi
+          tar --exclude=target -czf artifacts/crumb-device-corresponding-source.tar.gz NativeDevice DecryptHelper scripts/build-device-native.sh
           if [ -f build/Native/unicorn-tci-corresponding-source.tar.gz ]; then
             cp build/Native/unicorn-tci-corresponding-source.tar.gz artifacts/
             cp build/Native/UNICORN-COPYING artifacts/
@@ -64,6 +100,13 @@ jobs:
             cp build/Native/ipatool-sap-corresponding-source.tar.gz artifacts/
             cp build/Native/IPATOOL-LICENSE artifacts/
           fi
+      - uses: actions/cache/save@v4
+        if: always() && steps.device-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            NativeDevice/target
+            build/Native
+          key: native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('NativeDevice/Cargo.lock', 'NativeDevice/vendor/**', 'MapleSyrup/NativeSAP/**', 'scripts/build-sap-native.sh', 'scripts/build-unicorn-tci.sh', 'scripts/prepare-unicorn-tci.py') }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:

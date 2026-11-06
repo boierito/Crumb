@@ -1,4 +1,4 @@
-# Modified files relative to original WaffleStore
+# Modified files relative to original Crumb
 
 Original revision: `d508e532e5b40d6470bab003a6cc0026d1ca7c75`. Historical source paths remain unchanged.
 
@@ -47,36 +47,36 @@ Original revision: `d508e532e5b40d6470bab003a6cc0026d1ca7c75`. Historical source
 - `README.md`
 - `TESTING.md`
 - `THIRD_PARTY_NOTICES.md`
-- `WaffleStore-Info.plist`
-- `WaffleStore.xcodeproj/project.pbxproj`
-- `WaffleStore/App/AppSearchView.swift`
-- `WaffleStore/App/DownloadReadyView.swift`
-- `WaffleStore/App/DownloadedAppsView.swift`
-- `WaffleStore/App/FavouritesView.swift`
-- `WaffleStore/App/LogView.swift`
-- `WaffleStore/App/NavigationButtons.swift`
-- `WaffleStore/App/SettingsView.swift`
-- `WaffleStore/App/StoreVersionsView.swift`
-- `WaffleStore/AppData.swift`
-- `WaffleStore/Assets/Assets.xcassets/AppIcon.appiconset/Contents.json`
-- `WaffleStore/Assets/Assets.xcassets/AppIcon.appiconset/Dark.png`
-- `WaffleStore/Assets/Assets.xcassets/AppIcon.appiconset/Light.png`
-- `WaffleStore/Assets/Assets.xcassets/AppIcon.appiconset/Tinted.png`
-- `WaffleStore/ContentView.swift`
-- `WaffleStore/DowngradeHistory.swift`
-- `WaffleStore/DownloadRecord.swift`
-- `WaffleStore/Favourites.swift`
-- `WaffleStore/Functions/CDNDownload.swift`
-- `WaffleStore/Functions/Downgrader.swift`
-- `WaffleStore/Functions/IPATool.swift`
-- `WaffleStore/Functions/OTAInstaller.swift`
-- `WaffleStore/MapleSyrup/AppleLoginController.swift`
-- `WaffleStore/MapleSyrup/Native/SAP-Bridging-Header.h`
-- `WaffleStore/MapleSyrup/Native/SAPGuestBridge.h`
-- `WaffleStore/MapleSyrup/NativeSAPGuest.swift`
-- `WaffleStore/MapleSyrup/NativeStoreGuest.swift`
-- `WaffleStore/Resources/ThirdPartyNotices.txt`
-- `WaffleStore/WaffleStoreApp.swift`
+- `Crumb-Info.plist`
+- `Crumb.xcodeproj/project.pbxproj`
+- `Crumb/App/AppSearchView.swift`
+- `Crumb/App/DownloadReadyView.swift`
+- `Crumb/App/DownloadedAppsView.swift`
+- `Crumb/App/FavouritesView.swift`
+- `Crumb/App/LogView.swift`
+- `Crumb/App/NavigationButtons.swift`
+- `Crumb/App/SettingsView.swift`
+- `Crumb/App/StoreVersionsView.swift`
+- `Crumb/AppData.swift`
+- `Crumb/Assets/Assets.xcassets/AppIcon.appiconset/Contents.json`
+- `Crumb/Assets/Assets.xcassets/AppIcon.appiconset/Dark.png`
+- `Crumb/Assets/Assets.xcassets/AppIcon.appiconset/Light.png`
+- `Crumb/Assets/Assets.xcassets/AppIcon.appiconset/Tinted.png`
+- `Crumb/ContentView.swift`
+- `Crumb/DowngradeHistory.swift`
+- `Crumb/DownloadRecord.swift`
+- `Crumb/Favourites.swift`
+- `Crumb/Functions/CDNDownload.swift`
+- `Crumb/Functions/Downgrader.swift`
+- `Crumb/Functions/IPATool.swift`
+- `Crumb/Functions/OTAInstaller.swift`
+- `Crumb/MapleSyrup/AppleLoginController.swift`
+- `Crumb/MapleSyrup/Native/SAP-Bridging-Header.h`
+- `Crumb/MapleSyrup/Native/SAPGuestBridge.h`
+- `Crumb/MapleSyrup/NativeSAPGuest.swift`
+- `Crumb/MapleSyrup/NativeStoreGuest.swift`
+- `Crumb/Resources/ThirdPartyNotices.txt`
+- `Crumb/CrumbApp.swift`
 - `branding/Crumb-AppIcon-1024.png`
 - `branding/README.md`
 - `docs/BACKEND_AUDIT.md`

@@ -88,7 +88,7 @@ those permission requests without executing unsigned memory or aborting.
 
 ## Old → modern → adaptation
 
-| Old WaffleStore | Modern ipatool | Action | Jailed adaptation |
+| Old Crumb | Modern ipatool | Action | Jailed adaptation |
 |---|---|---|---|
 | SHA1 Apple-ID GUID | machineIdentity from stable adapter MAC | Replace | Keychain-backed six-byte synthetic identity; Apple acceptance unverified |
 | Bag auth-only/fallback | full SAPConfig from current Bag | Replace | Swift parser implemented; no unsigned fallback |

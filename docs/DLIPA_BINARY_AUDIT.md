@@ -36,11 +36,11 @@ from model through caller/block into salableAdamId. The User-Agent literal at
 `0x10004a7f8` is Configurator/2.20 (Macintosh; OS X 26.5.1; 25F80)
 AppleWebKit/1624.2.5.11.4. ipatool uses twelve body keys, including needDiv,
 origPage and origPageLocation, an integer app ID, and its shared Configurator/2.17
-User-Agent. WaffleStore 23014 matched the ipatool form, not DLiPA's exact request.
+User-Agent. Crumb 23014 matched the ipatool form, not DLiPA's exact request.
 
 On an explicit 2059 (`0x10004abd8`), DLiPA changes pricingParameters to GAME and
 re-serializes XML (`0x10004abfc–0x10004ac98`). Its loop can revisit that branch;
-WaffleStore intentionally permits only one alternate. A final 2059 is treated
+Crumb intentionally permits only one alternate. A final 2059 is treated
 as temporarily unavailable (`0x10004adfc–0x10004ae60`). DLiPA also handles HTTP
 302 by replacing the request URL from Location, with a five-redirect bound
 (`0x10004aa94–0x10004ab14`). This is not evidence that a redirect caused the
@@ -58,7 +58,7 @@ compatibility attempt, not a proven fix for live regional acquisition.
 The static binary does not show that Venmo currently grants a license to the same
 AR account, nor provide Apple's server-side reason for 2059. The user reports
 23014 still failed. Compare the **same app, account and ownership** in DLiPA and
-WaffleStore; distinguish a previous US license from first-time acquisition.
+Crumb; distinguish a previous US license from first-time acquisition.
 The limited existing log now records profile, plist key count, pricing and
 numeric Apple failure. It never prints credentials, full cookies or signed URLs.
 No additional purchase retries or invented account-country change are added.
