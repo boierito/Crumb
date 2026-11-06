@@ -1,6 +1,6 @@
 # Crumb login, versions, download and installation repair
 
-This contribution starts from nxtcoreee3/Crumb d508e53. The original
+This contribution starts from the upstream snapshot d508e53 (see CREDITS.md). The original
 project, UI, search, favorites, history and sideloading model are retained.
 Code generation was performed with OpenAI Codex (**AI slop**); boierito
 coordinated the work and reported the physical-device results in TESTING.md.

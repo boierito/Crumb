@@ -1,4 +1,7 @@
-# Crumb original backend audit
+# Crumb backend audit
+
+Historical baseline audit. Project paths and product identity below use the
+current Crumb names; original source identity is recorded in ../CREDITS.md.
 
 Original: the upstream project (see CREDITS.md) / fork `boierito/Crumb`,
 `d508e532e5b40d6470bab003a6cc0026d1ca7c75`.
