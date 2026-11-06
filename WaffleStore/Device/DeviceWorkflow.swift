@@ -24,7 +24,6 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     }
     @Published private(set) var phase = "idle"
     @Published private(set) var message = ""
-    @Published private(set) var routeDiscovery = ""
     @Published private(set) var pin: String?
     @Published private(set) var connected = false
     @Published private(set) var paired = false
@@ -34,16 +33,8 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     @Published private(set) var hasCertificate = false
     @Published private(set) var hasProfile = false
     @Published var helperBundle = "com.certlium.crumb.decrypt"
-    @Published var route = "10.7.0.1" {
-        didSet {
-            if route != oldValue {
-                connected = false
-                message = "Route changed. Check the authenticated connection again."
-            }
-        }
-    }
+    private let route = "10.7.0.1"
     private var service: NetService?
-    private var discovery: DevicePairingDiscovery?
     private var job: UnsafeMutableRawPointer?
     private var generation = UUID()
     private var polling: Task<Void, Never>?
@@ -98,19 +89,9 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     private func deviceOperation(_ operation: String, extra: [String: Any] = [:]) {
         guard !busy else { return }
         guard Self.pairingSupported else { message = "This system version has not been enabled for the device connection."; return }
-        if route == "127.0.0.1" {
-            busy = true; phase = "discovering"; message = "Finding this iPhone's pairing service…"
-            routeDiscovery = ""
-            let finder = DevicePairingDiscovery(); discovery = finder
-            finder.start { [weak self, weak finder] result in
-                guard let self, let finder, self.discovery === finder else { return }
-                self.discovery = nil; self.busy = false; self.routeDiscovery = result.summary
-                var ports = result.port.map { [$0] } ?? []
-                if !ports.contains(49152) { ports.append(49152) }
-                self.performDeviceOperation(operation, extra: extra, ports: ports)
-            }
-        } else { performDeviceOperation(operation, extra: extra, ports: [49152]) }
+        performDeviceOperation(operation, extra: extra, ports: [49152])
     }
+
     private func performDeviceOperation(_ operation: String, extra: [String: Any], ports: [Int]) {
         guard !busy else { return }
         do {
@@ -181,12 +162,6 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         catch { message = error.localizedDescription }
     }
     func cancel() {
-        if let discovery {
-            discovery.cancel(); self.discovery = nil; busy = false; connected = false
-            cleanup()
-            phase = "cancelled"; message = "Device service lookup cancelled."
-            return
-        }
         guard let job else { return }
         crumb_device_cancel(job)
         message = "Cancelling…"
@@ -261,7 +236,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
                 openHelper()
             case "complete":
                 guard let path = value["path"] as? String else { throw DeviceOperationError.message("Missing verified result.") }
-                output = URL(fileURLWithPath: path); message = "IPA retrieved; hashes and encryption markers verified. Application execution has not been tested."
+                output = URL(fileURLWithPath: path); message = "Your decrypted IPA is ready to save. Sign it with a compatible certificate and profile before installing."
             case "failed":
                 // Local signing failures do not invalidate the verified route.
                 if request["operation"] as? String != "prepare" { connected = false }

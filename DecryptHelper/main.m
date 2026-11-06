@@ -252,28 +252,60 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
 }
 @interface CrumbHelper : UIViewController
 @property(nonatomic, strong) UILabel *label;
+@property(nonatomic, strong) UIProgressView *progress;
+@property(nonatomic, strong) UILabel *titleLabel;
+- (void)status:(NSString *)text progress:(float)progress;
+
 @end
 @implementation CrumbHelper
 - (void)viewDidLoad {
   [super viewDidLoad];
   UIApplication.sharedApplication.idleTimerDisabled = YES;
   self.view.backgroundColor = UIColor.systemBackgroundColor;
-  self.label = [[UILabel alloc] initWithFrame:CGRectZero];
-  self.label.translatesAutoresizingMaskIntoConstraints = NO;
+  self.view.tintColor = [UIColor colorWithRed:0.16 green:0.43 blue:0.76 alpha:1];
+  UIImageView *icon = [[UIImageView alloc] initWithImage:[UIImage imageNamed:@"Icon60@3x.png"]];
+  icon.contentMode = UIViewContentModeScaleAspectFit;
+  icon.layer.cornerRadius = 22;
+  icon.clipsToBounds = YES;
+  [icon.heightAnchor constraintEqualToConstant:88].active = YES;
+  self.titleLabel = [UILabel new];
+  self.titleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleLargeTitle];
+  self.titleLabel.adjustsFontForContentSizeCategory = YES;
+  self.titleLabel.text = @"Crumb Decrypt";
+  self.titleLabel.numberOfLines = 0;
+  self.label = [UILabel new];
+  self.label.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
+  self.label.adjustsFontForContentSizeCategory = YES;
   self.label.numberOfLines = 0;
-  self.label.text = @"Decrypting licensed app… Keep this screen open.";
-  [self.view addSubview:self.label];
+  self.label.text = @"Preparing your app. Keep this screen open.";
+  self.progress = [[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];
+  self.progress.accessibilityLabel = @"Decryption progress";
+  UILabel *note = [UILabel new];
+  note.font = [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
+  note.textColor = UIColor.secondaryLabelColor;
+  note.numberOfLines = 0;
+  note.text = @"Your app returns to Crumb automatically when it is ready. You can then save the IPA and sign it for installation.";
+  UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[icon,self.titleLabel,self.label,self.progress,note]];
+  stack.axis = UILayoutConstraintAxisVertical;
+  stack.spacing = 24;
+  stack.translatesAutoresizingMaskIntoConstraints = NO;
+  [self.view addSubview:stack];
   [NSLayoutConstraint activateConstraints:@[
-    [self.label.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor
-                                             constant:24],
-    [self.label.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor
-                                              constant:-24],
-    [self.label.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor]
+    [stack.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor constant:28],
+    [stack.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor constant:-28],
+    [stack.centerYAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.centerYAnchor],
+    [stack.topAnchor constraintGreaterThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:16]
   ]];
   dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
     @autoreleasepool {
       [self run];
     }
+  });
+}
+- (void)status:(NSString *)text progress:(float)progress {
+  dispatch_async(dispatch_get_main_queue(), ^{
+    self.label.text = text;
+    [self.progress setProgress:progress animated:!UIAccessibilityIsReduceMotionEnabled()];
   });
 }
 - (void)run {
@@ -299,7 +331,10 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
   NSDictionary *licenses = job[@"license_resources"];
   NSDictionary *archiveResources = job[@"archive_resources"];
   NSArray *archiveDirectories = job[@"archive_directories"];
+  NSDictionary *inventory = job[@"payload_inventory"];
+  __block NSUInteger processed = 0;
   BOOL ok =
+      [inventory isKindOfClass:NSDictionary.class] && inventory.count > 0 && inventory.count <= 100000 &&
       job && [app isKindOfClass:NSString.class] &&
       [app.lastPathComponent isEqualToString:app] && [app hasSuffix:@".app"] &&
       [job[@"schema"] integerValue] == 3 &&
@@ -396,12 +431,16 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
         }
         if (encrypted)
           decrypted++;
+        processed++;
+        [self status:[NSString stringWithFormat:@"Processing your app · %lu files", (unsigned long)processed]
+             progress:0.8f * MIN(1.0f, (float)processed / MAX(1, inventory.count))];
       }
     }
   if (enumerationError) {
     ok = NO;
     error = enumerationError;
   }
+  [self status:@"Restoring app resources…" progress:0.82];
   uint64_t licenseTotal = 0;
   if (ok)
     for (NSString *relative in licenses) {
@@ -470,6 +509,39 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
         break;
       }
     }
+  // Hashes of the generated ZIP alone cannot detect files lost during installation.
+  // Compare every pre-install payload entry, including extensions and empty folders.
+  [self status:@"Checking all original app files…" progress:0.9];
+  if (ok) for (NSString *relative in inventory) {
+    NSDictionary *expected = inventory[relative];
+    NSURL *url = [dest URLByAppendingPathComponent:relative];
+    NSDictionary *actual = [url resourceValuesForKeys:keys error:&error];
+    BOOL directory = [expected[@"directory"] boolValue];
+    if (!actual || [actual[NSURLIsSymbolicLinkKey] boolValue] ||
+        [actual[NSURLIsDirectoryKey] boolValue] != directory ||
+        (!directory && (![actual[NSURLIsRegularFileKey] boolValue] ||
+        [actual[NSURLFileSizeKey] unsignedLongLongValue] != [expected[@"size"] unsignedLongLongValue]))) {
+      ok = NO;
+    } else if (!directory && ![expected[@"encrypted"] boolValue]) {
+      // Stream hashes to keep large resources within the memory budget.
+      NSInputStream *stream = [NSInputStream inputStreamWithURL:url];
+      [stream open];
+      CC_SHA256_CTX context; CC_SHA256_Init(&context);
+      uint8_t buffer[65536]; NSInteger count;
+      while ((count = [stream read:buffer maxLength:sizeof(buffer)]) > 0)
+        CC_SHA256_Update(&context, buffer, (CC_LONG)count);
+      [stream close];
+      unsigned char bytes[CC_SHA256_DIGEST_LENGTH]; CC_SHA256_Final(bytes, &context);
+      NSMutableString *hash = [NSMutableString string];
+      for (NSUInteger i = 0; i < sizeof(bytes); i++) [hash appendFormat:@"%02x", bytes[i]];
+      if (count < 0 || ![hash isEqualToString:expected[@"sha256"]]) ok = NO;
+    }
+    if (!ok) {
+      error = failure([NSString stringWithFormat:@"App file missing or changed: %@. Prepare the helper again; no completed IPA was produced.", relative]);
+      break;
+    }
+  }
+  [self status:@"Packaging your IPA…" progress:0.95];
   if (ok)
     ok = crumb_pack_ipa(root, [docs URLByAppendingPathComponent:@"result.ipa"],
                         hashes, &error);
@@ -492,6 +564,8 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
   [fm removeItemAtURL:root error:nil];
   dispatch_async(dispatch_get_main_queue(), ^{
     UIApplication.sharedApplication.idleTimerDisabled = NO;
+    if (ok) self.progress.progress = 1;
+    self.titleLabel.text = ok ? @"Your app is ready" : @"Could not finish";
     self.label.text=ok?@"Decryption finished. Return to Crumb and tap Retrieve result.":error.localizedDescription?:@"Decryption failed. No completed IPA was produced.";
     if (ok) {
       NSURLComponents *callback = [NSURLComponents new];

@@ -91,7 +91,6 @@ struct DownloadedAppsView: View {
                         DisclosureGroup("Details") {
                             if let build = record.build { Text("Build \(build)").font(.caption) }
                             Text(record.bundleID).font(.caption).textSelection(.enabled)
-                            Text("externalVersionId \(record.externalVersionID)").font(.caption).textSelection(.enabled)
                             Text(record.date, style: .date).font(.caption)
                             if let url = record.fileURL,
                                let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize {

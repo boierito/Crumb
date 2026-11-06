@@ -335,6 +335,7 @@ pub fn prepare(v: &Value) -> Result<String> {
                 }
             }
         }
+        let payload_inventory = payload_inventory(&target)?;
         let license_resources = preserve_license_resources(&target, &helper)?;
         // Refuse unsupported images and unreasonable per-file sizes before signing.
         let mut encrypted = 0;
@@ -356,7 +357,7 @@ pub fn prepare(v: &Value) -> Result<String> {
         }
         ensure!(encrypted > 0, "No supported encrypted images found");
         let meta = json!({"schema":3,"job_id":input(v,"job_id")?,"app_name":apps[0].file_name().to_string_lossy(),"bundle_id":strval(&app_info,"CFBundleIdentifier")?,"license_resources":license_resources,
-            "archive_resources":archive_resources,"archive_directories":archive_directories});
+            "archive_resources":archive_resources,"archive_directories":archive_directories,"payload_inventory":payload_inventory});
         let meta = serde_json::to_vec(&meta)?;
         ensure!(
             meta.len() <= 16 * 1024 * 1024,
@@ -419,6 +420,35 @@ pub fn prepare(v: &Value) -> Result<String> {
     }
     result
 }
+// Capture the entire target before installd can remove or alter resources.
+fn payload_inventory(target: &Path) -> Result<Value> {
+    let mut inventory = serde_json::Map::new();
+    for entry in walkdir::WalkDir::new(target).min_depth(1) {
+        let entry = entry?;
+        ensure!(!entry.file_type().is_symlink(), "Payload contains a link");
+        let relative = entry.path().strip_prefix(target)?.to_str().context("Invalid payload path")?.to_owned();
+        if entry.file_type().is_dir() {
+            inventory.insert(relative, json!({"directory":true}));
+        } else {
+            let mut file = fs::File::open(entry.path())?;
+            let size = entry.metadata()?.len();
+            let mut header = Vec::new();
+            (&mut file).take(16 * 1024 * 1024 + 32).read_to_end(&mut header)?;
+            let encrypted = !encrypted_ranges_header(&header, size as usize)?.is_empty();
+            let mut digest = Sha256::new();
+            digest.update(&header);
+            let mut buffer = vec![0; 1024 * 1024];
+            loop {
+                let n = file.read(&mut buffer)?;
+                if n == 0 { break; }
+                digest.update(&buffer[..n]);
+            }
+            inventory.insert(relative, json!({"size":size,"encrypted":encrypted,"sha256":format!("{:x}",digest.finalize())}));
+        }
+    }
+    Ok(Value::Object(inventory))
+}
+
 fn copy_tree(from: &Path, to: &Path) -> Result<()> {
     for e in walkdir::WalkDir::new(from) {
         let e = e?;
@@ -629,6 +659,21 @@ mod tests {
         b[44..48].copy_from_slice(&16u32.to_le_bytes());
         b[48..52].copy_from_slice(&1u32.to_le_bytes());
         assert!(encrypted_ranges(&b).is_err());
+    }
+    #[test]
+    fn payload_inventory_covers_extensions_empty_directories_and_streamed_files() {
+        let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        fs::create_dir_all(root.join("PlugIns/Widget.appex/Empty")).unwrap();
+        fs::write(root.join("Info.plist"), b"metadata").unwrap();
+        let bytes = vec![42u8; 17 * 1024 * 1024];
+        fs::write(root.join("PlugIns/Widget.appex/resource"), &bytes).unwrap();
+        let inventory = payload_inventory(&root).unwrap();
+        assert_eq!(inventory["PlugIns/Widget.appex/Empty"]["directory"], true);
+        assert_eq!(inventory["Info.plist"]["size"], 8);
+        assert_eq!(inventory["PlugIns/Widget.appex/resource"]["sha256"],
+            format!("{:x}", Sha256::digest(&bytes)));
+        assert_eq!(inventory["PlugIns/Widget.appex/resource"]["encrypted"], false);
+        fs::remove_dir_all(root).unwrap();
     }
     fn result_zip(bytes: &[u8], hash_override: Option<&str>) -> (PathBuf, Value) {
         let path = std::env::temp_dir().join(format!("{}.zip", uuid::Uuid::new_v4()));

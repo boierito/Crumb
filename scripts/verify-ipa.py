@@ -34,8 +34,9 @@ with zipfile.ZipFile(ipa) as archive:
     assert "_remotepairing._tcp" in info.get("NSBonjourServices", []), "Pairing port discovery declaration missing"
     assert info.get("NSLocalNetworkUsageDescription"), "Local network permission text missing"
     with zipfile.ZipFile(io.BytesIO(archive.read(root + "CrumbDecryptTemplate.zip"))) as helper:
-        assert set(helper.namelist()) == {"CrumbDecrypt", "Info.plist"}, "Unexpected helper template contents"
+        assert set(helper.namelist()) == {"CrumbDecrypt", "Info.plist", "Icon60@2x.png", "Icon60@3x.png", "Icon76@2x.png", "Icon83.5@2x.png"}, "Unexpected helper template contents"
         helper_info = plistlib.loads(helper.read("Info.plist"))
+        assert helper_info["CFBundleIcons"]["CFBundlePrimaryIcon"]["CFBundleIconFiles"] == ["Icon60"], "Helper icon missing"
         assert helper_info["CFBundleExecutable"] == "CrumbDecrypt", "Wrong helper executable"
         assert helper_info["UIFileSharingEnabled"] is True, "Helper retrieval unavailable"
         assert struct.unpack("<II", helper.read("CrumbDecrypt")[:8]) == (0xFEEDFACF, 0x0100000C), "Helper must be arm64"

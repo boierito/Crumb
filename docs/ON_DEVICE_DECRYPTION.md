@@ -1,3 +1,45 @@
+# Current user-flow revision
+
+Base: `feature/on-device-pairing-decryption` (4a3ca40).
+Use LocalDevVPN with authenticated pairing and a separately signed helper.
+Loopback is removed from the app flow; the older notes below describe history.
+The native loopback fixtures remain for protocol regression coverage.
+
+Pairing establishes trusted-host credentials. LocalDevVPN supplies the local
+transport used for helper installation and result retrieval. Neither grants
+code-signing privileges, an App Store license or decryption compatibility.
+The helper still requires a matching certificate and provisioning profile.
+Installation opens the helper automatically; successful processing returns to
+Crumb and starts retrieval. iOS trust prompts still require user interaction.
+
+On-device pairing is limited to 27.0–27.0.1 and decryption to 27.0.1.
+Older iOS support would require a separately implemented computer-assisted
+pairing/import transport and independent decryption validation. A VPN alone
+cannot enable it. Do not remove version gates on the basis of pairing alone.
+
+The helper now includes Crumb home-screen icons, Dynamic Type text, file-based
+processing progress and separate resource-checking/packaging stages. Progress
+is based on file count, not an estimate of time remaining. Console diagnostics
+in the Swift app are restricted to DEBUG builds.
+
+Preparation snapshots a complete target inventory before signing/installation.
+Before packaging, the helper requires every expected file/directory, matching
+sizes, and matching SHA256 for files that were originally unencrypted. Original
+encrypted images must pass the existing actual decryption checks. This detects
+missing extensions/resources even if the output ZIP has internally valid hashes.
+Reinstall a newly prepared helper: older helpers lack the required inventory.
+
+Final decrypted-app signing and installation are **not implemented**. Export is
+available; the IPA needs a signer capable of provisioning the app and all nested
+extensions/entitlements. The helper's profile does not generally authorize the
+target app. Do not label export as an installable signed IPA.
+
+Acceptance still requires macOS compilation and physical-device testing with
+licensed main apps, frameworks and extensions. Linux parser/file-access tests
+do not establish FairPlay success, UI behavior or installability.
+
+---
+
 # Experimental on-device pipeline
 
 This branch adds code, not physical-device acceptance. No licensed IPA has been

@@ -12,10 +12,14 @@ rm -f build/Native/CrumbDecryptTemplate.zip
 mkdir -p "$HELPER"
 xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.4 -Os -fobjc-arc \
   -framework UIKit -framework Foundation -framework CoreGraphics -lz DecryptHelper/main.m DecryptHelper/CrumbMachO.c DecryptHelper/CrumbFileAccess.c DecryptHelper/CrumbLicenseResources.m DecryptHelper/CrumbIPAArchive.m -o "$HELPER/CrumbDecrypt"
+sips -z 120 120 Icons/Light.png --out "$HELPER/Icon60@2x.png" >/dev/null
+sips -z 180 180 Icons/Light.png --out "$HELPER/Icon60@3x.png" >/dev/null
+sips -z 152 152 Icons/Light.png --out "$HELPER/Icon76@2x.png" >/dev/null
+sips -z 167 167 Icons/Light.png --out "$HELPER/Icon83.5@2x.png" >/dev/null
 python3 - "$HELPER/Info.plist" <<'PY'
 import plistlib,sys
 with open(sys.argv[1],'wb') as f:
- plistlib.dump(dict(CFBundleIdentifier='com.certlium.crumb.decrypt',CFBundleExecutable='CrumbDecrypt',CFBundleName='Crumb Decrypt',CFBundleDisplayName='Crumb Decrypt',CFBundlePackageType='APPL',CFBundleVersion='1',CFBundleShortVersionString='1.0',MinimumOSVersion='27.0',UIDeviceFamily=[1,2],UIFileSharingEnabled=True,LSRequiresIPhoneOS=True,UILaunchScreen={},CFBundleURLTypes=[dict(CFBundleURLSchemes=['crumb-decrypt-helper'])]),f)
+ plistlib.dump(dict(CFBundleIcons=dict(CFBundlePrimaryIcon=dict(CFBundleIconFiles=['Icon60'],UIPrerenderedIcon=False)), **{'CFBundleIcons~ipad':dict(CFBundlePrimaryIcon=dict(CFBundleIconFiles=['Icon60','Icon76','Icon83.5'],UIPrerenderedIcon=False))}, CFBundleIdentifier='com.certlium.crumb.decrypt',CFBundleExecutable='CrumbDecrypt',CFBundleName='Crumb Decrypt',CFBundleDisplayName='Crumb Decrypt',CFBundlePackageType='APPL',CFBundleVersion='1',CFBundleShortVersionString='1.0',MinimumOSVersion='27.0',UIDeviceFamily=[1,2],UIFileSharingEnabled=True,LSRequiresIPhoneOS=True,UILaunchScreen={},CFBundleURLTypes=[dict(CFBundleURLSchemes=['crumb-decrypt-helper'])]),f)
 PY
 # Store the unsigned template as opaque data, so a sideloader does not sign it
 # as a nested app. Crumb unpacks, customizes and signs it on-device.

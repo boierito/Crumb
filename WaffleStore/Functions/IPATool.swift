@@ -23,7 +23,9 @@ final class IPATool {
                     default: AppData.shared.applicationStatus = "Preparing download…"
                     }
                     #if DEBUG
+                    #if DEBUG
                     print("Apple Store stage: \(stage.rawValue)")
+                    #endif
                     #endif
                 }
             })
@@ -37,7 +39,9 @@ final class IPATool {
         do { return try await session().descriptor(app: app, externalVersionID: version) }
         catch {
             #if DEBUG
+            #if DEBUG
             print("Apple Store failure: category=\(ResponseDiagnostic.category(error))")
+            #endif
             #endif
             throw error
         }
