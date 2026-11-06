@@ -99,13 +99,11 @@ struct StoreVersionsView: View {
                             Button { select(id, app: app) } label: {
                                 HStack(spacing: 12) {
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text(labels.info[id].map { "Version \($0.version)" } ?? (labels.failures[id] != nil ? "Version ID \(id)" : (id == latest ? "Latest version" : "Loading version…")))
+                                        Text(labels.info[id]?.version ?? (id == latest ? "Latest version" : "Older version").localized)
                                             .foregroundStyle(.primary)
                                         if id == latest {
                                             Text("Latest").font(.caption).foregroundStyle(.secondary)
-                                        } else if labels.info[id] == nil {
-                                            Text(labels.failures[id] == nil ? "ID \(id)" : "Number unavailable")
-                                                .font(.caption).foregroundStyle(.secondary)
+
                                         }
                                     }
                                     Spacer(minLength: 8)
@@ -123,13 +121,7 @@ struct StoreVersionsView: View {
                     } header: {
                         Text("\(versions.count) available versions")
                     }
-                    Section {
-                        DisclosureGroup("Advanced", isExpanded: $showAdvanced) {
-                            TextField("External version ID", text: $manualID).keyboardType(.numberPad)
-                            Button("Choose this version") { select(manualID, app: app) }
-                                .disabled(StoreParsing.identifier(manualID) == nil)
-                        }
-                    }
+
                 }
             }
             .navigationTitle("Choose version")
@@ -139,16 +131,14 @@ struct StoreVersionsView: View {
             .sheet(item: $selected) { choice in
                 NavigationStack {
                     Form {
-                        Section("Selected version") {
-                            Text(app?.name ?? "App")
+                        Section {
+                            Text(app?.name ?? "App").font(.headline)
                             if let info = labels.info[choice.id] {
                                 Text("Version: \(info.version)")
                                 if let build = info.build { Text("Build: \(build)") }
                             } else if let failure = labels.failures[choice.id] { Text(failure).font(.caption) }
                             else { HStack(spacing: 12) { ProgressView(); Text("Checking version…").foregroundStyle(.secondary) } }
-                            DisclosureGroup("Version details") {
-                                LabeledContent("External version ID", value: choice.id).font(.caption).textSelection(.enabled)
-                            }
+
                         }
                         Section("Encrypted") {
                             Button { download(choice, install:false) } label: { Label("Download encrypted",systemImage:"arrow.down.circle") }
@@ -163,11 +153,11 @@ struct StoreVersionsView: View {
                         }
 
                     }
-                    .navigationTitle("Selected version")
+                    .navigationTitle("Download")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { selected = nil } } }
                 }
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.large])
             }
             .onDisappear { if selected == nil { labels.stop() } }
             .task(id: loadAttempt) {
