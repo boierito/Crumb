@@ -47,6 +47,19 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     private var installAfterDecrypt = false
     private var queuedRecord: DownloadRecord?
     private var signingRecord: DownloadRecord?
+    private var signingContext: [String: Any]?
+    private var forceSigningReview = false
+    private var signingApprovalPending = false
+    @Published var installationSetupNeeded = false
+    @Published private(set) var installationReady = false
+    @Published private(set) var hasInstallationCertificate = false
+    @Published private(set) var hasInstallationProfile = false
+    @Published private(set) var installationCertificateName = ""
+    @Published private(set) var installationProfileName = ""
+    @Published private(set) var installationProfiles: [AdditionalSigningProfile] = []
+    @Published var installationPassword = ""
+    @Published var signingReview: SigningReview?
+    @Published var signedInstallation: SignedInstallation?
     private var queuedInstall: DownloadRecord?
     private let network = NWPathMonitor()
     private var connectionPolicy = DeviceConnectionPolicy()
@@ -93,6 +106,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
                 }
             }
         } catch { message = "Could not read protected device settings." }
+        seedInstallationSigning()
         network.pathUpdateHandler = { [weak self] path in
             let cellular = path.usesInterfaceType(.cellular) && !path.usesInterfaceType(.wifi)
             let signature = "\(path.status)-\(path.usesInterfaceType(.wifi))-\(cellular)"
@@ -121,6 +135,19 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
             if kind == "pairing" {
                 guard data.count <= 65536 else { throw DeviceOperationError.message("Pairing file is too large.") }
                 start(["operation":"import-pairing", "record":data.base64EncodedString()]); return
+            }
+            if kind.hasPrefix("install-") {
+                if kind == "install-extra-profile" {
+                    guard installationProfiles.count < 32 else { throw DeviceOperationError.message("Maximum 32 extension profiles.") }
+                    installationProfiles.append(AdditionalSigningProfile(id:UUID().uuidString,name:url.lastPathComponent,data:data))
+                    try DeviceKeychain.write(JSONEncoder().encode(installationProfiles),account:"install-profiles")
+                } else {
+                    try DeviceKeychain.write(data,account:kind)
+                    try DeviceKeychain.write(Data(url.lastPathComponent.utf8),account:kind + "-name")
+                    invalidateInstallationSigning()
+                    seedInstallationSigning()
+                }
+                return
             }
             try DeviceKeychain.write(data, account: kind)
             try DeviceKeychain.write(Data(url.lastPathComponent.utf8), account: kind + "-name")
@@ -161,10 +188,10 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     }
     func autoConnect() {
         guard connectionPolicy.shouldCheck(paired: paired, busy: busy, connected: connected,
-            cellular: onCellular, helperPending: waitingForHelper || resultRequest.requested) else { return }
+            cellular: onCellular, helperPending: waitingForHelper || resultRequest.requested || signingContext != nil || signedInstallation != nil) else { return }
         verify()
     }
-    private func signingRequest(operation: String) throws -> [String: Any] {
+    private func signingRequest(operation: String, installation: Bool = false) throws -> [String: Any] {
         let fm = FileManager.default
         let base = try fm.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("DeviceJobs", isDirectory: true)
         try fm.createDirectory(at: base, withIntermediateDirectories: true, attributes: [.protectionKey:FileProtectionType.complete])
@@ -173,11 +200,54 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         var excluded = URLResourceValues(); excluded.isExcludedFromBackup = true
         var protectedRoot = root; try protectedRoot.setResourceValues(excluded)
         staged = root
-        guard let cert = try DeviceKeychain.read("p12"), let profile = try DeviceKeychain.read("profile") else { throw DeviceOperationError.message("Import your signing files.") }
+        guard let cert = try DeviceKeychain.read(installation ? "install-p12" : "p12"), let profile = try DeviceKeychain.read(installation ? "install-profile" : "profile") else { throw DeviceOperationError.message("Import your signing files.") }
         let p12 = root.appendingPathComponent("identity.p12"), mobile = root.appendingPathComponent("profile.mobileprovision")
         try cert.write(to:p12,options:[.atomic,.completeFileProtection]); try profile.write(to:mobile,options:[.atomic,.completeFileProtection])
-        return ["operation":operation,"p12":p12.path,"profile":mobile.path,"password":signingPassword,
-                "own_bundle":Bundle.main.bundleIdentifier ?? "com.certlium.crumb", "work":root.appendingPathComponent("work").path]
+        var request: [String:Any] = ["operation":operation,"p12":p12.path,"profile":mobile.path,
+            "password":installation ? installationPassword : signingPassword,
+            "purpose":installation ? "installation" : "helper", "helper_bundle":helperBundle,
+            "own_bundle":Bundle.main.bundleIdentifier ?? "com.certlium.crumb", "work":root.appendingPathComponent("work").path]
+        if installation {
+            var profiles: [String] = []
+            for profile in installationProfiles {
+                let url = root.appendingPathComponent(profile.id + ".mobileprovision")
+                try profile.data.write(to:url,options:[.atomic,.completeFileProtection]); profiles.append(url.path)
+            }
+            request["profiles"] = profiles
+        }
+        return request
+    }
+    func seedInstallationSigning() {
+        do {
+            // Migrate once, then keep the installation identity independent.
+            for key in ["p12","profile","password","p12-name","profile-name"] {
+                if try DeviceKeychain.read("install-" + key) == nil, let data = try DeviceKeychain.read(key) {
+                    try DeviceKeychain.write(data,account:"install-" + key)
+                }
+            }
+            hasInstallationCertificate = try DeviceKeychain.read("install-p12") != nil
+            hasInstallationProfile = try DeviceKeychain.read("install-profile") != nil
+            installationCertificateName = String(data:try DeviceKeychain.read("install-p12-name") ?? Data(),encoding:.utf8) ?? ""
+            installationProfileName = String(data:try DeviceKeychain.read("install-profile-name") ?? Data(),encoding:.utf8) ?? ""
+            if installationPassword.isEmpty { installationPassword = String(data:try DeviceKeychain.read("install-password") ?? Data(),encoding:.utf8) ?? "" }
+            let validated = try DeviceKeychain.read("install-signing-info") != nil
+            installationReady = hasInstallationCertificate && hasInstallationProfile && validated
+            if let data = try DeviceKeychain.read("install-profiles") { installationProfiles = try JSONDecoder().decode([AdditionalSigningProfile].self,from:data) }
+        } catch { errorMessage = error.localizedDescription }
+    }
+    func invalidateInstallationSigning() {
+        installationReady = false; try? DeviceKeychain.remove("install-signing-info")
+    }
+    func removeInstallationProfile(_ id:String) {
+        guard !busy else { return }
+        installationProfiles.removeAll { $0.id == id }
+        do { try DeviceKeychain.write(JSONEncoder().encode(installationProfiles),account:"install-profiles") }
+        catch { errorMessage = error.localizedDescription }
+    }
+    func saveInstallationSigning() {
+        guard !busy else { return }
+        do { start(try signingRequest(operation:"signing-info",installation:true)) }
+        catch { cleanup(); errorMessage = error.localizedDescription }
     }
     func invalidateSigning() {
         signingReady = false
@@ -189,15 +259,15 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         catch { cleanup(); errorMessage = error.localizedDescription }
     }
     func decrypt(_ record: DownloadRecord, install: Bool = false) {
-        guard (!busy || lastRequest["operation"] as? String == "verify"), !waitingForHelper else { errorMessage = "Finish the current app first."; return }
+        guard (!busy || lastRequest["operation"] as? String == "verify"), !waitingForHelper, signingContext == nil, signedInstallation == nil else { errorMessage = "Finish the current app first."; return }
         guard Self.decryptSupported else { errorMessage = "Decryption is supported on iOS 27.0.1. Pairing on other versions does not enable this method."; return }
         queuedRecord = record; installAfterDecrypt = install
         continueQueued()
     }
     func continueQueued() {
         if ready && connected { setupNeeded = false }
-        if signingReady && !busy, let record = queuedInstall {
-            queuedInstall = nil; setupNeeded = false; install(record); return
+        if installationReady && !busy, let record = queuedInstall {
+            queuedInstall = nil; installationSetupNeeded = false; install(record,review:forceSigningReview); return
         }
         guard let record = queuedRecord, !busy else { return }
         guard ready else { setupNeeded = true; return }
@@ -205,17 +275,50 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         queuedRecord = nil; activeRecord = record
         prepare(record, password:signingPassword)
     }
-    func install(_ record: DownloadRecord) {
-        guard !busy, !waitingForHelper else { errorMessage = "Finish the current app first."; return }
+    func install(_ record: DownloadRecord, review: Bool = false) {
+        guard !busy, !waitingForHelper, signingContext == nil, signedInstallation == nil else { errorMessage = "Finish the current app first."; return }
         guard record.isDecrypted else { AppData.shared.installationRequest = record; return }
-        guard signingReady else { queuedInstall = record; setupNeeded = true; return }
+        forceSigningReview = review
+        seedInstallationSigning()
+        guard installationReady else {
+            queuedInstall = record
+            if hasInstallationCertificate && hasInstallationProfile { activeRecord = record; saveInstallationSigning() }
+            else { installationSetupNeeded = true }
+            return
+        }
         do {
             guard let url = record.fileURL else { throw CocoaError(.fileNoSuchFile) }
-            var request = try signingRequest(operation:"sign")
-            request["ipa"] = url.path; request["output"] = url.path
-            signingRecord = record; activeRecord = record
+            var request = try signingRequest(operation:"signing-plan",installation:true)
+            request["ipa"] = url.path; request["output"] = staged!.appendingPathComponent("signed.ipa").path
+            signingRecord = record; activeRecord = record; signingContext = request
             start(request)
-        } catch { cleanup(); errorMessage = error.localizedDescription }
+        } catch { cleanup(); activeRecord = nil; errorMessage = error.localizedDescription }
+    }
+    func installationSetupDismissed() {
+        if installationReady { continueQueued() }
+        else { queuedInstall = nil; if !busy { activeRecord = nil } }
+    }
+    func replanSigning(bundleID:String) {
+        guard !busy, var context = signingContext else { return }
+        context["bundle_id"] = bundleID; context["prepared"] = true
+        signingContext = context; forceSigningReview = true; start(context)
+    }
+    func approveSigning() {
+        guard !busy, signingContext != nil else { return }
+        if let review = signingReview {
+            signingContext?["bundle_id"] = review.bundleID
+            signingApprovalPending = true; signingReview = nil
+        }
+        else { beginSigning() }
+    }
+    func signingReviewDismissed() {
+        if signingApprovalPending { signingApprovalPending = false; beginSigning() }
+        else if signingContext != nil { stopDecryption() }
+    }
+    private func beginSigning() {
+        guard !busy, var context = signingContext else { return }
+        context["operation"] = "sign"; context["prepared"] = true
+        signingContext = nil; start(context)
     }
 
     private func deviceOperation(_ operation: String, extra: [String: Any] = [:]) {
@@ -320,6 +423,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         if let retiredJob { crumb_device_cancel(retiredJob) }
         resultRequest = DeviceResultRequest()
         queuedRecord = nil; queuedInstall = nil; signingRecord = nil
+        signingContext = nil; signingApprovalPending = false; signingReview = nil
         pending = nil; activeRecord = nil; helperInstalled = false; waitingForHelper = false
         busy = false; progress = nil; pin = nil; phase = "idle"; message = ""; errorMessage = ""
         connected = false; connectionPolicy.becameInactive(); lastRequest = [:]
@@ -379,7 +483,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
             }
         } catch {
             errorMessage = error.localizedDescription; busy = false
-            if ["prepare", "install", "sign", "signing-info"].contains(request["operation"] as? String ?? "") { cleanup() }
+            if ["prepare", "install", "sign", "signing-info", "signing-plan"].contains(request["operation"] as? String ?? "") { cleanup() }
         }
     }
     private func receive(_ value: [String: Any]) {
@@ -403,6 +507,21 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         busy = false; stopAdvertising(); endBackground(); pin = nil; lastRequest = [:]
         do {
             switch phase {
+            case "installation-signing-ready":
+                try DeviceKeychain.write(Data(installationPassword.utf8),account:"install-password")
+                try DeviceKeychain.write(Data("validated".utf8),account:"install-signing-info")
+                installationReady = true; cleanup()
+                if installationSetupNeeded { installationSetupNeeded = false } else { continueQueued() }
+            case "signing-plan":
+                guard let record = signingRecord, let original = value["original_bundle_id"] as? String,
+                      let bundle = value["bundle_id"] as? String, let staged else { throw DeviceOperationError.message("Invalid signing plan.") }
+                let changes = value["adjusted_capabilities"] as? [String] ?? []
+                if forceSigningReview || original != bundle || !changes.isEmpty {
+                    signingReview = SigningReview(id:UUID(uuidString:staged.lastPathComponent) ?? UUID(),appName:record.appName,
+                        originalBundleID:original,bundleID:bundle,bundleCount:value["bundle_count"] as? Int ?? 1,
+                        changedIDs:value["changed_ids"] as? Int ?? 0,capabilities:changes,profileName:value["profile_name"] as? String ?? "")
+                } else { approveSigning() }
+
             case "pairing-imported":
                 guard let record = value["record"] as? String, let kind = value["pairing_kind"] as? String else { throw DeviceOperationError.message("Invalid pairing file.") }
                 try DeviceKeychain.write(JSONSerialization.data(withJSONObject:["record":record,"pairing_kind":kind]),account:"pairing")
@@ -414,10 +533,20 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
                 try DeviceKeychain.write(JSONSerialization.data(withJSONObject:["helper_bundle":bundle]), account:"signing-info")
                 signingReady = true; cleanup(); continueQueued()
             case "signed":
-                guard var record = signingRecord else { throw DeviceOperationError.message("Missing signed app.") }
-                record.signed = true; try record.save()
-                signingRecord = nil; activeRecord = nil; cleanup()
-                AppData.shared.restoreDownloadedIPA(); AppData.shared.installationRequest = record
+                guard var original = signingRecord, let bundle = value["bundle_id"] as? String,
+                      let path = value["path"] as? String, let workspace = staged else { throw DeviceOperationError.message("Missing signed app.") }
+                original.lastSigning = SigningSummary(bundleID:bundle,originalBundleID:value["original_bundle_id"] as? String ?? original.bundleID,
+                    profileName:value["profile_name"] as? String ?? "",capabilities:value["adjusted_capabilities"] as? [String] ?? [],date:Date())
+                try original.save()
+                let record = DownloadRecord(filename:original.filename,appID:original.appID,appName:original.appName,bundleID:bundle,
+                    version:original.version,build:original.build,externalVersionID:original.externalVersionID,date:original.date,decrypted:true,signed:true)
+                let source = URL(fileURLWithPath:path)
+                for file in try FileManager.default.contentsOfDirectory(at:workspace,includingPropertiesForKeys:nil) where file != source {
+                    try? FileManager.default.removeItem(at:file)
+                }
+                staged = nil; signingRecord = nil; activeRecord = nil
+                AppData.shared.restoreDownloadedIPA()
+                signedInstallation = SignedInstallation(record:record,source:source,workspace:workspace)
 
             case "paired":
                 guard let record = value["record"] as? String, let irk = value["host_irk"] as? String else { throw DeviceOperationError.message("Missing pairing credentials.") }
@@ -464,17 +593,21 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
                 if ["verify","install","fetch"].contains(operation) { connected = false }
                 message = (value["message"] as? String) ?? "Could not finish."
                 if operation != "verify" { errorMessage = message }
+                if operation == "signing-plan", signingReview != nil { return }
+                if operation == "signing-info", request["purpose"] as? String == "installation" {
+                    installationReady = false; installationSetupNeeded = true
+                }
                 if operation == "verify", queuedRecord != nil { setupNeeded = true }
-                if operation == "signing-info" { signingReady = false }
+                if operation == "signing-info" && request["purpose"] as? String != "installation" { signingReady = false }
                 if operation != "fetch" { activeRecord = nil }
-                if operation == "sign" || operation == "signing-info" { cleanup() }
-                if ["prepare", "install", "sign", "signing-info"].contains(request["operation"] as? String ?? "") { cleanup() }
+                if operation == "sign" || operation == "signing-info" || operation == "signing-plan" { signingContext = nil; cleanup() }
+                if ["prepare", "install", "sign", "signing-info", "signing-plan"].contains(request["operation"] as? String ?? "") { cleanup() }
             default:
                 cleanup(); message = "Operation cancelled."
                 if !waitingForHelper { activeRecord = nil }
                 queuedRecord = nil; queuedInstall = nil
             }
-        } catch { errorMessage = error.localizedDescription; cleanup() }
+        } catch { signingContext = nil; activeRecord = nil; errorMessage = error.localizedDescription; cleanup() }
     }
     private func stopAdvertising() { service?.stop(); service = nil }
     private func endBackground() { if background != .invalid { UIApplication.shared.endBackgroundTask(background); background = .invalid } }

@@ -14,6 +14,7 @@ struct DownloadRecord: Codable, Identifiable {
     let date: Date
     var decrypted: Bool? = nil
     var signed: Bool? = nil
+    var lastSigning: SigningSummary? = nil
     var isDecrypted: Bool { decrypted == true }
     var fileURL: URL? {
         guard filename == URL(fileURLWithPath: filename).lastPathComponent,
@@ -81,5 +82,24 @@ struct DownloadRecord: Codable, Identifiable {
                   let record = try? JSONDecoder().decode(DownloadRecord.self, from: data), record.fileURL != nil else { return nil }
             return record
         }.sorted { $0.date > $1.date }
+    }
+}
+
+struct SigningSummary: Codable {
+    let bundleID: String
+    let originalBundleID: String
+    let profileName: String
+    let capabilities: [String]
+    let date: Date
+    static func capabilityName(_ key:String)->String {
+        if key == "com.apple.security.application-groups" { return "App Groups" }
+        if key == "keychain-access-groups" { return "Shared Keychain" }
+        if key == "aps-environment" { return "Push notifications" }
+        if key.contains("icloud") || key.contains("ubiquity") { return "iCloud (" + key + ")" }
+        if key == "com.apple.developer.associated-domains" { return "Associated domains" }
+        return key
+    }
+    var report: String {
+        "Crumb signing report\nOriginal: \(originalBundleID)\nSigned: \(bundleID)\nProfile: \(profileName)\nDate: \(date)\nAdjusted capabilities:\n" + capabilities.joined(separator:"\n")
     }
 }

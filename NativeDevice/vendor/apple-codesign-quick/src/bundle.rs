@@ -181,7 +181,7 @@ impl Bundle {
 
     fn sub_bundles(&self) -> Result<Vec<PathBuf>> {
         let mut bundles = Vec::new();
-        for folder in ["Frameworks", "PlugIns"] {
+        for folder in ["Frameworks", "PlugIns", "Watch", "AppClips"] {
             let dir = self.path.join(folder);
             if !dir.exists() {
                 continue;
@@ -427,7 +427,7 @@ fn should_hash_resource(relative: &str, executable: &str) -> bool {
         return false;
     }
 
-    for nested_root in ["Frameworks/", "PlugIns/"] {
+    for nested_root in ["Frameworks/", "PlugIns/", "Watch/", "AppClips/"] {
         if let Some(rest) = relative.strip_prefix(nested_root)
             && rest.contains('/')
         {

@@ -56,7 +56,8 @@ struct DeviceSetupView: View {
                     }.disabled(device.busy || device.waitingForHelper)
                 }
             }
-            Section("Signing") {
+            Section { NavigationLink("App installation") { InstallationSigningView() } }
+            Section("Helper signing") {
                 if device.signingReady && !editingSigning {
                     Label(device.certificateName.isEmpty ? "Certificate" : device.certificateName, systemImage:"checkmark.seal.fill")
                         .lineLimit(1).foregroundStyle(.primary)

@@ -14,9 +14,9 @@ final class OTAInstaller: ObservableObject {
     private var directory: URL?
     private var expiration: Task<Void, Never>?
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
-    func start(_ record: DownloadRecord) throws {
+    func start(_ record: DownloadRecord, source suppliedSource: URL? = nil) throws {
         stop()
-        guard let source = record.fileURL else { throw CocoaError(.fileNoSuchFile) }
+        guard let source = suppliedSource ?? record.fileURL else { throw CocoaError(.fileNoSuchFile) }
         let fm = FileManager.default
         let root = fm.temporaryDirectory.appendingPathComponent("ota-" + UUID().uuidString, isDirectory: true)
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
@@ -84,8 +84,10 @@ final class OTAInstaller: ObservableObject {
 struct OTAInstallationView: View {
     let record: DownloadRecord
     let startImmediately: Bool
-    init(record: DownloadRecord, startImmediately: Bool = false) {
-        self.record = record; self.startImmediately = startImmediately
+    let source: URL?
+    let cleanup: URL?
+    init(record: DownloadRecord, startImmediately: Bool = false, source: URL? = nil, cleanup: URL? = nil) {
+        self.record = record; self.startImmediately = startImmediately; self.source = source; self.cleanup = cleanup
     }
     @StateObject private var installer = OTAInstaller()
     @Environment(\.dismiss) private var dismiss
@@ -112,11 +114,11 @@ struct OTAInstallationView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { installer.stop(); dismiss() } } }
             .task { if startImmediately && !started { requestInstallation() } }
-            .onDisappear { installer.stop() }
+            .onDisappear { installer.stop(); if let cleanup { try? FileManager.default.removeItem(at:cleanup) } }
         }
     }
     private func requestInstallation() {
-        do { try installer.start(record); started = true }
+        do { try installer.start(record,source:source); started = true }
         catch { installer.status = "Could not start local installation server (code \((error as NSError).code))." }
     }
 }

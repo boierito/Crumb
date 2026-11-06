@@ -24,12 +24,19 @@ struct ContentView: View {
         .sheet(isPresented:$device.setupNeeded,onDismiss:{ if device.ready { device.continueQueued() } }) {
             NavigationStack { DeviceSetupView().toolbar { ToolbarItem(placement:.confirmationAction) { Button("Done") { device.setupNeeded = false } } } }
         }
-        .alert("Could not finish", isPresented:Binding(get:{ !device.setupVisible && !device.errorMessage.isEmpty },set:{ if !$0 { device.errorMessage = "" } })) {
+        .alert("Could not finish", isPresented:Binding(get:{ !device.setupVisible && !device.installationSetupNeeded && device.signingReview == nil && !device.errorMessage.isEmpty },set:{ if !$0 { device.errorMessage = "" } })) {
             Button("OK") { device.errorMessage = "" }
         } message: { Text(device.errorMessage) }
         .onChange(of:scenePhase) { phase in
             if phase == .background { device.becameInactive() }
             if phase == .active { device.autoConnect() }
+        }
+        .sheet(isPresented:$device.installationSetupNeeded,onDismiss:{ device.installationSetupDismissed() }) {
+            NavigationStack { InstallationSigningView().toolbar { ToolbarItem(placement:.confirmationAction) { Button("Done") { device.installationSetupNeeded = false } } } }
+        }
+        .sheet(item:$device.signingReview,onDismiss:{ device.signingReviewDismissed() }) { SigningReviewView(review:$0) }
+        .sheet(item:$device.signedInstallation) { artifact in
+            OTAInstallationView(record:artifact.record,startImmediately:true,source:artifact.source,cleanup:artifact.workspace)
         }
         .sheet(isPresented: $appData.showStoreVersions) { StoreVersionsView() }
         .sheet(item: $appData.downloadReady) { DownloadReadyView(record: $0) }

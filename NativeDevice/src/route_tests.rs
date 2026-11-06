@@ -118,11 +118,23 @@ async fn stalled_pairing_times_out_then_tries_next_family() {
 
 #[tokio::test]
 async fn download_metadata_cannot_be_used_as_pairing_credentials_or_reach_tcp() {
-    let listener = TcpListener::bind(("127.0.0.1",0)).await.unwrap();
+    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
     let bad = json!({"record":B64.encode(br#"{"filename":"download.ipa"}"#)});
-    let result = tunnel_on_candidates(&bad,&[listener.local_addr().unwrap()],Duration::from_secs(1)).await;
-    let error = match result { Err(e) => e.to_string(), Ok(_) => panic!("Metadata is not a pairing record") };
+    let result = tunnel_on_candidates(
+        &bad,
+        &[listener.local_addr().unwrap()],
+        Duration::from_secs(1),
+    )
+    .await;
+    let error = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("Metadata is not a pairing record"),
+    };
     assert!(error.contains("Pairing credentials are unreadable"));
     assert!(!error.contains("download.ipa"));
-    assert!(tokio::time::timeout(Duration::from_millis(50),listener.accept()).await.is_err());
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), listener.accept())
+            .await
+            .is_err()
+    );
 }

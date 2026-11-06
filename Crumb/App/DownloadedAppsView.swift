@@ -8,6 +8,7 @@ struct DownloadedAppsView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var device = DeviceWorkflow.shared
     @State private var deletion: DownloadRecord?
+    @State private var signingDetails: DownloadRecord?
     @State private var confirmDeleteAll = false
     @State private var confirmDeletion = false
     @State private var deletionError = ""
@@ -93,6 +94,11 @@ struct DownloadedAppsView: View {
                 if !embedded { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
             }
 
+            .sheet(item:$signingDetails) { record in
+                NavigationStack {
+                    if let summary = record.lastSigning { SigningDetailsView(summary:summary).toolbar { ToolbarItem(placement:.confirmationAction) { Button("Done") { signingDetails = nil } } } }
+                }
+            }
             .alert("Delete downloaded IPA?", isPresented: $confirmDeletion) {
                 if let record = deletion {
                     Button("Delete IPA", role: .destructive) {
@@ -145,6 +151,10 @@ struct DownloadedAppsView: View {
                 }
                 Spacer(minLength:8)
                 Menu {
+                    if record.isDecrypted {
+                        Button("Signing options") { device.install(record,review:true) }
+                        if record.lastSigning != nil { Button("Signing details") { signingDetails = record } }
+                    }
                     if !record.isDecrypted && DeviceWorkflow.decryptSupported {
                         Button("Decrypt") { device.decrypt(record) }
                         Button("Decrypt and install") { device.decrypt(record,install:true) }

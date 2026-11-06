@@ -98,3 +98,28 @@
 "Older version" = "Versión anterior";
 
 "Stop" = "Detener";
+
+/* App signing */
+"Helper signing" = "Firma del helper";
+"App installation" = "Instalación de apps";
+"Signing identity" = "Identidad de firma";
+"Extension profiles" = "Perfiles de extensiones";
+"Add profiles" = "Añadir perfiles";
+"Remove profile" = "Eliminar perfil";
+"Checking identity…" = "Comprobando identidad…";
+"App and extensions" = "App y extensiones";
+"Adjusted capabilities" = "Permisos ajustados";
+"These features may be unavailable after signing." = "Estas funciones pueden no estar disponibles después de firmar.";
+"Review changes" = "Revisar cambios";
+"Sign and install" = "Firmar e instalar";
+"Checking signing…" = "Comprobando firma…";
+"Sign app" = "Firmar app";
+"Original" = "Original";
+"Last signature" = "Última firma";
+"Share signing report" = "Compartir informe de firma";
+"Signing details" = "Detalles de firma";
+"Signing options" = "Opciones de firma";
+"App Groups" = "Grupos de apps";
+"Shared Keychain" = "Llavero compartido";
+"Push notifications" = "Notificaciones push";
+"Associated domains" = "Dominios asociados";

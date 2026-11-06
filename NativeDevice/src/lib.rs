@@ -1,4 +1,6 @@
+mod entitlement_der;
 mod package;
+mod resign;
 mod signing;
 mod transport;
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
@@ -35,7 +37,8 @@ fn decode_record(v: &Value) -> anyhow::Result<RpPairingFile> {
             .ok_or_else(|| anyhow::anyhow!("Pair this device first"))?,
     )?;
     anyhow::ensure!(bytes.len() <= 65536, "Pairing record too large");
-    RpPairingFile::from_bytes(&bytes).map_err(|_| anyhow::anyhow!("Pairing credentials are unreadable. Pair this iPhone again."))
+    RpPairingFile::from_bytes(&bytes)
+        .map_err(|_| anyhow::anyhow!("Pairing credentials are unreadable. Pair this iPhone again."))
 }
 async fn pair(job: &Arc<Job>, v: &Value) -> anyhow::Result<Value> {
     let listener = TcpListener::bind((std::net::Ipv4Addr::UNSPECIFIED, 0)).await?;
@@ -136,12 +139,14 @@ async fn run(job: &Arc<Job>, v: Value) -> anyhow::Result<Value> {
             )
         }
 
-        "signing-info" | "sign" => {
+        "signing-info" | "signing-plan" | "sign" => {
             job.update(json!({"phase":"signing"}));
             let job = job.clone();
             tokio::task::spawn_blocking(move || {
                 if v["operation"] == "sign" {
-                    signing::sign(&v, &job)
+                    resign::sign(&v, &job)
+                } else if v["operation"] == "signing-plan" {
+                    resign::preview(&v, &job)
                 } else {
                     signing::inspect(&v)
                 }
@@ -208,7 +213,7 @@ pub unsafe extern "C" fn crumb_device_start(ptr: *const c_char) -> *mut Arc<Job>
                 }
                 let blocking = matches!(
                     v["operation"].as_str(),
-                    Some("prepare" | "sign" | "signing-info")
+                    Some("prepare" | "sign" | "signing-info" | "signing-plan")
                 );
                 let operation = run(&worker, v);
                 tokio::pin!(operation);

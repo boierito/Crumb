@@ -160,3 +160,28 @@
 "Older version" = "Older version";
 
 "Stop" = "Stop";
+
+/* App signing */
+"Helper signing" = "Helper signing";
+"App installation" = "App installation";
+"Signing identity" = "Signing identity";
+"Extension profiles" = "Extension profiles";
+"Add profiles" = "Add profiles";
+"Remove profile" = "Remove profile";
+"Checking identity…" = "Checking identity…";
+"App and extensions" = "App and extensions";
+"Adjusted capabilities" = "Adjusted capabilities";
+"These features may be unavailable after signing." = "These features may be unavailable after signing.";
+"Review changes" = "Review changes";
+"Sign and install" = "Sign and install";
+"Checking signing…" = "Checking signing…";
+"Sign app" = "Sign app";
+"Original" = "Original";
+"Last signature" = "Last signature";
+"Share signing report" = "Share signing report";
+"Signing details" = "Signing details";
+"Signing options" = "Signing options";
+"App Groups" = "App Groups";
+"Shared Keychain" = "Shared Keychain";
+"Push notifications" = "Push notifications";
+"Associated domains" = "Associated domains";

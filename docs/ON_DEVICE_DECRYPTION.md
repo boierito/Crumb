@@ -1,3 +1,48 @@
+# Build 23035: independent application resigning
+
+App installation has its own identity/profile/password store, initially seeded
+from existing settings once. Editing it does not alter helper provisioning.
+Main and extension profiles must match the selected certificate and signing team.
+
+Wildcard profiles preserve the source identifier when allowed. Scoped wildcard
+profiles derive a stable permitted identifier; explicit profiles select their
+permitted identifier. A custom per-install ID is available in Signing options.
+Crumb and its helper cannot be overwritten. Nested extension IDs and Watch
+companion metadata follow boundary-aware root-ID mappings. Explicit extension
+profiles or a covering wildcard are required; no extension/files are deleted
+to work around a missing profile. Watch/AppClips are included in nested signing.
+
+Application entitlements are normalized to the selected profile and identity.
+Supported capabilities are retained, including provisioned App Groups; unsupported
+capabilities are listed before signing so the user can cancel or supply another
+profile. A shared container, push service or iCloud feature cannot be recreated
+by a code signature without the required grants. DER-only original entitlements
+are decoded rather than discarded. All images are checked for remaining encrypted
+ranges before signing. Malformed signatures still fail closed.
+
+The original decrypted IPA is never overwritten. A separate signed artifact is
+used for installation, with its actual bundle ID in the OTA manifest. The signed
+cache is cleaned when installation UI closes. A nonsecret signing summary is
+stored with the original download and can be shared for crash diagnosis.
+
+References consulted: zsign profile-derived entitlements in
+https://github.com/zhlynn/zsign/blob/master/src/openssl.cpp and nested identifier
+updates in https://github.com/zhlynn/zsign/blob/master/src/bundle.cpp; Feather's
+Zsign submodule at https://github.com/claration/feather/tree/main/Zsign.
+Implementation remains in the existing Rust signer; these projects are not vendored.
+
+An integration fixture generates a temporary self-signed test certificate/profile,
+signs a main app and extension with actual CMS, verifies output identifiers and
+entitlements, missing-profile rejection, preview retry, cancellation, unchanged
+source bytes and preservation of Settings resources/empty folders. It is not an
+Apple-approved profile or a physical-device acceptance test.
+
+A reported Settings crash remains unclassified without the target's .ips and
+installation details. Package/cryptid/hash verification does not prove runtime
+behavior; neither signing success nor dropping capabilities is a crash fix.
+
+---
+
 # Build 23034: stop and recover
 
 Downloads always exposes Stop for an active decrypter session, including the

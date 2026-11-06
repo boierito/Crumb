@@ -40,6 +40,8 @@ import Foundation
         precondition(!result.claim(busy:false,hasPendingJob:true))
         result.enqueue()
         precondition(result.claim(busy:false,hasPendingJob:true))
+        precondition(DeviceJobState.terminalPhases.contains("signing-plan"))
+        precondition(DeviceJobState.terminalPhases.contains("installation-signing-ready"))
         precondition(DeviceJobState.terminalPhases.contains("cancelled"))
         precondition(DeviceJobState.terminalPhases.contains("prepared"))
         for phase in ["starting", "preparing", "fetching", "installing", "signing"] {

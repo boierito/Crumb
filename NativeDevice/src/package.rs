@@ -483,7 +483,7 @@ fn copy_tree(from: &Path, to: &Path) -> Result<()> {
 pub fn encrypted_ranges(b: &[u8]) -> Result<Vec<(usize, usize, usize)>> {
     encrypted_ranges_header(b, b.len())
 }
-fn encrypted_ranges_header(b: &[u8], file_size: usize) -> Result<Vec<(usize, usize, usize)>> {
+pub(super) fn encrypted_ranges_header(b: &[u8], file_size: usize) -> Result<Vec<(usize, usize, usize)>> {
     fn u32at(b: &[u8], p: usize) -> Result<u32> {
         Ok(u32::from_le_bytes(
             b.get(p..p + 4).context("Truncated Mach-O")?.try_into()?,
