@@ -167,7 +167,17 @@ struct DownloadedAppsView: View {
                 Button { device.install(record) } label: { Label("Install",systemImage:"arrow.down.app").frame(maxWidth:.infinity) }
                     .disabled(device.busy || device.waitingForHelper)
                 if let url = record.fileURL {
-                    ShareLink(item:url) { Label("Export",systemImage:"square.and.arrow.up").frame(maxWidth:.infinity) }
+                    if record.isDecrypted {
+                        Menu {
+                            ShareLink(item:url) { Label("Original IPA",systemImage:"doc.zipper") }
+                            Button { device.exportSigned(record) } label: { Label("Signed IPA",systemImage:"signature") }
+                                .disabled(device.busy || device.waitingForHelper)
+                        } label: {
+                            Label("Export",systemImage:"square.and.arrow.up").frame(maxWidth:.infinity)
+                        }
+                    } else {
+                        ShareLink(item:url) { Label("Export",systemImage:"square.and.arrow.up").frame(maxWidth:.infinity) }
+                    }
                 }
             }.buttonStyle(.bordered).controlSize(.regular)
         }

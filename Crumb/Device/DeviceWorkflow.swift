@@ -55,6 +55,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     @Published private(set) var installationProfiles: [AdditionalSigningProfile] = []
     @Published var signingReview: SigningReview?
     @Published var signedInstallation: SignedInstallation?
+    @Published private(set) var signingForExport = false
     private var queuedInstall: DownloadRecord?
     private let network = NWPathMonitor()
     private var connectionPolicy = DeviceConnectionPolicy()
@@ -257,7 +258,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     func continueQueued() {
         if ready && connected { setupNeeded = false }
         if installationReady && !busy, let record = queuedInstall {
-            queuedInstall = nil; installationSetupNeeded = false; install(record,review:forceSigningReview); return
+            queuedInstall = nil; installationSetupNeeded = false; prepareSignedApp(record,review:forceSigningReview,exportOnly:signingForExport); return
         }
         guard let record = queuedRecord, !busy else { return }
         guard ready else { setupNeeded = true; return }
@@ -266,13 +267,19 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         prepare(record, password:signingPassword)
     }
     func install(_ record: DownloadRecord, review: Bool = false) {
+        prepareSignedApp(record,review:review,exportOnly:false)
+    }
+    func exportSigned(_ record: DownloadRecord) {
+        prepareSignedApp(record,review:false,exportOnly:true)
+    }
+    private func prepareSignedApp(_ record: DownloadRecord, review: Bool, exportOnly: Bool) {
         // Installing a local decrypted IPA does not require a VPN proof probe.
         if busy && lastRequest["operation"] as? String == "verify" && queuedRecord == nil && queuedInstall == nil && !waitingForHelper {
             stopDecryption(notifyHelper:false)
         }
         guard !busy, !waitingForHelper, signingContext == nil, signedInstallation == nil else { errorMessage = "Finish the current app first."; return }
         guard record.isDecrypted else { AppData.shared.installationRequest = record; return }
-        forceSigningReview = review
+        forceSigningReview = review; signingForExport = exportOnly
         loadSharedSigning()
         guard installationReady else {
             queuedInstall = record
@@ -378,7 +385,13 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     }
     private func drainResultRequest() {
         guard resultRequest.claim(busy:busy, hasPendingJob:pending != nil), let pending else { return }
-        deviceOperation("fetch", extra: DeviceRequest.retrievalParameters(pending))
+        guard let original = activeRecord?.fileURL else {
+            errorMessage = "Keep the original encrypted IPA to verify the decrypted export."
+            return
+        }
+        var parameters = DeviceRequest.retrievalParameters(pending)
+        parameters["original_ipa"] = original.path
+        deviceOperation("fetch", extra: parameters)
     }
     func openHelper() {
         guard helperInstalled else { return }
@@ -555,7 +568,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
                 }
                 staged = nil; signingRecord = nil; activeRecord = nil
                 AppData.shared.restoreDownloadedIPA()
-                signedInstallation = SignedInstallation(record:record,source:source,workspace:workspace)
+                signedInstallation = SignedInstallation(record:record,source:source,workspace:workspace,installImmediately:!signingForExport)
 
             case "paired":
                 guard let record = value["record"] as? String, let irk = value["host_irk"] as? String else { throw DeviceOperationError.message("Missing pairing credentials.") }

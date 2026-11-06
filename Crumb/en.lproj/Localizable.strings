@@ -183,3 +183,8 @@
 "Shared Keychain" = "Shared Keychain";
 "Push notifications" = "Push notifications";
 "Associated domains" = "Associated domains";
+
+"Original IPA" = "Original IPA";
+"Signed IPA" = "Signed IPA";
+"Sign and export" = "Sign and export";
+"Keep the original encrypted IPA to verify the decrypted export." = "Keep the original encrypted IPA to verify the decrypted export.";

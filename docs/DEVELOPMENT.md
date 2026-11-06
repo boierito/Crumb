@@ -66,3 +66,23 @@ physical-device validation; host fixtures do not establish Apple acceptance.
 branches when integrating. Use a merge commit to retain the feature history.
 To undo the integration on shared main, revert the merge commit in a new PR
 rather than rewriting main or removing the backup branch.
+
+## Decrypted export integrity
+
+`NativeDevice/src/export_audit.rs` compares every original archive entry with the
+retrieved result, before saving it as a completed download. Unencrypted resources
+must match exactly. Encrypted Mach-O files may differ only in the declared
+ciphertext ranges and their cryptid fields, which must become zero. Signature
+and entitlement bytes outside those ranges remain identical. Missing files,
+empty directories, changed file modes and unexpected additions fail validation.
+Only exact SINF replicas explicitly requested by the original manifest are allowed.
+
+The helper's ZIP writer retains Payload directories (including empty ones) and
+uses preserved file permissions instead of assigning executable mode to all files.
+Keep the original encrypted download until result verification finishes.
+
+Downloads → Export offers the original decrypted IPA and a separate signed IPA.
+The signed choice uses the same profile-aware pipeline as Install, without opening
+installation automatically. Its original source IPA is never rewritten. Signing
+again in another application can change entitlements and is outside this audit;
+the original Apple CMS is naturally invalid after decrypted code bytes change.

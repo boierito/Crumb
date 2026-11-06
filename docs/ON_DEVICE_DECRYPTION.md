@@ -1,3 +1,30 @@
+# Build 23040: audited original exports and matching signed exports
+
+The plain Downloads export returns the original decrypted artifact; installation
+produces a distinct re-signed artifact. Downloads now offers both Original IPA
+and Signed IPA, using identical signing rules for the signed export and Install.
+Signed export does not start installation automatically. A second application's
+re-signing can replace entitlements; matching a file export cannot control that.
+
+Result retrieval now requires the source encrypted IPA and compares decompressed
+entry contents before accepting the result. It preserves all original files,
+metadata, profiles, signature/entitlement bytes and empty directories. Only the
+original encrypted ranges and cryptid fields may differ; code signatures cannot
+overlap allowed encryption ranges. SINF replicas must be explicitly requested by
+the original manifest and match the source bytes. Cancellation leaves no accepted
+partial result. Existing downloaded IPAs are not retroactively audited.
+
+The helper formerly skipped every Payload directory ZIP entry and assigned 0755
+to every file. It now retains directories and restores original payload/resource
+permissions before writing those modes into the ZIP. These changes require a new
+helper job; older helper results may fail the stricter verification.
+
+Tests include missing/changed resources, Info.plist/profile/seal/signature bytes,
+remaining encryption, signature overlap, empty/short files, explicit SINF replicas
+and cancellation. macOS producer tests cover a real Settings.bundle with an empty
+folder, original resources, ZIP checksums and permission restoration. Third-party
+installation/runtime recovery is not inferred from host tests.
+
 # Build 23038: scalar wildcard grants and scoped KVS migration
 
 The supplied profile encodes iCloud services and associated domains as a scalar

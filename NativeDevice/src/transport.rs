@@ -432,6 +432,19 @@ pub(super) async fn run(job: &Arc<Job>, v: &Value) -> anyhow::Result<Value> {
             local.flush().await?;
             drop(local);
             super::package::verify_output(&partial, &manifest)?;
+            let original =
+                std::path::PathBuf::from(v["original_ipa"].as_str().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Keep the original encrypted IPA to verify the decrypted export."
+                    )
+                })?);
+            let candidate = partial.clone();
+            let audit_job = job.clone();
+            job.update(json!({"phase":"verifying-export"}));
+            tokio::task::spawn_blocking(move || {
+                super::export_audit::verify(&original, &candidate, &audit_job)
+            })
+            .await??;
             anyhow::ensure!(!job.cancelled.load(Ordering::SeqCst), "Cancelled");
             tokio::fs::rename(&partial, &out).await?;
             cleanup.0 = std::path::PathBuf::new();

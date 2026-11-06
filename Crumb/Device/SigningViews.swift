@@ -148,7 +148,7 @@ struct SigningReviewView: View {
                     }
                 }
                 Section {
-                    Button((bundleID != review.bundleID ? "Review changes" : "Sign and install").localized) {
+                    Button((bundleID != review.bundleID ? "Review changes" : (device.signingForExport ? "Sign and export" : "Sign and install")).localized) {
                         if bundleID != review.bundleID {
                             device.replanSigning(bundleID: bundleID)
                         } else {
