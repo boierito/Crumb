@@ -55,7 +55,7 @@ struct DeviceSetupView: View {
                     }.disabled(device.busy || device.waitingForHelper)
                 }
             }
-            SigningIdentitySections()
+            SigningIdentitySection()
         }
         .navigationTitle("Decrypter")
         .navigationBarTitleDisplayMode(.inline)

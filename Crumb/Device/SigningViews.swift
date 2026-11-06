@@ -25,21 +25,22 @@ struct SignedInstallation: Identifiable {
 struct SigningSettingsView: View {
     @StateObject private var device = DeviceWorkflow.shared
     var body: some View {
-        Form { SigningIdentitySections() }
+        Form { SigningIdentitySection() }
             .navigationTitle("Signing identity").navigationBarTitleDisplayMode(.inline)
+            .onAppear { device.setupVisible = true }
+            .onDisappear { device.setupVisible = false }
         .alert("Could not finish",isPresented:Binding(get:{ !device.errorMessage.isEmpty },set:{ if !$0 { device.errorMessage = "" } })) {
             Button("OK") { device.errorMessage = "" }
         } message: { Text(device.errorMessage) }
     }
 }
-struct SigningIdentitySections: View {
+struct SigningIdentitySection: View {
     @StateObject private var device = DeviceWorkflow.shared
     @State private var importing = false
     @State private var kind = "p12"
     @State private var editing = false
     var body: some View {
-        Group {
-            Section("Signing identity") {
+        Section("Signing identity") {
                 if device.installationReady && !editing {
                     Label(device.certificateName.isEmpty ? "Certificate".localized : device.certificateName, systemImage:"checkmark.seal.fill").lineLimit(1)
                     Label(device.profileName.isEmpty ? "Provisioning profile".localized : device.profileName, systemImage:"doc.badge.gearshape").lineLimit(1)
@@ -52,8 +53,6 @@ struct SigningIdentitySections: View {
                     Button("Save signing") { device.saveSigning() }
                         .disabled(device.busy || !device.hasCertificate || !device.hasProfile)
                 }
-            }
-            Section {
                 ForEach(device.installationProfiles) { profile in
                     HStack {
                         Text(profile.name).lineLimit(1)
@@ -63,11 +62,9 @@ struct SigningIdentitySections: View {
                     }
                 }
                 Button("Add profiles") { kind = "install-extra-profile"; importing = true }.disabled(device.busy)
-            }
-            if device.busy { Section { ProgressView("Checking identity…") } }
+            if device.busy { ProgressView("Checking identity…") }
         }
-        .onAppear { device.setupVisible = true; device.loadSharedSigning() }
-        .onDisappear { device.setupVisible = false }
+        .onAppear { device.loadSharedSigning() }
         .onChange(of:device.installationReady) { if $0 { editing = false } }
         .fileImporter(isPresented:$importing,allowedContentTypes:[.data],allowsMultipleSelection:kind == "install-extra-profile") { result in
             if case .success(let urls) = result { for url in urls { device.importFile(url,kind:kind) } }
