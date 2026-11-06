@@ -261,12 +261,16 @@ fn build_plan(work: &Path, v: &Value, ctx: &ContextData) -> Result<Plan> {
     let app = app_path(work)?;
     let main = info(&app)?;
     let original = text(&main, "CFBundleIdentifier")?.to_owned();
-    let protected = [
+    let mut protected = vec![
         v["own_bundle"].as_str().unwrap_or("com.certlium.crumb"),
         v["helper_bundle"]
             .as_str()
             .unwrap_or("com.certlium.crumb.decrypt"),
     ];
+    if let Some(values)=v["protected_bundle_ids"].as_array() {
+        ensure!(values.len()<=16,"Invalid protected app identities");
+        for value in values { protected.push(value.as_str().context("Invalid protected app identity")?); }
+    }
     let id = select_main(
         ctx.profiles[0].parsed.entitlements(),
         &original,

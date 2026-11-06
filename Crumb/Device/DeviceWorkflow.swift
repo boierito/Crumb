@@ -206,6 +206,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         var request: [String:Any] = ["operation":operation,"p12":p12.path,"profile":mobile.path,
             "password":installation ? installationPassword : signingPassword,
             "purpose":installation ? "installation" : "helper", "helper_bundle":helperBundle,
+            "protected_bundle_ids":[helperBundle,managedHelper].compactMap { $0 },
             "own_bundle":Bundle.main.bundleIdentifier ?? "com.certlium.crumb", "work":root.appendingPathComponent("work").path]
         if installation {
             var profiles: [String] = []
@@ -276,6 +277,10 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         prepare(record, password:signingPassword)
     }
     func install(_ record: DownloadRecord, review: Bool = false) {
+        // Installing a local decrypted IPA does not require a VPN proof probe.
+        if busy && lastRequest["operation"] as? String == "verify" && queuedRecord == nil && queuedInstall == nil && !waitingForHelper {
+            stopDecryption(notifyHelper:false)
+        }
         guard !busy, !waitingForHelper, signingContext == nil, signedInstallation == nil else { errorMessage = "Finish the current app first."; return }
         guard record.isDecrypted else { AppData.shared.installationRequest = record; return }
         forceSigningReview = review

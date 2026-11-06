@@ -126,6 +126,9 @@ pub(super) fn entitlements(bytes: &[u8]) -> Result<plist::Dictionary> {
                 be(sig, 0)? == 0xfade0cc0 && be(sig, 4)? <= sig.len(),
                 "Invalid code signature"
             );
+            let length=be(sig,4)?;
+            ensure!(length>=12,"Invalid signature length");
+            let sig=&sig[..length];
             let count = be(sig, 8)?;
             ensure!(count <= 128, "Too many signature blobs");
             let mut der = None;
