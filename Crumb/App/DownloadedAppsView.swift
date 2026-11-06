@@ -46,12 +46,12 @@ struct DownloadedAppsView: View {
                     }
                 }
 
-                if let record = device.activeRecord {
+                if device.activeRecord != nil || device.waitingForHelper {
                     Section {
                         HStack(spacing:12) {
                             ProgressView()
                             VStack(alignment:.leading,spacing:4) {
-                                Text(record.appName).font(.headline)
+                                Text(device.activeRecord?.appName ?? "Decrypter".localized).font(.headline)
                                 Text(device.activityTitle.localized).font(.subheadline).foregroundStyle(.secondary)
                             }
                             Spacer()
