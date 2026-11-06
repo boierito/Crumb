@@ -24,7 +24,7 @@ struct ContentView: View {
         .sheet(isPresented:$device.setupNeeded,onDismiss:{ if device.ready { device.continueQueued() } }) {
             NavigationStack { DeviceSetupView().toolbar { ToolbarItem(placement:.confirmationAction) { Button("Done") { device.setupNeeded = false } } } }
         }
-        .alert("Could not finish", isPresented:Binding(get:{ !device.errorMessage.isEmpty },set:{ if !$0 { device.errorMessage = "" } })) {
+        .alert("Could not finish", isPresented:Binding(get:{ !device.setupVisible && !device.errorMessage.isEmpty },set:{ if !$0 { device.errorMessage = "" } })) {
             Button("OK") { device.errorMessage = "" }
         } message: { Text(device.errorMessage) }
         .onChange(of:scenePhase) { phase in if phase == .active { device.autoConnect(force:true) } }

@@ -78,6 +78,11 @@ struct DeviceSetupView: View {
         }
         .navigationTitle("Decrypter")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear { device.setupVisible = true }
+        .onDisappear { device.setupVisible = false }
+        .alert("Could not finish",isPresented:Binding(get:{ !device.errorMessage.isEmpty },set:{ if !$0 { device.errorMessage = "" } })) {
+            Button("OK") { device.errorMessage = "" }
+        } message: { Text(device.errorMessage) }
         .onChange(of:device.signingReady) { ready in if ready { editingSigning = false } }
         .onChange(of:scenePhase) { phase in if phase == .active { device.autoConnect(force:true) } }
         .task {

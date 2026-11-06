@@ -33,6 +33,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     @Published private(set) var helperInstalled = false
     @Published private(set) var hasCertificate = false
     @Published private(set) var hasProfile = false
+    @Published var setupVisible = false
     @Published var setupNeeded = false
     @Published var errorMessage = ""
     @Published private(set) var signingReady = false

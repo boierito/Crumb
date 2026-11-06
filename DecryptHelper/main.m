@@ -267,29 +267,57 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
   icon.contentMode = UIViewContentModeScaleAspectFit;
   icon.layer.cornerRadius = 22;
   icon.clipsToBounds = YES;
-  [icon.heightAnchor constraintEqualToConstant:88].active = YES;
+  icon.translatesAutoresizingMaskIntoConstraints = NO;
+  UIView *brand = [UIView new];
+  [brand addSubview:icon];
+  [NSLayoutConstraint activateConstraints:@[
+    [brand.heightAnchor constraintEqualToConstant:88],
+    [icon.heightAnchor constraintEqualToConstant:88],
+    [icon.widthAnchor constraintEqualToConstant:88],
+    [icon.centerXAnchor constraintEqualToAnchor:brand.centerXAnchor],
+    [icon.topAnchor constraintEqualToAnchor:brand.topAnchor]
+  ]];
   self.titleLabel = [UILabel new];
   self.titleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleLargeTitle];
   self.titleLabel.adjustsFontForContentSizeCategory = YES;
   self.titleLabel.text = @"Crumb Decrypt";
   self.titleLabel.numberOfLines = 0;
+  self.titleLabel.textAlignment = NSTextAlignmentCenter;
   self.label = [UILabel new];
   self.label.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
   self.label.adjustsFontForContentSizeCategory = YES;
   self.label.numberOfLines = 0;
+  self.label.textAlignment = NSTextAlignmentCenter;
   self.label.text = @"Preparing app…";
   self.progress = [[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];
   self.progress.accessibilityLabel = @"Decryption progress";
-  UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[icon,self.titleLabel,self.label,self.progress]];
+  UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[brand,self.titleLabel,self.label,self.progress]];
   stack.axis = UILayoutConstraintAxisVertical;
   stack.spacing = 24;
   stack.translatesAutoresizingMaskIntoConstraints = NO;
-  [self.view addSubview:stack];
+  UIScrollView *scroll = [UIScrollView new];
+  scroll.translatesAutoresizingMaskIntoConstraints = NO;
+  UIView *content = [UIView new];
+  content.translatesAutoresizingMaskIntoConstraints = NO;
+  [self.view addSubview:scroll];
+  [scroll addSubview:content];
+  [content addSubview:stack];
   [NSLayoutConstraint activateConstraints:@[
-    [stack.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor constant:28],
-    [stack.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor constant:-28],
-    [stack.centerYAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.centerYAnchor],
-    [stack.topAnchor constraintGreaterThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:16]
+    [scroll.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor],
+    [scroll.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor],
+    [scroll.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor],
+    [scroll.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor],
+    [content.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor],
+    [content.bottomAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.bottomAnchor],
+    [content.leadingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.leadingAnchor],
+    [content.trailingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.trailingAnchor],
+    [content.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor],
+    [content.heightAnchor constraintGreaterThanOrEqualToAnchor:scroll.frameLayoutGuide.heightAnchor],
+    [stack.leadingAnchor constraintEqualToAnchor:content.leadingAnchor constant:28],
+    [stack.trailingAnchor constraintEqualToAnchor:content.trailingAnchor constant:-28],
+    [stack.centerYAnchor constraintEqualToAnchor:content.centerYAnchor],
+    [stack.topAnchor constraintGreaterThanOrEqualToAnchor:content.topAnchor constant:28],
+    [stack.bottomAnchor constraintLessThanOrEqualToAnchor:content.bottomAnchor constant:-28]
   ]];
   dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
     @autoreleasepool {
