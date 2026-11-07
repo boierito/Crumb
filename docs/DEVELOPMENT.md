@@ -85,4 +85,9 @@ Downloads → Export offers the original decrypted IPA and a separate signed IPA
 The signed choice uses the same profile-aware pipeline as Install, without opening
 installation automatically. Its original source IPA is never rewritten. Signing
 again in another application can change entitlements and is outside this audit;
-the original Apple CMS is naturally invalid after decrypted code bytes change.
+the final certificate signer must authorize and seal the app. After the original
+byte audit, export_compatibility.rs rebuilds neutral ad-hoc executable signatures
+with the complete original entitlement dictionary in XML and DER; it does not
+apply a user profile or modify non-signature program bytes. Original Apple CMS
+bytes are replaced at this explicit compatibility stage, not retained as a usable
+signature.

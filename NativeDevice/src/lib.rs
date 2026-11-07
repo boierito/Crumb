@@ -1,3 +1,4 @@
+mod export_compatibility;
 mod export_audit;
 mod entitlement_der;
 mod package;

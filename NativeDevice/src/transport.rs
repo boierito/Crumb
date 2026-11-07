@@ -442,7 +442,9 @@ pub(super) async fn run(job: &Arc<Job>, v: &Value) -> anyhow::Result<Value> {
             let audit_job = job.clone();
             job.update(json!({"phase":"verifying-export"}));
             tokio::task::spawn_blocking(move || {
-                super::export_audit::verify(&original, &candidate, &audit_job)
+                super::export_audit::verify(&original, &candidate, &audit_job)?;
+                audit_job.update(json!({"phase":"preparing-export"}));
+                super::export_compatibility::normalize(&candidate, &audit_job)
             })
             .await??;
             anyhow::ensure!(!job.cancelled.load(Ordering::SeqCst), "Cancelled");

@@ -1,3 +1,28 @@
+# Build 23041: neutral export signatures with original XML and DER entitlements
+
+After the byte-level original/decrypted audit, a separate compatibility stage
+rebuilds ad-hoc signatures for Mach-O executables containing original entitlements.
+The dictionaries are decoded from either XML or DER, retained unchanged, then
+embedded in both formats. This avoids leaving only a DER entitlement blob inside
+the stale Apple signature after decryption. It does not use a user's profile,
+filter capabilities, change bundle IDs or grant new cloud/container access.
+
+Every normalized executable must decode to the identical entitlement dictionary.
+Executable code and metadata before the old signature are checked byte-for-byte;
+only the signature command and LINKEDIT size fields may change there. The neutral
+signature replaces the original now-invalid code signature, not program content.
+All other ZIP entries, profile/resource-seal bytes, empty directories and file
+modes are preserved. Resource seals are deliberately not reissued in this neutral
+stage; the final certificate signer must rebuild and authorize bundle signatures.
+This is a re-signing input, not an independently installable distribution signature.
+
+Both Downloads export and Crumb installation consume this prepared decrypted IPA.
+The signed export option remains available. Tests reproduce a DER-only signature,
+read the resulting XML with an XML-only parser, check both entitlement dictionaries
+and code bytes for main/extension identities, and preserve ZIP resources/modes.
+External signers may still replace these entitlements according to their options;
+physical KSign/Feather runtime recovery is not inferred from host tests.
+
 # Build 23040: audited original exports and matching signed exports
 
 The plain Downloads export returns the original decrypted artifact; installation
