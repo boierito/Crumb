@@ -20,4 +20,5 @@ struct SignedInstallation: Identifiable {
     let record: DownloadRecord
     let source: URL
     let workspace: URL
+    let installImmediately: Bool
 }

@@ -77,9 +77,11 @@ static void runCase(int number) {
     ((uint8_t *)bad.mutableBytes)[0] = '?';
     [bad writeToURL:saved atomically:YES];
   }
+  if (number == 9) item[@"mode"] = @(0444);
+  if (number == 10) item[@"mode"] = @(0100777);
   NSError *error = nil;
   BOOL ok = crumb_copy_license_resource(bundle, relative, item, dest, &error);
-  if (number == 1 || number == 7) {
+  if (number == 1 || number == 7 || number == 9) {
     // No installed Target/SC_Info exists at all: restoration must use only the
     // snapshot.
     require(ok, error.localizedDescription ?: @"restoration failed");
@@ -88,6 +90,10 @@ static void runCase(int number) {
             dataWithContentsOfURL:[dest URLByAppendingPathComponent:relative]]
             isEqual:original],
         @"original bytes preserved");
+    if (number == 9) {
+      NSDictionary *attrs = [fm attributesOfItemAtPath:[dest URLByAppendingPathComponent:relative].path error:nil];
+      require([attrs[NSFilePosixPermissions] unsignedIntValue] == 0444, @"original read-only permissions restored");
+    }
   } else {
     require(!ok && error != nil, @"invalid input was accepted");
     require(![fm fileExistsAtPath:dest.path],
@@ -112,6 +118,7 @@ static NSMutableDictionary *archiveItem(NSURL *copies, NSString *name,
           @"archive snapshot");
   return [@{
     @"file" : name,
+    @"mode" : @(0644),
     @"size" : @(data.length),
     @"sha256" : sha(data)
   } mutableCopy];
@@ -199,13 +206,16 @@ static void runArchiveCase(int number, NSString *fixturePath) {
       [[@"plain test image" dataUsingEncoding:NSUTF8StringEncoding]
           writeToURL:[app URLByAppendingPathComponent:@"Test"]
           atomically:YES];
+      NSURL *settings = [app URLByAppendingPathComponent:@"Settings.bundle"];
+      [fm createDirectoryAtURL:[settings URLByAppendingPathComponent:@"Empty"] withIntermediateDirectories:YES attributes:nil error:nil];
+      [[@"original Settings bytes" dataUsingEncoding:NSUTF8StringEncoding] writeToURL:[settings URLByAppendingPathComponent:@"Root.plist"] atomically:YES];
       NSURL *output = fixturePath
                           ? [NSURL fileURLWithPath:fixturePath]
                           : [root URLByAppendingPathComponent:@"fixture.ipa"];
       NSMutableArray *hashes = [NSMutableArray array];
       BOOL packed = crumb_pack_ipa(dest, output, hashes, &error);
       require(packed, error.localizedDescription ?: @"IPA packing");
-      require(hashes.count == 5,
+      require(hashes.count == 10,
               [NSString stringWithFormat:@"unexpected root archive entries: %@",
                                          hashes]);
       NSDictionary *manifest = @{
@@ -226,7 +236,7 @@ static void runArchiveCase(int number, NSString *fixturePath) {
 }
 int main(int argc, const char *argv[]) {
   @autoreleasepool {
-    for (int i = 1; i <= 8; i++) {
+    for (int i = 1; i <= 10; i++) {
       fprintf(stderr, "Testing license resource case %d\n", i);
       runCase(i);
     }
@@ -235,7 +245,7 @@ int main(int argc, const char *argv[]) {
       runArchiveCase(i,
                      argc > 1 ? [NSString stringWithUTF8String:argv[1]] : nil);
     }
-    puts("13 preserved-resource and IPA archive tests passed");
+    puts("15 preserved-resource and IPA archive tests passed");
   }
   return 0;
 }

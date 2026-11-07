@@ -1,3 +1,55 @@
+# Build 23041: neutral export signatures with original XML and DER entitlements
+
+After the byte-level original/decrypted audit, a separate compatibility stage
+rebuilds ad-hoc signatures for Mach-O executables containing original entitlements.
+The dictionaries are decoded from either XML or DER, retained unchanged, then
+embedded in both formats. This avoids leaving only a DER entitlement blob inside
+the stale Apple signature after decryption. It does not use a user's profile,
+filter capabilities, change bundle IDs or grant new cloud/container access.
+
+Every normalized executable must decode to the identical entitlement dictionary.
+Executable code and metadata before the old signature are checked byte-for-byte;
+only the signature command and LINKEDIT size fields may change there. The neutral
+signature replaces the original now-invalid code signature, not program content.
+All other ZIP entries, profile/resource-seal bytes, empty directories and file
+modes are preserved. Resource seals are deliberately not reissued in this neutral
+stage; the final certificate signer must rebuild and authorize bundle signatures.
+This is a re-signing input, not an independently installable distribution signature.
+
+Both Downloads export and Crumb installation consume this prepared decrypted IPA.
+The signed export option remains available. Tests reproduce a DER-only signature,
+read the resulting XML with an XML-only parser, check both entitlement dictionaries
+and code bytes for main/extension identities, and preserve ZIP resources/modes.
+External signers may still replace these entitlements according to their options;
+physical KSign/Feather runtime recovery is not inferred from host tests.
+
+# Build 23040: audited original exports and matching signed exports
+
+The plain Downloads export returns the original decrypted artifact; installation
+produces a distinct re-signed artifact. Downloads now offers both Original IPA
+and Signed IPA, using identical signing rules for the signed export and Install.
+Signed export does not start installation automatically. A second application's
+re-signing can replace entitlements; matching a file export cannot control that.
+
+Result retrieval now requires the source encrypted IPA and compares decompressed
+entry contents before accepting the result. It preserves all original files,
+metadata, profiles, signature/entitlement bytes and empty directories. Only the
+original encrypted ranges and cryptid fields may differ; code signatures cannot
+overlap allowed encryption ranges. SINF replicas must be explicitly requested by
+the original manifest and match the source bytes. Cancellation leaves no accepted
+partial result. Existing downloaded IPAs are not retroactively audited.
+
+The helper formerly skipped every Payload directory ZIP entry and assigned 0755
+to every file. It now retains directories and restores original payload/resource
+permissions before writing those modes into the ZIP. These changes require a new
+helper job; older helper results may fail the stricter verification.
+
+Tests include missing/changed resources, Info.plist/profile/seal/signature bytes,
+remaining encryption, signature overlap, empty/short files, explicit SINF replicas
+and cancellation. macOS producer tests cover a real Settings.bundle with an empty
+folder, original resources, ZIP checksums and permission restoration. Third-party
+installation/runtime recovery is not inferred from host tests.
+
 # Build 23038: scalar wildcard grants and scoped KVS migration
 
 The supplied profile encodes iCloud services and associated domains as a scalar

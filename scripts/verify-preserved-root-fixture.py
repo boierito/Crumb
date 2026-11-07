@@ -13,11 +13,15 @@ with zipfile.ZipFile(path) as archive:
     expected = {
         'META-INF/', 'META-INF/empty/', 'META-INF/com.apple.ZipMetadata.plist',
         'iTunesMetadata.plist', 'Payload/Test.app/Test',
+        'Payload/', 'Payload/Test.app/', 'Payload/Test.app/Settings.bundle/',
+        'Payload/Test.app/Settings.bundle/Empty/', 'Payload/Test.app/Settings.bundle/Root.plist',
     }
     assert set(archive.namelist()) == expected
     assert archive.read('iTunesMetadata.plist') == b'bplist00original-store-fields'
     assert archive.read('META-INF/com.apple.ZipMetadata.plist') == b'original signature bytes'
     assert archive.getinfo('META-INF/empty/').is_dir()
+    assert archive.getinfo('Payload/Test.app/Settings.bundle/Empty/').is_dir()
+    assert archive.read('Payload/Test.app/Settings.bundle/Root.plist') == b'original Settings bytes'
     assert len(manifest['files']) == len(expected)
     for item in manifest['files']:
         entry = archive.getinfo(item['path'])
@@ -27,4 +31,6 @@ with zipfile.ZipFile(path) as archive:
         data = archive.read(name)
         assert len(data) == original['size']
         assert hashlib.sha256(data).hexdigest() == original['sha256']
+        if 'mode' in original:
+            assert archive.getinfo(name).external_attr >> 16 & 0o777 == original['mode']
 print('Original root layout, metadata bytes, empty directories, hashes and ZIP checksums verified')

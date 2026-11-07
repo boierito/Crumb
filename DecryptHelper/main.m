@@ -598,6 +598,15 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
       break;
     }
   }
+  if (ok) for (NSString *relative in inventory) {
+    NSNumber *mode = inventory[relative][@"mode"];
+    if (mode && (![mode isKindOfClass:NSNumber.class] || mode.unsignedLongLongValue > 0777 ||
+        ![fm setAttributes:@{NSFilePosixPermissions: mode} ofItemAtPath:[dest URLByAppendingPathComponent:relative].path error:&error])) {
+      ok = NO;
+      if (!error) error = failure(@"Invalid original app permissions.");
+      break;
+    }
+  }
   [self status:@"Packaging your IPA…" progress:0.95];
   if (atomic_load(&jobCancelled)) ok = NO;
   if (ok)
