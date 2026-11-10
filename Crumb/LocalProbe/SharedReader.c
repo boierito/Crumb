@@ -2,3 +2,4 @@
 #include "../../SharedDecrypt/CrumbDecrypt.c"
 #include "../../DecryptHelper/CrumbMachO.c"
 #include "../../SharedDecrypt/CrumbCacheLease.c"
+#include "../../SharedDecrypt/CrumbLSStore.c"

@@ -7,6 +7,8 @@ NS_ASSUME_NONNULL_BEGIN
                progress:(void (^)(NSString *stage))progress;
 @property(nonatomic, readonly, nullable) NSURL *outputURL;
 @property(nonatomic, readonly, nullable) NSURL *reportURL;
+- (NSDictionary *)runInstalledIPA:(NSURL *)ipa bundleID:(NSString *)bundleID
+                        progress:(void (^)(NSString *stage))progress;
 - (void)cancel;
 @end
 NS_ASSUME_NONNULL_END

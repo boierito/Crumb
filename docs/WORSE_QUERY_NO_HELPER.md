@@ -187,3 +187,49 @@ replay, exclusive locking, foreign replacements, existing staging files and
 originally absent Caches. macOS tests additionally cover generic profile-group
 selection, dedicated aliases, redaction, exclusion of unsigned/wildcard guesses
 and JSON-journal recovery. These tests do not prove iOS token issuance.
+
+## Schema 3: installed-bundle research (build 23041)
+
+Use **Find installed app** on the existing without-helper screen. This is a
+separate mode; it does not repeat the already-failed downloaded-tree remap.
+It prepares the original IPA only for exact identity/resource comparisons.
+
+The mode tries the existing target-specific LaunchServices lookup first, then
+measures read/list access to the installed-bundle parent, including one scoped
+worse_query request. It retains a successful parent grant until installed-file
+attempts finish. If ordinary discovery remains blocked, it searches recent file
+IDs on the same data volume, bounded to 3,000,000 probes / 20 seconds of the
+cooperative discovery budget. A currently executing OS call can outlast that
+budget. APFS file-ID ordering is not assumed to cover the whole filesystem:
+`bounded_scan_incomplete` never proves the app is absent.
+
+The inode paths are immediately filtered to the selected app's basename or
+lsd's `Library/Caches/com.apple.LaunchServices-*.csstore` under an InternalDaemon
+container. Other paths are discarded without logging. Registry reads request a
+token only for the identified daemon container, cap files at 64 MiB, and reject
+snapshots whose inode, size or mtime changed during the read. Registry contents
+stay in memory; only a validated cache-path hint is saved privately.
+
+The CSStore2 27.0 record/string layout comes from inspection of
+https://github.com/kolbicz/WQFiles/blob/f149ba83050ef53ebdb9b73f2e83447f88057965/WQLaunchServices.m
+It is a research format, not an Apple-supported API. A small independent parser
+returns at most eight paths associated with the selected bundle ID. Path
+strings must have a UUID and exactly one `.app` component under the installed
+bundle root. Live bundle ID, version/build and encrypted-image SHA256 validation
+remain mandatory before decryption/publication. A located but unreadable path
+is recorded as an unverified candidate, not a working route. Metadata reads and
+image reads happen at the original installed path; executable contents are not
+copied elsewhere to ask FairPlay to decrypt them.
+
+`installed_alternative` separates parent access, token issuance, store parsing,
+search completeness, candidate identity and the subsequent native attempt. Raw
+paths, other apps' names/IDs and registry bytes are not exported in reports.
+The existing journalled cache lease is reused, and no installed-bundle files
+are written. The `no_verified_installed_route` outcome preserves these distinct
+barriers. Installed-path research does not create a daemon-readable location
+for a downloaded IPA when the target app is not installed.
+
+Host tests use a synthetic CSStore2 fixture and filesystem/token doubles;
+`test-ls-store.py` runs the parser under address/undefined-behavior sanitizers.
+Actual iOS lookup, `fsgetpath`, bundle-parent extensions, registry layout and
+FairPlay reads still require physical validation.

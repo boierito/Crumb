@@ -30,7 +30,7 @@ final class LocalProbeCoordinator: ObservableObject {
             outcome = Self.message(report["outcome"] as? String ?? "")
         }
     }
-    func run(_ record: DownloadRecord) {
+    func run(_ record: DownloadRecord, installedResearch: Bool = false) {
         guard !busy, let ipa = record.fileURL else { return }
         guard !DeviceWorkflow.shared.busy, !DeviceWorkflow.shared.waitingForHelper else {
             outcome = "Finish the current operation before starting the local test.".localized
@@ -42,12 +42,15 @@ final class LocalProbeCoordinator: ObservableObject {
         busy = true; stage = "Preparing test".localized; outcome = ""; reportURL = nil; outputURL = nil
         let runner = self.runner
         worker.async {
-            let result = runner.runIPA(ipa, bundleID: record.bundleID) { stage in
+            let progressCallback: (String) -> Void = { stage in
                 Task { @MainActor in
                     guard self.busy, self.generation == activeGeneration else { return }
                     self.stage = Self.progress(stage)
                 }
             }
+            let result = installedResearch
+                ? runner.runInstalledIPA(ipa, bundleID: record.bundleID, progress: progressCallback)
+                : runner.runIPA(ipa, bundleID: record.bundleID, progress: progressCallback)
             let generated = runner.outputURL
             let report = runner.reportURL
             Task { @MainActor in
@@ -98,7 +101,9 @@ final class LocalProbeCoordinator: ObservableObject {
     private static func progress(_ stage: String) -> String {
         switch stage {
         case "archive_preparation": return "Checking the downloaded app".localized
-        case "installed_discovery": return "Looking for the installed version".localized
+        case "installed_discovery", "installed_bundle_access": return "Looking for the installed version".localized
+        case "installed_inode_scan": return "Searching installed paths (up to 20 seconds)".localized
+        case "installed_registry_read": return "Checking the system app registry".localized
         case "sandbox_extension": return "Checking file access".localized
         case "source_hash", "inspect", "parse": return "Checking the original executable".localized
         case "copy", "shared_container_copy": return "Preparing a local copy".localized
@@ -112,6 +117,7 @@ final class LocalProbeCoordinator: ObservableObject {
         case "downloaded_ipa_success": return "Downloaded IPA decrypted and verified without a helper.".localized
         case "installed_app_success": return "Decryption verified using the installed app. This route requires that installed version.".localized
         case "no_verified_route": return "No working decryption route was established. Share the report to identify which checks failed.".localized
+        case "no_verified_installed_route": return "No installed-app decryption route was verified. Finding a path does not grant access; share the report for the exact barrier.".localized
         case "preparation_failed": return "The IPA could not be prepared for this test. The report includes the failed stage.".localized
         case "interrupted": return "The previous test was interrupted. Its report preserves the last recorded operation.".localized
         case "cancelled_or_local_failure": return "The test stopped before a complete result. The report preserves completed checks.".localized
@@ -133,6 +139,9 @@ struct LocalProbeView: View {
                     Text("Keep Crumb open while the test runs. Signing into Crumb does not establish the iPhone’s App Store license.".localized)
                         .font(.footnote).foregroundStyle(.secondary)
                     Button("Try without helper".localized) { probe.run(record) }.disabled(probe.busy)
+                    Button("Find installed app".localized) { probe.run(record, installedResearch: true) }.disabled(probe.busy)
+                    Text("The installed-app test checks the original bundle and its read permissions. A bounded search can be incomplete; it does not prove that the app is absent.".localized)
+                        .font(.footnote).foregroundStyle(.secondary)
                 }
                 if probe.busy {
                     Section {

@@ -301,6 +301,7 @@ phone-only acceptance procedure and report interpretation. Portable checks:
 cargo test --locked --manifest-path NativeDevice/Cargo.toml
 python3 scripts/test-local-probe-reader.py
 python3 scripts/test-cache-lease.py
+python3 scripts/test-ls-store.py
 ```
 
 C callbacks and Rust plaintext replay are synthetic boundary tests. macOS CI

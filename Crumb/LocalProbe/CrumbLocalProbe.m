@@ -1,4 +1,5 @@
 #import "CrumbLocalProbe.h"
+#import "CrumbInstalledDiscovery.h"
 #import "../../SharedDecrypt/CrumbDecrypt.h"
 #import "../../SharedDecrypt/CrumbCacheLease.h"
 #import "../../NativeDevice/include/CrumbDevice.h"
@@ -68,6 +69,7 @@ static NSDictionary *metrics_json(const CrumbDecryptMetrics *m) {
 @property(nonatomic) NSMutableDictionary *report;
 @property(nonatomic, copy) void (^progress)(NSString *);
 @property(nonatomic) NSString *lastProgress;
+@property(nonatomic) BOOL installedResearch;
 - (NSArray *)effectiveGroups;
 - (NSURL *)groupRoot:(NSString *)group;
 @end
@@ -294,6 +296,7 @@ static void native_checkpoint(void *ctx,const CrumbDecryptMetrics *m);
     Class cls=NSClassFromString(@"LSApplicationProxy");SEL selector=NSSelectorFromString(@"applicationProxyForIdentifier:");
     if(![cls respondsToSelector:selector]){result[@"code"]=@"discovery_api_unavailable";return nil;}
     id proxy=((id(*)(id,SEL,id))objc_msgSend)(cls,selector,bundleID);
+    result[@"proxy_returned"]=@(proxy!=nil);
     SEL urlSelector=NSSelectorFromString(@"bundleURL");
     NSURL *url=[proxy respondsToSelector:urlSelector]?((id(*)(id,SEL))objc_msgSend)(proxy,urlSelector):nil;
     if(![url isKindOfClass:NSURL.class] || !url.fileURL){result[@"code"]=@"discovery_blocked";return nil;}
@@ -379,13 +382,18 @@ static void native_checkpoint(void *ctx,const CrumbDecryptMetrics *m);
     if(handle>=0)worse_query_release(handle);
   }
 }
+- (NSDictionary *)runInstalledIPA:(NSURL *)ipa bundleID:(NSString *)bundleID progress:(void (^)(NSString *))progress {
+  self.installedResearch=YES;
+  @try { return [self runIPA:ipa bundleID:bundleID progress:progress]; }
+  @finally { self.installedResearch=NO; }
+}
 - (NSDictionary *)runIPA:(NSURL *)ipa bundleID:(NSString *)bundleID progress:(void (^)(NSString *))progress {
   atomic_store(&_cancelled,false);self.outputURL=nil;self.progress=progress;self.lastProgress=nil;
   NSString *job=NSUUID.UUID.UUIDString;
   self.reportURL=[self.directory URLByAppendingPathComponent:[NSString stringWithFormat:@"report-%@.json",job]];
   char model[256]={0};size_t modelSize=sizeof(model);sysctlbyname("hw.machine",model,&modelSize,NULL,0);
   char build[256]={0};size_t buildSize=sizeof(build);sysctlbyname("kern.osversion",build,&buildSize,NULL,0);
-  self.report=[@{@"schema":@2,@"run_id":job,@"outcome":@"running",@"attempts":[NSMutableArray array],
+  self.report=[@{@"schema":@3,@"mode":self.installedResearch?@"installed_bundle_research":@"downloaded_ipa_probe",@"run_id":job,@"outcome":@"running",@"attempts":[NSMutableArray array],
     @"environment":@{@"model":@(model),@"os":os_version(),@"build":@(build),@"page_size":@(getpagesize()),
       @"crumb_build":[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"]?:@"unknown",
       @"worse_query_revision":@"d1540e20cd82b974d891e0551ced6d6aeb570ac2",@"baseline_contaminated":@(atomic_load(&processHasGrant))},
@@ -411,6 +419,34 @@ static void native_checkpoint(void *ctx,const CrumbDecryptMetrics *m);
     self.report[@"app_group"]=groupDiagnostics;
     NSMutableDictionary *discovery=[NSMutableDictionary dictionary];
     NSURL *installed=[self installedBundle:bundleID result:discovery];self.report[@"installed_discovery"]=discovery;
+    if(self.installedResearch) {
+      if(installed && !atomic_load(&_cancelled)) {
+        NSString *access=atomic_load(&processHasGrant)?@"discovered_path":@"baseline";
+        if([self attempt:@"installedApp" access:access source:installed manifest:manifest work:work group:group])return self.report;
+        if(group && !atomic_load(&_cancelled) && [self attempt:@"installedApp" access:@"worseQuery" source:installed manifest:manifest work:work group:group])return self.report;
+      }
+      CrumbInstalledDiscovery *alternative=[[CrumbInstalledDiscovery alloc]initWithBundleID:bundleID
+          appName:[manifest[@"app_relative"] lastPathComponent] work:work
+          grant:^int64_t(NSURL *scope,NSMutableDictionary *result) {
+            if(!group){result[@"code"]=@"eligible_app_group_unavailable";return -1;}
+            return [self grant:scope group:group result:result];
+          } release:^(int64_t handle){worse_query_release(handle);}
+          cancelled:^BOOL{return atomic_load(&self->_cancelled);}
+          progress:^(NSString *stage){[self checkpoint:stage metrics:nil];}];
+      self.report[@"installed_alternative"]=alternative.report;
+      @try {
+        NSArray<NSURL *> *candidates=[alternative run];NSUInteger index=0;
+        for(NSURL *candidate in candidates) {
+          if(atomic_load(&_cancelled))break;
+          self.report[@"installed_candidate"]=@(index++);
+          NSString *access=alternative.parentHandle>=0?@"bundleParentGrant":@"discovered_path";
+          if([self attempt:@"installedApp" access:access source:candidate manifest:manifest work:work group:group])return self.report;
+          if(group && !atomic_load(&_cancelled) && [self attempt:@"installedApp" access:@"worseQuery" source:candidate manifest:manifest work:work group:group])return self.report;
+        }
+      }@finally {[alternative close];}
+      self.report[@"outcome"]=atomic_load(&_cancelled)?@"cancelled_or_local_failure":@"no_verified_installed_route";
+      return self.report;
+    }
     NSURL *input=[work URLByAppendingPathComponent:@"archive/input"];
     BOOL contaminated=atomic_load(&processHasGrant);
     if(!contaminated) {

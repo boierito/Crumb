@@ -212,3 +212,8 @@
 "Finish the current operation before starting the local test." = "Finish the current operation before starting the local test.";
 " This signature does not grant the App Group required by worse_query." = " This signature does not grant the App Group required by worse_query.";
 " No authorized App Group with an accessible, empty cache was available for worse_query." = " No authorized App Group with an accessible, empty cache was available for worse_query.";
+"Searching installed paths (up to 20 seconds)" = "Searching installed paths (up to 20 seconds)";
+"Checking the system app registry" = "Checking the system app registry";
+"No installed-app decryption route was verified. Finding a path does not grant access; share the report for the exact barrier." = "No installed-app decryption route was verified. Finding a path does not grant access; share the report for the exact barrier.";
+"Find installed app" = "Find installed app";
+"The installed-app test checks the original bundle and its read permissions. A bounded search can be incomplete; it does not prove that the app is absent." = "The installed-app test checks the original bundle and its read permissions. A bounded search can be incomplete; it does not prove that the app is absent.";
