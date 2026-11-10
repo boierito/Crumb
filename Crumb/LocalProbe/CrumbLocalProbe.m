@@ -30,6 +30,11 @@ static NSString *os_version(void) {
   return NSProcessInfo.processInfo.operatingSystemVersionString;
 #endif
 }
+static BOOL remove_owned(NSURL *url) {
+  if([NSFileManager.defaultManager removeItemAtURL:url error:nil])return YES;
+  struct stat status;errno=0;
+  return lstat(url.fileSystemRepresentation,&status)<0 && errno==ENOENT;
+}
 static atomic_bool processHasGrant=false;
 static NSString *stage_name(int stage) {
   switch(stage) {
@@ -104,9 +109,8 @@ static void native_checkpoint(void *ctx,const CrumbDecryptMetrics *m);
   NSString *ownGroup=[NSString stringWithFormat:@"group.%@.worsequery",NSBundle.mainBundle.bundleIdentifier];
   if([sharedGroup isEqual:ownGroup] && [sharedName isKindOfClass:NSString.class] && [sharedName hasPrefix:@"CrumbProbe-"] && [[NSUUID alloc]initWithUUIDString:[sharedName substringFromIndex:11]]) {
     NSURL *sharedRoot=[fm containerURLForSecurityApplicationGroupIdentifier:sharedGroup];
-    if(sharedRoot)[fm removeItemAtURL:[sharedRoot URLByAppendingPathComponent:sharedName] error:nil];
-  }
-  [fm removeItemAtURL:sharedLedger error:nil];
+    if(sharedRoot && remove_owned([sharedRoot URLByAppendingPathComponent:sharedName]))[fm removeItemAtURL:sharedLedger error:nil];
+  }else if(!sharedState)[fm removeItemAtURL:sharedLedger error:nil];
   // Only UUID job directories in our own private root are reaped.
   NSURL *runs=[self.directory URLByAppendingPathComponent:@"runs"];
   for(NSURL *url in [fm contentsOfDirectoryAtURL:runs includingPropertiesForKeys:nil options:0 error:nil])
@@ -115,6 +119,7 @@ static void native_checkpoint(void *ctx,const CrumbDecryptMetrics *m);
   NSDictionary *link=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfURL:ledger]?:[NSData data] options:0 error:nil];
   NSString *group=link[@"group"],*expected=link[@"target"];
   NSString *own=[@"group." stringByAppendingFormat:@"%@.worsequery",NSBundle.mainBundle.bundleIdentifier];
+  BOOL linkClean=NO;
   if([group isEqual:own] && [expected isKindOfClass:NSString.class]) {
     NSURL *root=[fm containerURLForSecurityApplicationGroupIdentifier:group];
     NSURL *caches=[root URLByAppendingPathComponent:@"Library/Caches"];
@@ -122,8 +127,10 @@ static void native_checkpoint(void *ctx,const CrumbDecryptMetrics *m);
     if([actual isEqual:expected]) {
       if(unlink(caches.fileSystemRepresentation)==0)[fm createDirectoryAtURL:caches withIntermediateDirectories:YES attributes:nil error:nil];
     }
+    struct stat status;
+    linkClean=caches && lstat(caches.fileSystemRepresentation,&status)==0 && S_ISDIR(status.st_mode);
   }
-  [fm removeItemAtURL:ledger error:nil];
+  if(linkClean || !link)[fm removeItemAtURL:ledger error:nil];
 }
 - (NSDictionary *)archive:(NSDictionary *)request {
   NSData *data=[NSJSONSerialization dataWithJSONObject:request options:0 error:nil];
@@ -165,6 +172,7 @@ static void native_checkpoint(void *ctx,const CrumbDecryptMetrics *m);
   if(atomic_load(&_cancelled))return -256;
   NSFileManager *fm=NSFileManager.defaultManager;
   NSURL *root=[fm containerURLForSecurityApplicationGroupIdentifier:group];
+  if([fm fileExistsAtPath:[self.directory URLByAppendingPathComponent:@"group-link.json"].path]){result[@"code"]=@"previous_grant_cleanup_pending";return -256;}
   if(!root){result[@"code"]=@"group_container_unavailable";return -1;}
   NSURL *caches=[root URLByAppendingPathComponent:@"Library/Caches"];
   struct stat st;
@@ -340,7 +348,7 @@ static void native_checkpoint(void *ctx,const CrumbDecryptMetrics *m);
         NSString *sharedJob=[@"CrumbProbe-" stringByAppendingString:job];
         NSURL *shared=[groupRoot URLByAppendingPathComponent:sharedJob isDirectory:YES];
         NSURL *ledger=[self.directory URLByAppendingPathComponent:@"shared-job.json"];
-        if([self saveJSON:@{@"group":group,@"name":sharedJob} to:ledger]) {
+        if(![fm fileExistsAtPath:ledger.path] && [self saveJSON:@{@"group":group,@"name":sharedJob} to:ledger]) {
           @try {
             [self checkpoint:@"shared_container_copy" metrics:nil];
             BOOL created=[fm createDirectoryAtURL:shared withIntermediateDirectories:NO attributes:@{NSFilePosixPermissions:@0700,NSFileProtectionKey:NSFileProtectionComplete} error:nil];
@@ -349,7 +357,10 @@ static void native_checkpoint(void *ctx,const CrumbDecryptMetrics *m);
             if([copied[@"ok"] boolValue]) {
               [self attempt:@"ownAppGroup" access:@"authorizedGroup" source:shared manifest:manifest work:work group:group];
             }else self.report[@"shared_container"]=@"copy_failed";
-          }@finally{[fm removeItemAtURL:shared error:nil];[fm removeItemAtURL:ledger error:nil];}
+          }@finally {
+            BOOL cleaned=remove_owned(shared);self.report[@"shared_cleanup_complete"]=@(cleaned);
+            if(cleaned)[fm removeItemAtURL:ledger error:nil];
+          }
         }
       }
     }
@@ -360,8 +371,9 @@ static void native_checkpoint(void *ctx,const CrumbDecryptMetrics *m);
       if(self.outputURL)[fm removeItemAtURL:self.outputURL error:nil];
       self.outputURL=nil;self.report[@"outcome"]=@"cancelled_or_local_failure";
     }
+    self.report[@"workspace_cleanup_complete"]=@(remove_owned(work));
     [self checkpoint:@"finished" metrics:nil];
-    [fm removeItemAtURL:work error:nil];[fm removeItemAtURL:active error:nil];
+    [fm removeItemAtURL:active error:nil];
     set_idle(NO);
     self.progress=nil;
   }
