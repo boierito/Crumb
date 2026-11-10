@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <xpc/xpc.h>
 #include <sys/stat.h>
+#include <errno.h>
 #include "worse_query.h"
 
 typedef void *(*container_query_create_fn)(void);
@@ -60,7 +61,7 @@ int64_t worse_query(NSString *target, NSString *group, bool alt_flags, bool crea
     // Check if the target exists
     if (!create_dir) {
         struct stat st;
-        if (lstat(target.fileSystemRepresentation, &st) != 0) return -255; // Nothing exists at this path, and create_dir is false
+        if (lstat(target.fileSystemRepresentation, &st) != 0 && errno != EACCES && errno != EPERM) return -255; // Nothing exists at this path, and create_dir is false
     }
     
     // Get the App Group's path
@@ -110,7 +111,9 @@ int64_t worse_query(NSString *target, NSString *group, bool alt_flags, bool crea
     // Set up symlink
     [files removeItemAtPath: caches error: nil];
     if ([files createSymbolicLinkAtPath: caches withDestinationPath: target error: nil] == false) {
+        query_free(query); // Crumb adaptation: do not leak on symlink failure.
         dlclose(mgr);
+        clean_symlink(group);
         return -4; // Failed to create symlink
     }
     

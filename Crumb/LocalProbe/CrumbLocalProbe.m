@@ -158,7 +158,7 @@ static void native_checkpoint(void *ctx,const CrumbDecryptMetrics *m);
   NSURL *ledger=[self.directory URLByAppendingPathComponent:@"group-link.json"];
   if(![self saveJSON:@{@"group":group,@"target":target.path} to:ledger]){result[@"code"]=@"grant_ledger_failed";return -256;}
   [self checkpoint:@"sandbox_extension" metrics:nil];
-  BOOL alt=ProcessInfo.processInfo.operatingSystemVersion.majorVersion==26 && [target.path containsString:@"/Containers/Shared/AppGroup/"];
+  BOOL alt=NSProcessInfo.processInfo.operatingSystemVersion.majorVersion==26 && [target.path containsString:@"/Containers/Shared/AppGroup/"];
   int64_t handle=worse_query(target.path,group,alt,false);result[@"result"]=@(handle);
   if(handle>=0){atomic_store(&processHasGrant,true);result[@"code"]=@"extension_consumed";}
   else result[@"code"]=@"extension_rejected";
@@ -286,6 +286,9 @@ static void native_checkpoint(void *ctx,const CrumbDecryptMetrics *m);
     if(![prep[@"ok"] boolValue]){self.report[@"outcome"]=@"preparation_failed";self.report[@"archive_error"]=prep;return self.report;}
     NSDictionary *manifest=prep[@"manifest"];
     self.report[@"image_count"]=@([manifest[@"images"] count]);
+    NSURL *buildURL=[NSBundle.mainBundle URLForResource:@"CrumbProbeBuild" withExtension:@"json"];
+    NSDictionary *buildInfo=buildURL?[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfURL:buildURL]?:[NSData data] options:0 error:nil]:nil;
+    self.report[@"source_revision"]=[buildInfo[@"source_revision"] isKindOfClass:NSString.class]?buildInfo[@"source_revision"]:@"unrecorded";
     NSString *group=[NSString stringWithFormat:@"group.%@.worsequery",NSBundle.mainBundle.bundleIdentifier];
     NSArray *groups=[self effectiveGroups];BOOL authorized=[groups containsObject:group];
     NSURL *groupRoot=authorized?[fm containerURLForSecurityApplicationGroupIdentifier:group]:nil;
@@ -317,8 +320,10 @@ static void native_checkpoint(void *ctx,const CrumbDecryptMetrics *m);
         if([self saveJSON:@{@"group":group,@"name":sharedJob} to:ledger]) {
           @try {
             [self checkpoint:@"shared_container_copy" metrics:nil];
-            if([fm copyItemAtURL:input toURL:shared error:nil]) {
-              [shared setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];
+            BOOL created=[fm createDirectoryAtURL:shared withIntermediateDirectories:NO attributes:@{NSFilePosixPermissions:@0700,NSFileProtectionKey:NSFileProtectionComplete} error:nil];
+            BOOL excluded=created && [shared setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];
+            NSDictionary *copied=excluded?[self archive:@{@"operation":@"relocate",@"from":input.path,@"to":shared.path}]:@{@"ok":@NO};
+            if([copied[@"ok"] boolValue]) {
               [self attempt:@"ownAppGroup" access:@"authorizedGroup" source:shared manifest:manifest work:work group:group];
             }else self.report[@"shared_container"]=@"copy_failed";
           }@finally{[fm removeItemAtURL:shared error:nil];[fm removeItemAtURL:ledger error:nil];}
@@ -328,6 +333,9 @@ static void native_checkpoint(void *ctx,const CrumbDecryptMetrics *m);
     if(!self.outputURL)self.report[@"outcome"]=atomic_load(&_cancelled)?@"cancelled_or_local_failure":@"no_verified_route";
   }@catch(NSException *e){(void)e;self.report[@"outcome"]=@"local_exception";}
   @finally {
+    if(atomic_load(&_cancelled) && self.outputURL) {
+      [fm removeItemAtURL:self.outputURL error:nil];self.outputURL=nil;self.report[@"outcome"]=@"cancelled_or_local_failure";
+    }
     [self checkpoint:@"finished" metrics:nil];
     [fm removeItemAtURL:work error:nil];[fm removeItemAtURL:active error:nil];
     dispatch_async(dispatch_get_main_queue(),^{UIApplication.sharedApplication.idleTimerDisabled=NO;});

@@ -28,3 +28,9 @@ mkdir -p "${TARGET_BUILD_DIR:?}/${UNLOCALIZED_RESOURCES_FOLDER_PATH:?}"
 cp build/Native/CrumbDecryptTemplate.zip "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/"
 
 cp NativeDevice/vendor/apple-codesign-quick/COPYING.LESSER "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/CrumbDevice-LGPL.txt"
+
+python3 - "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/CrumbProbeBuild.json" <<'PYBUILD'
+import json,subprocess,sys
+with open(sys.argv[1], 'w') as f:
+    json.dump({'source_revision':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()},f)
+PYBUILD

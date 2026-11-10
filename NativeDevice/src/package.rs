@@ -14,18 +14,44 @@ const MAX_LICENSE_TOTAL: u64 = 16 * 1024 * 1024;
 fn input<'a>(v: &'a Value, key: &str) -> Result<&'a str> {
     v[key].as_str().with_context(|| format!("Missing {key}"))
 }
+// zip 2.x indexes central entries by name and silently collapses duplicates.
+// Inspect physical central headers before relying on its logical entry count.
+fn validate_central_entries(ipa: &Path, start: u64, count: usize) -> Result<()> {
+    use std::io::{Seek, SeekFrom};
+    let mut file = fs::File::open(ipa)?;
+    file.seek(SeekFrom::Start(start))?;
+    let mut names = std::collections::HashSet::new();
+    for _ in 0..count {
+        let mut header = [0u8; 46];
+        file.read_exact(&mut header)?;
+        ensure!(&header[..4] == b"PK\x01\x02", "Invalid central directory");
+        let name_len = u16::from_le_bytes([header[28], header[29]]) as usize;
+        let extra = u16::from_le_bytes([header[30], header[31]]) as i64;
+        let comment = u16::from_le_bytes([header[32], header[33]]) as i64;
+        let mut name = vec![0; name_len];
+        file.read_exact(&mut name)?;
+        ensure!(names.insert(name), "Duplicate archive entry");
+        file.seek(SeekFrom::Current(extra + comment))?;
+    }
+    let mut next = [0u8; 4];
+    file.read_exact(&mut next)?;
+    ensure!(&next != b"PK\x01\x02", "Duplicate archive entry");
+    Ok(())
+}
 pub(super) fn extract(ipa: &Path, dest: &Path) -> Result<()> {
     extract_checked(ipa, dest, || Ok(()))
 }
 pub(super) fn extract_checked(ipa: &Path, dest: &Path, check: impl Fn() -> Result<()>) -> Result<()> {
     let mut z = ZipArchive::new(fs::File::open(ipa)?)?;
     ensure!(z.len() <= 100000, "Too many archive entries");
+    validate_central_entries(ipa, z.central_directory_start(), z.len())?;
     let mut total = 0u64;
     let mut names = std::collections::HashSet::new();
     for i in 0..z.len() {
         check()?;
         let mut f = z.by_index(i)?;
         ensure!(!f.is_symlink(), "Archive links are unsupported");
+        ensure!(!f.name().trim_end_matches('/').split('/').any(|p| p.is_empty() || p == "." || p == ".."), "Unsafe archive path");
         let relative = f.enclosed_name().context("Unsafe archive path")?;
         ensure!(
             !relative.as_os_str().is_empty() && names.insert(relative.clone()),
