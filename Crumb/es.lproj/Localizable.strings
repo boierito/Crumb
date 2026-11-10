@@ -147,3 +147,5 @@
 "The test stopped before a complete result. The report preserves completed checks." = "La prueba se detuvo antes de obtener un resultado completo. El informe conserva las comprobaciones realizadas.";
 "The test could not finish. Share its report for details." = "La prueba no pudo finalizar. Comparte su informe para ver los detalles.";
 " The verified IPA is available to export here." = " La IPA verificada está disponible aquí para exportarla.";
+"Finish the current operation before starting the local test." = "Finaliza la operación actual antes de iniciar la prueba local.";
+" This signature does not grant the App Group required by worse_query." = " Esta firma no autoriza el App Group que necesita worse_query.";

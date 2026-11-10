@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 @MainActor
 final class LocalProbeCoordinator: ObservableObject {
@@ -10,6 +11,7 @@ final class LocalProbeCoordinator: ObservableObject {
     @Published private(set) var outputURL: URL?
     private let worker = DispatchQueue(label: "Crumb.LocalProbe", qos: .userInitiated)
     private var stopRequested = false
+    private var generation = UUID()
     private let runner: CrumbLocalProbe
     private let directory: URL
 
@@ -30,18 +32,32 @@ final class LocalProbeCoordinator: ObservableObject {
     }
     func run(_ record: DownloadRecord) {
         guard !busy, let ipa = record.fileURL else { return }
+        guard !DeviceWorkflow.shared.busy, !DeviceWorkflow.shared.waitingForHelper else {
+            outcome = "Finish the current operation before starting the local test.".localized
+            return
+        }
+        generation = UUID()
+        let activeGeneration = generation
         stopRequested = false
         busy = true; stage = "Preparing test".localized; outcome = ""; reportURL = nil; outputURL = nil
         let runner = self.runner
         worker.async {
             let result = runner.runIPA(ipa, bundleID: record.bundleID) { stage in
-                Task { @MainActor in self.stage = Self.progress(stage) }
+                Task { @MainActor in
+                    guard self.busy, self.generation == activeGeneration else { return }
+                    self.stage = Self.progress(stage)
+                }
             }
             let generated = runner.outputURL
             let report = runner.reportURL
             Task { @MainActor in
                 self.reportURL = report
                 self.outcome = Self.message(result["outcome"] as? String ?? "")
+                if result["outcome"] as? String == "no_verified_route",
+                   let group = result["app_group"] as? [String: Any],
+                   group["dedicated_group_authorized"] as? Bool == false {
+                    self.outcome += " This signature does not grant the App Group required by worse_query.".localized
+                }
                 if self.stopRequested {
                     if let generated { try? FileManager.default.removeItem(at: generated) }
                     self.outcome = Self.message("cancelled_or_local_failure")
