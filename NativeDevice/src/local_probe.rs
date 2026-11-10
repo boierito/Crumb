@@ -273,12 +273,22 @@ fn prepare(v: &Value, c: &Control) -> Result<Value> {
             let sinf_size = fs::metadata(sinf).map(|s| s.len()).unwrap_or(0);
             images.push(
                 json!({"relative":relative,"app_relative":app_relative,"sha256":hash(e.path(),c)?,
-                "size":size,"uuid":uuid(&header),"offset":off,"length":len,"command":command,
+                "is_main":e.path()==app.join(exe),"size":size,"uuid":uuid(&header),"offset":off,"length":len,"command":command,
                 "matching_sinf":sinf_size>0 && sinf_size<=4*1024*1024,"sinf_size":sinf_size}),
             );
         }
     }
     ensure!(!images.is_empty(), "no supported encrypted images");
+    images.sort_by(|a, b| {
+        (
+            !a["is_main"].as_bool().unwrap_or(false),
+            a["relative"].as_str().unwrap_or(""),
+        )
+            .cmp(&(
+                !b["is_main"].as_bool().unwrap_or(false),
+                b["relative"].as_str().unwrap_or(""),
+            ))
+    });
     let manifest = json!({"schema":1,"bundle_id":text(&d,"CFBundleIdentifier")?,"version":text(&d,"CFBundleShortVersionString")?,
         "build":text(&d,"CFBundleVersion")?,"app_relative":format!("Payload/{}",apps[0].file_name().to_string_lossy()),
         "images":images,"inventory":original});
@@ -359,6 +369,19 @@ fn finalize(v: &Value, c: &Control) -> Result<Value> {
                     .is_some_and(|n| n > 0 && receipt[0]["pages_read"].as_u64() == Some(n)),
                 "incomplete page coverage"
             );
+            let page_size = receipt[0]["page_size"]
+                .as_u64()
+                .context("missing page size")?;
+            let encrypted_len = image["length"]
+                .as_u64()
+                .context("missing encrypted length")?;
+            ensure!(
+                page_size.is_power_of_two()
+                    && (4096..=65536).contains(&page_size)
+                    && receipt[0]["pages_expected"].as_u64()
+                        == Some(encrypted_len.div_ceil(page_size)),
+                "incomplete page coverage"
+            );
             let original = work.join("input").join(relative(name)?);
             ensure!(
                 hash(&original, c)? == image["sha256"].as_str().context("missing original hash")?,
@@ -425,6 +448,74 @@ fn finalize(v: &Value, c: &Control) -> Result<Value> {
         json!({"ok":true,"output_path":finished,"image_count":images.len(),"file_count":actual.len()}),
     )
 }
+fn error_reason(error: &anyhow::Error) -> &'static str {
+    for item in error.chain() {
+        let text = item.to_string();
+        let code = match text.as_str() {
+            "cancelled" => "cancelled",
+            "Unsafe archive path" | "unsafe relative path" => "unsafe_archive_path",
+            "Duplicate archive entry" => "duplicate_archive_entry",
+            "Archive links are unsupported" | "links unsupported" => "archive_link_unsupported",
+            "one app required" => "single_app_required",
+            "app identity mismatch" => "app_identity_mismatch",
+            "missing app identity" | "invalid app metadata" => "app_metadata_invalid",
+            "ambiguous SINF replication" => "license_replication_ambiguous",
+            "missing original SINF mapping" | "invalid SINF mapping" | "invalid replica" => {
+                "license_mapping_invalid"
+            }
+            "SINF outside license directory" | "replica outside license directory" => {
+                "license_path_invalid"
+            }
+            "no supported encrypted images" => "encrypted_images_missing",
+            "FAT Mach-O is not supported in the first device pipeline; use an arm64 thin IPA" => {
+                "fat_macho_unsupported"
+            }
+            "Only arm64 Mach-O supported" | "32-bit Mach-O unsupported" => {
+                "architecture_unsupported"
+            }
+            "Invalid Mach-O command table"
+            | "Invalid load command"
+            | "Unparsed Mach-O load commands"
+            | "Encryption range outside file"
+            | "Truncated encryption command"
+            | "Empty encrypted range" => "macho_malformed",
+            "license resource budget"
+            | "SINF budget"
+            | "manifest budget"
+            | "archive budget"
+            | "unsupported file"
+            | "Expanded IPA exceeds 4 GB"
+            | "Archive file exceeds 512 MiB"
+            | "Too many archive entries" => "resource_budget_exceeded",
+            "incomplete decryption receipts"
+            | "image not verified"
+            | "incomplete page coverage" => "decryption_incomplete",
+            "output inventory changed"
+            | "output resource missing"
+            | "original resource changed" => "resource_verification_failed",
+            "original image changed"
+            | "bytes outside allowed range changed"
+            | "image size changed"
+            | "cryptid not cleared"
+            | "encrypted bytes unchanged" => "image_verification_failed",
+            _ => continue,
+        };
+        return code;
+    }
+    if error
+        .chain()
+        .any(|e| e.downcast_ref::<zip::result::ZipError>().is_some())
+    {
+        "zip_invalid"
+    } else if error
+        .chain()
+        .any(|e| e.downcast_ref::<std::io::Error>().is_some())
+    {
+        "file_io_failed"
+    } else {
+        "archive_validation_failed"
+    }
+}
 // Synchronous archive-only ABI, invoked on the probe's serial background queue.
 // The cancellation context belongs to that queue's retained Objective-C runner.
 #[unsafe(no_mangle)]
@@ -454,8 +545,10 @@ pub unsafe extern "C" fn crumb_probe_archive(
     }));
     let value = match result {
         Ok(Ok(v)) => v,
-        Ok(Err(e)) => json!({"ok":false,"code":"archive_operation_failed",
-        "os_errno":e.chain().find_map(|x|x.downcast_ref::<std::io::Error>().and_then(|x|x.raw_os_error()))}),
+        Ok(Err(e)) => {
+            json!({"ok":false,"code":"archive_operation_failed","reason":error_reason(&e),
+        "os_errno":e.chain().find_map(|x|x.downcast_ref::<std::io::Error>().and_then(|x|x.raw_os_error()))})
+        }
         Err(_) => json!({"ok":false,"code":"archive_operation_panicked"}),
     };
     std::ffi::CString::new(value.to_string())

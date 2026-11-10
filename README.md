@@ -50,3 +50,12 @@ For build instructions and technical details, see [IMPLEMENTATION.md](IMPLEMENTA
 [TESTING.md](TESTING.md), and the [development guide](docs/DEVELOPMENT.md).
 Licensing and third-party attributions are documented
 in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); the project as a whole is not MIT licensed.
+
+## Experimental in-process decryption
+
+The `experiment/worse-query-no-helper` branch adds **Downloads → app menu → Try
+without helper**, which measures direct page decryption and worse_query access
+without pairing or a VPN. It can also test a matching installed app. A dedicated
+App Group must be authorized by Crumb's actual signature to exercise worse_query.
+This is not yet physically validated as a working no-helper decryptor. See the
+[evidence, report guide and test procedure](docs/WORSE_QUERY_NO_HELPER.md).

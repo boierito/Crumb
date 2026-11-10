@@ -4,7 +4,10 @@
 #import "Vendor/worse_query.h"
 #import <CommonCrypto/CommonDigest.h>
 #import <Security/Security.h>
+#import <TargetConditionals.h>
+#if TARGET_OS_IOS
 #import <UIKit/UIKit.h>
+#endif
 #import <dlfcn.h>
 #import <objc/message.h>
 #import <stdatomic.h>
@@ -13,6 +16,20 @@
 #import <unistd.h>
 #import <sys/sysctl.h>
 
+static void set_idle(BOOL disabled) {
+#if TARGET_OS_IOS
+  dispatch_async(dispatch_get_main_queue(),^{UIApplication.sharedApplication.idleTimerDisabled=disabled;});
+#else
+  (void)disabled;
+#endif
+}
+static NSString *os_version(void) {
+#if TARGET_OS_IOS
+  return UIDevice.currentDevice.systemVersion;
+#else
+  return NSProcessInfo.processInfo.operatingSystemVersionString;
+#endif
+}
 static atomic_bool processHasGrant=false;
 static NSString *stage_name(int stage) {
   switch(stage) {
@@ -27,6 +44,7 @@ static NSString *stage_name(int stage) {
 static NSDictionary *metrics_json(const CrumbDecryptMetrics *m) {
   return @{@"stage":stage_name(m->stage),@"errno":@(m->error_code),
     @"signature_attempted":@(m->signature_attempted),@"signature_result":@(m->signature_result),@"signature_errno":@(m->signature_errno),
+    @"first_remap_result":@(m->first_remap_result),@"first_remap_errno":@(m->first_remap_errno),@"remap_attempts":@(m->remap_attempts),
     @"remap_attempted":@(m->remap_attempted),@"remap_result":@(m->remap_result),@"remap_errno":@(m->remap_errno),
     @"pages_expected":@(m->pages_expected),@"pages_read":@(m->pages_read),
     @"changed_pages":@(m->changed_pages),@"first_fail_offset":@(m->first_fail_offset),
@@ -50,6 +68,7 @@ static void native_checkpoint(void *ctx,const CrumbDecryptMetrics *m);
 @implementation CrumbLocalProbe
 - (instancetype)initWithDirectory:(NSURL *)directory {
   if((self=[super init])) {
+    atomic_init(&_cancelled,false);
     _directory=directory;
     NSFileManager *fm=NSFileManager.defaultManager;
     [fm createDirectoryAtURL:directory withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0700} error:nil];
@@ -159,6 +178,10 @@ static void native_checkpoint(void *ctx,const CrumbDecryptMetrics *m);
   if(![self saveJSON:@{@"group":group,@"target":target.path} to:ledger]){result[@"code"]=@"grant_ledger_failed";return -256;}
   [self checkpoint:@"sandbox_extension" metrics:nil];
   BOOL alt=NSProcessInfo.processInfo.operatingSystemVersion.majorVersion==26 && [target.path containsString:@"/Containers/Shared/AppGroup/"];
+  struct stat targetStatus;errno=0;
+  int targetStat=lstat(target.fileSystemRepresentation,&targetStatus);
+  result[@"target_stat_result"]=@(targetStat);result[@"target_stat_errno"]=@(targetStat?errno:0);
+  if(atomic_load(&_cancelled))return -256;
   int64_t handle=worse_query(target.path,group,alt,false);result[@"result"]=@(handle);
   if(handle>=0){atomic_store(&processHasGrant,true);result[@"code"]=@"extension_consumed";}
   else result[@"code"]=@"extension_rejected";
@@ -235,7 +258,7 @@ static void native_checkpoint(void *ctx,const CrumbDecryptMetrics *m);
       [self checkpoint:@"image_result" metrics:record[@"native"]];
       // Detect replacement of the source while native work was in progress.
       if(result!=1 || ![[self hash:file] isEqual:hash]){success=NO;break;}
-      [receipts addObject:@{@"relative":image[@"relative"],@"image_sha256":hash,@"verified":@YES,@"pages_expected":@(metrics.pages_expected),@"pages_read":@(metrics.pages_read)}];
+      [receipts addObject:@{@"relative":image[@"relative"],@"image_sha256":hash,@"verified":@YES,@"page_size":@(getpagesize()),@"pages_expected":@(metrics.pages_expected),@"pages_read":@(metrics.pages_read)}];
       [outputs addObject:destination];index++;
     }
     if(!success || receipts.count!=[manifest[@"images"] count]){attempt[@"outcome"]=atomic_load(&_cancelled)?@"cancelled":@"incomplete";return NO;}
@@ -270,7 +293,7 @@ static void native_checkpoint(void *ctx,const CrumbDecryptMetrics *m);
   char model[256]={0};size_t modelSize=sizeof(model);sysctlbyname("hw.machine",model,&modelSize,NULL,0);
   char build[256]={0};size_t buildSize=sizeof(build);sysctlbyname("kern.osversion",build,&buildSize,NULL,0);
   self.report=[@{@"schema":@1,@"run_id":job,@"outcome":@"running",@"attempts":[NSMutableArray array],
-    @"environment":@{@"model":@(model),@"os":UIDevice.currentDevice.systemVersion,@"build":@(build),@"page_size":@(getpagesize()),
+    @"environment":@{@"model":@(model),@"os":os_version(),@"build":@(build),@"page_size":@(getpagesize()),
       @"crumb_build":[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"]?:@"unknown",
       @"worse_query_revision":@"d1540e20cd82b974d891e0551ced6d6aeb570ac2",@"baseline_contaminated":@(atomic_load(&processHasGrant))},
     @"daemon_observation":@"unavailable_without_external_trace",@"plaintext_authentication":@"not_established"} mutableCopy];
@@ -279,7 +302,7 @@ static void native_checkpoint(void *ctx,const CrumbDecryptMetrics *m);
   NSURL *active=[self.directory URLByAppendingPathComponent:@"active.json"];
   [self saveJSON:@{@"run_id":job} to:active];
   [fm createDirectoryAtURL:work withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0700} error:nil];
-  dispatch_async(dispatch_get_main_queue(),^{UIApplication.sharedApplication.idleTimerDisabled=YES;});
+  set_idle(YES);
   @try {
     [self checkpoint:@"archive_preparation" metrics:nil];
     NSDictionary *prep=[self archive:@{@"operation":@"prepare",@"work":[[work URLByAppendingPathComponent:@"archive"] path],@"ipa":ipa.path,@"bundle_id":bundleID}];
@@ -308,7 +331,7 @@ static void native_checkpoint(void *ctx,const CrumbDecryptMetrics *m);
       int64_t handle=[self grant:[NSURL fileURLWithPath:NSHomeDirectory() isDirectory:YES] group:group result:control];
       control[@"after"]=[self readCanary:canary expected:bytes];if(handle>=0)worse_query_release(handle);
       control[@"note"]=@"own_container_control_does_not_demonstrate_new_cross_app_access";self.report[@"canary"]=control;
-      if(handle>=0) {
+      if(!atomic_load(&_cancelled)) {
         if([self attempt:@"downloadedIPA" access:@"worseQuery" source:input manifest:manifest work:work group:group])return self.report;
         if(installed && [self attempt:@"installedApp" access:@"worseQuery" source:installed manifest:manifest work:work group:group])return self.report;
       }
@@ -333,12 +356,13 @@ static void native_checkpoint(void *ctx,const CrumbDecryptMetrics *m);
     if(!self.outputURL)self.report[@"outcome"]=atomic_load(&_cancelled)?@"cancelled_or_local_failure":@"no_verified_route";
   }@catch(NSException *e){(void)e;self.report[@"outcome"]=@"local_exception";}
   @finally {
-    if(atomic_load(&_cancelled) && self.outputURL) {
-      [fm removeItemAtURL:self.outputURL error:nil];self.outputURL=nil;self.report[@"outcome"]=@"cancelled_or_local_failure";
+    if(atomic_load(&_cancelled)) {
+      if(self.outputURL)[fm removeItemAtURL:self.outputURL error:nil];
+      self.outputURL=nil;self.report[@"outcome"]=@"cancelled_or_local_failure";
     }
     [self checkpoint:@"finished" metrics:nil];
     [fm removeItemAtURL:work error:nil];[fm removeItemAtURL:active error:nil];
-    dispatch_async(dispatch_get_main_queue(),^{UIApplication.sharedApplication.idleTimerDisabled=NO;});
+    set_idle(NO);
     self.progress=nil;
   }
   return self.report;

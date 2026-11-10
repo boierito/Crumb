@@ -183,3 +183,29 @@
 "Shared Keychain" = "Shared Keychain";
 "Push notifications" = "Push notifications";
 "Associated domains" = "Associated domains";
+
+/* In-process decryption experiment */
+"Try without helper" = "Try without helper";
+"Without helper" = "Without helper";
+"Tests decryption inside Crumb, without another app or a VPN. If the same version is installed, it is also checked automatically." = "Tests decryption inside Crumb, without another app or a VPN. If the same version is installed, it is also checked automatically.";
+"Keep Crumb open while the test runs. Signing into Crumb does not establish the iPhone’s App Store license." = "Keep Crumb open while the test runs. Signing into Crumb does not establish the iPhone’s App Store license.";
+"Share test report" = "Share test report";
+"Export verified IPA" = "Export verified IPA";
+"Preparing test" = "Preparing test";
+"Stopping after the current operation" = "Stopping after the current operation";
+"Checking the downloaded app" = "Checking the downloaded app";
+"Looking for the installed version" = "Looking for the installed version";
+"Checking file access" = "Checking file access";
+"Checking the original executable" = "Checking the original executable";
+"Preparing a local copy" = "Preparing a local copy";
+"Testing decryption" = "Testing decryption";
+"Verifying the result" = "Verifying the result";
+"Running local checks" = "Running local checks";
+"Downloaded IPA decrypted and verified without a helper." = "Downloaded IPA decrypted and verified without a helper.";
+"Decryption verified using the installed app. This route requires that installed version." = "Decryption verified using the installed app. This route requires that installed version.";
+"No working decryption route was established. Share the report to identify which checks failed." = "No working decryption route was established. Share the report to identify which checks failed.";
+"The IPA could not be prepared for this test. The report includes the failed stage." = "The IPA could not be prepared for this test. The report includes the failed stage.";
+"The previous test was interrupted. Its report preserves the last recorded operation." = "The previous test was interrupted. Its report preserves the last recorded operation.";
+"The test stopped before a complete result. The report preserves completed checks." = "The test stopped before a complete result. The report preserves completed checks.";
+"The test could not finish. Share its report for details." = "The test could not finish. Share its report for details.";
+" The verified IPA is available to export here." = " The verified IPA is available to export here.";

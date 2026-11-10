@@ -121,3 +121,29 @@
 "Shared Keychain" = "Llavero compartido";
 "Push notifications" = "Notificaciones push";
 "Associated domains" = "Dominios asociados";
+
+/* In-process decryption experiment */
+"Try without helper" = "Probar sin helper";
+"Without helper" = "Sin helper";
+"Tests decryption inside Crumb, without another app or a VPN. If the same version is installed, it is also checked automatically." = "Prueba el descifrado dentro de Crumb, sin otra app ni VPN. Si está instalada la misma versión, también se comprueba automáticamente.";
+"Keep Crumb open while the test runs. Signing into Crumb does not establish the iPhone’s App Store license." = "Mantén Crumb abierto durante la prueba. Iniciar sesión en Crumb no acredita la licencia de App Store del iPhone.";
+"Share test report" = "Compartir informe de prueba";
+"Export verified IPA" = "Exportar IPA verificada";
+"Preparing test" = "Preparando prueba";
+"Stopping after the current operation" = "Deteniendo tras la operación actual";
+"Checking the downloaded app" = "Comprobando la app descargada";
+"Looking for the installed version" = "Buscando la versión instalada";
+"Checking file access" = "Comprobando acceso a archivos";
+"Checking the original executable" = "Comprobando el ejecutable original";
+"Preparing a local copy" = "Preparando una copia local";
+"Testing decryption" = "Probando el descifrado";
+"Verifying the result" = "Verificando el resultado";
+"Running local checks" = "Ejecutando comprobaciones locales";
+"Downloaded IPA decrypted and verified without a helper." = "IPA descargada descifrada y verificada sin helper.";
+"Decryption verified using the installed app. This route requires that installed version." = "Descifrado verificado usando la app instalada. Esta vía requiere esa versión instalada.";
+"No working decryption route was established. Share the report to identify which checks failed." = "No se ha establecido una vía de descifrado funcional. Comparte el informe para identificar qué comprobaciones fallaron.";
+"The IPA could not be prepared for this test. The report includes the failed stage." = "No se pudo preparar la IPA para esta prueba. El informe incluye la etapa que falló.";
+"The previous test was interrupted. Its report preserves the last recorded operation." = "La prueba anterior se interrumpió. Su informe conserva la última operación registrada.";
+"The test stopped before a complete result. The report preserves completed checks." = "La prueba se detuvo antes de obtener un resultado completo. El informe conserva las comprobaciones realizadas.";
+"The test could not finish. Share its report for details." = "La prueba no pudo finalizar. Comparte su informe para ver los detalles.";
+" The verified IPA is available to export here." = " La IPA verificada está disponible aquí para exportarla.";

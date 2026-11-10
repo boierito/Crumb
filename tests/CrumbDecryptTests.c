@@ -40,6 +40,7 @@ int main(void){
     int result=crumb_decrypt_image(src,dst,&m,&h);
     if(mode==0 || mode==5){
       assert(result==1 && m.pages_read==2 && m.pages_expected==2 && m.changed_pages==2);
+      struct stat attributes;assert(stat(dst,&attributes)==0 && (attributes.st_mode & 0777)==0755);
       int fd=open(dst,O_RDONLY);assert(fd>=0);uint32_t cid=1;assert(pread(fd,&cid,4,48)==4 && cid==0);close(fd);unlink(dst);
       if(mode==5)assert(f.remaps==2 && m.signature_attempted);
     }else{assert(result==-1 && access(dst,F_OK)!=0);if(mode==1)assert(m.page_result==5 && m.pages_read==1);}

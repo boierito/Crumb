@@ -68,3 +68,15 @@ bundle them in a redistributed IPA. No such binaries have been copied here.
 - p12-keystore and other native dependencies retain their manifest licenses and
   exact locked versions. No FairPlayed source code is copied. Its public
   documentation informed the independent installed-resource experiment.
+
+## worse_query experiment
+
+forcequitOS/worse_query is pinned at d1540e20cd82b974d891e0551ced6d6aeb570ac2,
+Copyright 2026 Taj C (forcequit), GPL-3.0-or-later. The original headers are
+retained under Crumb/LocalProbe/Vendor and the license is bundled as
+Crumb/Resources/WorseQuery-COPYING.txt. Adaptations allow a known target's
+EPERM/EACCES metadata failure to proceed to the actual query without requesting
+creation, and free the query/restore Caches on the symlink-failure path.
+Crumb adds a dedicated-group, empty-Caches preflight and recovery ledger around
+the call. CI corresponding-source artifacts include these adapted files and
+the shared reader. Existing combined redistribution constraints above remain.

@@ -82,7 +82,7 @@ static int full_pwrite(int fd,const void *buf,size_t n,off_t off) {
     if(w<0 && errno==EINTR) continue;if(w<=0) {if(!w)errno=EIO;return -1;}p+=(size_t)w;}return 0;
 }
 int crumb_decrypt_image(const char *src,const char *dst,CrumbDecryptMetrics *m,const CrumbDecryptHooks *h) {
-  memset(m,0,sizeof(*m));m->remap_result=-1;m->signature_result=-1;
+  memset(m,0,sizeof(*m));m->remap_result=-1;m->signature_result=-1;m->first_remap_result=-1;
   int fd=-1,out=-1,result=-1;bool created=false;uint8_t *map=MAP_FAILED,*plain=NULL,*cipher=NULL;size_t size=0;
   if(!checkpoint(m,h,CRUMB_OPEN))goto done;
   fd=open(src,O_RDONLY|O_NOFOLLOW|O_CLOEXEC);if(fd<0){m->error_code=errno;goto done;}
@@ -125,6 +125,8 @@ int crumb_decrypt_image(const char *src,const char *dst,CrumbDecryptMetrics *m,c
     m->remap_attempted=true;errno=0;
     m->remap_result=(h && h->remap?h->remap:native_remap)(h?h->context:NULL,map+enc.offset,enc.length,enc.cpu,enc.subtype);
     m->remap_errno=m->remap_result?errno:0;
+    m->remap_attempts++;
+    if(attempt==0){m->first_remap_result=m->remap_result;m->first_remap_errno=m->remap_errno;}
     if(!m->remap_result)break;
   }
   if(m->remap_result){m->error_code=m->remap_errno;goto done;}

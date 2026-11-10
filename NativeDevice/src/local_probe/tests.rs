@@ -92,7 +92,7 @@ fn synthesize(f: &Fixture, m: &Value) -> Value {
         b[off..off + len].fill(0x42);
         b[cmd..cmd + 4].fill(0);
         fs::write(p, b).unwrap();
-        receipts.push(json!({"relative":image["relative"],"image_sha256":image["sha256"],"verified":true,"pages_expected":1,"pages_read":1}));
+        receipts.push(json!({"relative":image["relative"],"image_sha256":image["sha256"],"verified":true,"page_size":4096,"pages_expected":1,"pages_read":1}));
     }
     json!({"operation":"finalize","work":f.work(),"receipts":receipts})
 }
@@ -270,4 +270,56 @@ fn cancellation_halts_before_archive_work() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn ffi_failure_report_never_exposes_private_paths() {
+    let request=std::ffi::CString::new(r#"{"operation":"prepare","work":"/does-not-exist/private-license-account-id","ipa":"/private-secret.ipa"}"#).unwrap();
+    let response = unsafe { crumb_probe_archive(request.as_ptr(), std::ptr::null_mut(), None) };
+    let text = unsafe { std::ffi::CStr::from_ptr(response) }
+        .to_str()
+        .unwrap()
+        .to_owned();
+    unsafe { crate::crumb_device_string_free(response) };
+    assert!(!text.contains("private-license-account-id") && !text.contains("private-secret"));
+    let report: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(report["ok"], false);
+    assert_eq!(report["reason"], "file_io_failed");
+}
+#[test]
+fn page_receipts_are_bound_to_geometry_and_verified_images() {
+    for mode in 0..3 {
+        let f = Fixture::new();
+        zip_fixture(&f, &[]);
+        let m = prepare_fixture(&f);
+        let mut request = synthesize(&f, &m);
+        match mode {
+            0 => request["receipts"][0]["page_size"] = json!(3),
+            1 => request["receipts"][0]["pages_read"] = json!(0),
+            _ => request["receipts"][0]["verified"] = json!(false),
+        }
+        assert!(finalize(&request, &control()).is_err());
+        assert!(!f.work().join("result.ipa").exists());
+    }
+}
+#[test]
+fn distinct_original_licenses_do_not_get_guessed_for_replication() {
+    let f = Fixture::new();
+    let manifest=b"<plist version=\"1.0\"><dict><key>SinfPaths</key><array><string>SC_Info/Main.sinf</string><string>SC_Info/Other.sinf</string></array><key>SinfReplicationPaths</key><array><string>PlugIns/Widget.appex/SC_Info/Widget.sinf</string></array></dict></plist>";
+    zip_fixture(
+        &f,
+        &[
+            (
+                "Payload/Test.app/SC_Info/Other.sinf",
+                b"different-original-license",
+            ),
+            ("Payload/Test.app/SC_Info/Manifest.plist", manifest),
+        ],
+    );
+    let error = prepare(
+        &json!({"work":f.work(),"ipa":f.ipa(),"bundle_id":"test.app"}),
+        &control(),
+    )
+    .unwrap_err();
+    assert_eq!(error_reason(&error), "license_replication_ambiguous");
 }

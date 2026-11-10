@@ -8,6 +8,7 @@ typedef enum {
 } CrumbDecryptStage;
 typedef struct {
   int stage, error_code, signature_result, signature_errno, remap_result, remap_errno;
+  int first_remap_result, first_remap_errno, remap_attempts;
   int page_result, read_errno, write_errno, cancelled;
   uint64_t pages_expected, pages_read, first_fail_offset, changed_pages;
   uint64_t oldwords, newwords;

@@ -166,7 +166,7 @@ struct DownloadedAppsView: View {
                         Button("Decrypt and install") { device.decrypt(record,install:true) }
                     }
                     if !record.isDecrypted {
-                        Button("Try without helper") { probeRecord = record }
+                        Button("Try without helper".localized) { probeRecord = record }
                             .disabled(localProbe.busy || device.busy || device.waitingForHelper)
                     }
                     Button("Delete",role:.destructive) { requestDeletion(record) }

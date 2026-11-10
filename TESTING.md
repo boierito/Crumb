@@ -291,3 +291,18 @@ policy are unchanged; compare cold preparation separately from verification.
 Local Swift fixture validation: 60 targeted tests passed (37 authentication,
 12 form-state, 11 SAP). Full macOS/iOS CI results are attached to the build;
 fixture responses and signatures are synthetic and do not demonstrate live login.
+
+## In-process worse_query experiment
+
+See [WORSE_QUERY_NO_HELPER.md](docs/WORSE_QUERY_NO_HELPER.md) for the evidence,
+phone-only acceptance procedure and report interpretation. Portable checks:
+
+```sh
+cargo test --locked --manifest-path NativeDevice/Cargo.toml
+python3 scripts/test-local-probe-reader.py
+```
+
+C callbacks and Rust plaintext replay are synthetic boundary tests. macOS CI
+also tests interruption recovery, isolated cleanup and report redaction with a
+stubbed archive ABI, compiles the real probe against the iOS SDK and builds both
+IPA configurations. None of these establishes fresh physical FairPlay success.

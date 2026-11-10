@@ -151,12 +151,16 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         return value
     }
     func pair() {
+        guard !LocalProbeCoordinator.shared.busy else { errorMessage = "Finish the local test first."; return }
         guard Self.pairingSupported else { message = "On-device pairing is enabled only for iOS 27.0–27.0.1 in this build."; return }
         connected = false
         var request = (try? credentials()) ?? [:]; request["operation"] = "pair"
         start(request)
     }
-    func verify() { deviceOperation("verify") }
+    func verify() {
+        guard !LocalProbeCoordinator.shared.busy else { errorMessage = "Finish the local test first."; return }
+        deviceOperation("verify")
+    }
     var ready: Bool { paired && signingReady }
     var activityTitle: String {
         if busy && lastRequest["operation"] as? String == "fetch" { return "Saving app" }
@@ -174,6 +178,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         connected = false
     }
     func autoConnect() {
+        guard !LocalProbeCoordinator.shared.busy else { return }
         guard connectionPolicy.shouldCheck(paired: paired, busy: busy, connected: connected,
             cellular: onCellular, helperPending: waitingForHelper || resultRequest.requested || signingContext != nil || signedInstallation != nil) else { return }
         verify()
@@ -249,6 +254,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         catch { cleanup(); errorMessage = error.localizedDescription }
     }
     func decrypt(_ record: DownloadRecord, install: Bool = false) {
+        guard !LocalProbeCoordinator.shared.busy else { errorMessage = "Finish the local test first."; return }
         guard (!busy || lastRequest["operation"] as? String == "verify"), !waitingForHelper, signingContext == nil, signedInstallation == nil else { errorMessage = "Finish the current app first."; return }
         guard Self.decryptSupported else { errorMessage = "Decryption is supported on iOS 27.0.1. Pairing on other versions does not enable this method."; return }
         queuedRecord = record; installAfterDecrypt = install
@@ -266,6 +272,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         prepare(record, password:signingPassword)
     }
     func install(_ record: DownloadRecord, review: Bool = false) {
+        guard !LocalProbeCoordinator.shared.busy else { errorMessage = "Finish the local test first."; return }
         // Installing a local decrypted IPA does not require a VPN proof probe.
         if busy && lastRequest["operation"] as? String == "verify" && queuedRecord == nil && queuedInstall == nil && !waitingForHelper {
             stopDecryption(notifyHelper:false)
@@ -335,6 +342,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         } catch { errorMessage = error.localizedDescription }
     }
     func prepare(_ record: DownloadRecord, password: String) {
+        guard !LocalProbeCoordinator.shared.busy else { errorMessage = "Finish the local test first."; return }
         guard !busy, connected, Self.decryptSupported else { activeRecord = nil; errorMessage = "Connect the decrypter on iOS 27.0.1 first."; return }
         do {
             guard let ipa = record.fileURL, let template = Bundle.main.url(forResource: "CrumbDecryptTemplate", withExtension: "zip"),
