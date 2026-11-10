@@ -20,241 +20,26 @@ static atomic_bool jobCancelled = false;
 #import <unistd.h>
 #import <zlib.h>
 
-static int remap_image(void *address, size_t length, uint32_t cpu,
-                       uint32_t subtype) {
-  typedef int (*Remap)(void *, size_t, uint32_t, uint32_t, uint32_t);
-  Remap symbol = (Remap)dlsym(RTLD_DEFAULT, "mremap_encrypted");
-  if (symbol)
-    return symbol(address, length, 2, cpu, subtype);
-#if defined(__arm64__)
-  register uint64_t arg0 __asm__("x0") = (uint64_t)address;
-  register uint64_t arg1 __asm__("x1") = length;
-  register uint64_t arg2 __asm__("x2") = 2;
-  register uint64_t arg3 __asm__("x3") = cpu;
-  register uint64_t arg4 __asm__("x4") = subtype;
-  register uint64_t number __asm__("x16") = 489;
-  uint64_t failed;
-  __asm__ volatile("svc #0x80\n\tcset %[failed], cs"
-                   : "+r"(arg0), "+r"(arg1), [failed] "=r"(failed)
-                   : "r"(arg2), "r"(arg3), "r"(arg4), "r"(number)
-                   : "memory", "cc");
-  if (failed) {
-    errno = (int)arg0;
-    return -1;
-  }
-  return (int)arg0;
-#else
-  return -1;
-#endif
-}
+#import "../SharedDecrypt/CrumbDecrypt.h"
 static NSError *failure(NSString *s) {
-  return [NSError errorWithDomain:@"CrumbDecrypt"
-                             code:1
-                         userInfo:@{NSLocalizedDescriptionKey : s}];
+  return [NSError errorWithDomain:@"CrumbDecrypt" code:1
+                         userInfo:@{NSLocalizedDescriptionKey:s}];
 }
-static NSError *file_failure(NSString *operation, CrumbFileAccess status) {
-  NSString *details =
-      status.metadata_available
-          ? [NSString stringWithFormat:@"; mode %04o, uid %u, gid %u",
-                                       status.mode & 07777, status.owner,
-                                       status.group]
-          : @"; metadata unavailable";
-  NSString *message = [NSString
-      stringWithFormat:@"%@: %s (errno %d%@).", operation,
-                       strerror(status.error_code), status.error_code, details];
-  return [NSError errorWithDomain:NSPOSIXErrorDomain
-                             code:status.error_code
-                         userInfo:@{NSLocalizedDescriptionKey : message}];
+static bool helper_cancelled(void *unused) {
+  (void)unused; return atomic_load(&jobCancelled);
 }
-static uint32_t codewords(const uint8_t *b, size_t n) {
-  uint32_t count = 0, w;
-  for (size_t p = 0; p + 4 <= n; p += 4) {
-    memcpy(&w, b + p, 4);
-    if (w == 0xd65f03c0 || w == 0xd503237f || w == 0xd65f0fff)
-      count++;
-  }
-  return count;
-}
-static double histogram_entropy(uint64_t h[256], size_t n) {
-  double e = 0;
-  for (int i = 0; i < 256; i++)
-    if (h[i]) {
-      double p = (double)h[i] / n;
-      e -= p * log2(p);
-    }
-  return e;
-}
-// Register the original Apple signature when present. The source stays
-// read-only; this does not sign or alter the target. FairPlay still decides
-// license access.
-static BOOL register_signature(int fd, const uint8_t *header, size_t size) {
-  uint32_t count = 0;
-  memcpy(&count, header + 16, 4);
-  size_t pos = 32;
-  for (uint32_t i = 0; i < count; i++) {
-    uint32_t command = 0, length = 0;
-    memcpy(&command, header + pos, 4);
-    memcpy(&length, header + pos + 4, 4);
-    if (command == 0x1d && length >= 16) {
-      uint32_t offset = 0, bytes = 0;
-      memcpy(&offset, header + pos + 8, 4);
-      memcpy(&bytes, header + pos + 12, 4);
-      if (offset > size || bytes > size - offset || !bytes)
-        return NO;
-      fsignatures_t signatures = {.fs_file_start = 0,
-                                  .fs_blob_start = (void *)(uintptr_t)offset,
-                                  .fs_blob_size = bytes};
-      return fcntl(fd, F_ADDFILESIGS_RETURN, &signatures) == 0;
-    }
-    pos += length;
-  }
-  return NO;
-}
-static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
-                    NSError **error) {
-  if (atomic_load(&jobCancelled)) { *error = failure(@"Cancelled"); return NO; }
-  CrumbFileAccess access;
-  int fd = crumb_open_installed_image(source.fileSystemRepresentation, &access);
-  if (fd < 0) {
-    *error = file_failure(@"Cannot open installed image", access);
-    return NO;
-  }
-  struct stat st;
-  int inspected = fstat(fd, &st);
-  if (inspected || st.st_size < 0) {
-    access.error_code = inspected ? errno : EFBIG;
-    close(fd);
-    *error = file_failure(@"Cannot inspect installed image", access);
-    return NO;
-  }
-  size_t size = (size_t)st.st_size;
-  if (!size) {
-    close(fd);
-    return [NSFileManager.defaultManager copyItemAtURL:source
-                                                 toURL:dest
-                                                 error:error];
-  }
-  uint8_t *map = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
-  if (map == MAP_FAILED) {
-    access.error_code = errno;
-    close(fd);
-    *error = file_failure(@"Cannot map installed image", access);
-    return NO;
-  }
-  CrumbEncryption enc = {0};
-  int kind = crumb_macho(map, size, &enc);
-  *encrypted = kind == 1;
-  if (kind < 0) {
-    munmap(map, size);
-    close(fd);
-    *error = failure(@"Malformed or unsupported Mach-O (thin arm64 required).");
-    return NO;
-  }
-  if (!kind) {
-    munmap(map, size);
-    close(fd);
-    return [NSFileManager.defaultManager copyItemAtURL:source
-                                                 toURL:dest
-                                                 error:error];
-  }
-  size_t pg = (size_t)getpagesize();
-  if (enc.offset % pg) {
-    munmap(map, size);
-    close(fd);
-    *error = failure(@"Encrypted range is not page aligned.");
-    return NO;
-  }
-  if (![NSFileManager.defaultManager copyItemAtURL:source
-                                             toURL:dest
-                                             error:error]) {
-    munmap(map, size);
-    close(fd);
-    return NO;
-  }
-  // Installed resources may be read-only. Only the data-container copy is made
-  // writable.
-  if (![NSFileManager.defaultManager setAttributes:@{
-        NSFilePosixPermissions : @(0700)
-      }
-                                      ofItemAtPath:dest.path
-                                             error:error]) {
-    munmap(map, size);
-    close(fd);
-    return NO;
-  }
-  int out = open(dest.fileSystemRepresentation, O_WRONLY | O_NOFOLLOW);
-  if (out < 0) {
-    munmap(map, size);
-    close(fd);
-    *error = failure(@"Cannot create decrypted image.");
-    return NO;
-  }
-  if (register_signature(fd, map, size)) {
-    munmap(map, size);
-    map = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
-  }
-  errno = 0;
-  int remap_status =
-      (map == MAP_FAILED || atomic_load(&jobCancelled))
-          ? -1
-          : remap_image(map + enc.offset, enc.length, enc.cpu, enc.subtype);
-  int remap_errno = errno;
-  int page_status = 0;
-  BOOL ok = map != MAP_FAILED && remap_status == 0;
-  uint8_t *plain = malloc(pg), *cipher = malloc(pg);
-  uint64_t before[256] = {0}, after[256] = {0};
-  uint64_t oldwords = 0, newwords = 0;
-  BOOL changed = NO;
-  if (!plain || !cipher)
-    ok = NO;
-  for (size_t p = 0; ok && p < enc.length; p += pg) {
-    if (atomic_load(&jobCancelled)) { ok = NO; break; }
-    size_t len = MIN(pg, enc.length - p);
-    vm_size_t got = 0;
-    kern_return_t kr = vm_read_overwrite(mach_task_self(),
-                                         (vm_address_t)(map + enc.offset + p),
-                                         len, (vm_address_t)plain, &got);
-    if (kr != KERN_SUCCESS || got != len ||
-        pread(fd, cipher, len, enc.offset + p) != (ssize_t)len) {
-      page_status = (int)kr;
-      ok = NO;
-      break;
-    }
-    changed |= memcmp(cipher, plain, len) != 0;
-    oldwords += codewords(cipher, len);
-    newwords += codewords(plain, len);
-    for (size_t i = 0; i < len; i++) {
-      before[cipher[i]]++;
-      after[plain[i]]++;
-    }
-    if (pwrite(out, plain, len, enc.offset + p) != (ssize_t)len) {
-      ok = NO;
-      break;
-    }
-  }
-  free(plain);
-  free(cipher);
-  if (map != MAP_FAILED)
-    munmap(map, size);
-  close(fd);
-  // Conservative heuristics supplement complete fault-free FairPlay page reads.
-  ok = ok && !atomic_load(&jobCancelled) && changed && histogram_entropy(before, enc.length) > 7.9 &&
-       histogram_entropy(after, enc.length) < 7.5 && newwords > oldwords;
-  if (ok) {
-    uint32_t zero = 0;
-    ok = pwrite(out, &zero, 4, enc.command) == 4;
-  }
-  if (ok)
-    ok = fsync(out) == 0;
-  close(out);
-  if (!ok) {
-    [NSFileManager.defaultManager removeItemAtURL:dest error:nil];
-    *error = failure([NSString
-        stringWithFormat:@"FairPlay verification failed (remap %d, errno %d, "
-                         @"page %d). Check the licensed device account.",
-                         remap_status, remap_errno, page_status]);
-  }
-  return ok;
+static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted, NSError **error) {
+  CrumbDecryptMetrics metrics;
+  CrumbDecryptHooks hooks={.cancelled=helper_cancelled};
+  int status=crumb_decrypt_image(source.fileSystemRepresentation,
+                               dest.fileSystemRepresentation,&metrics,&hooks);
+  *encrypted=metrics.encrypted;
+  if(status<0 && error) *error=failure([NSString stringWithFormat:
+      @"Decryption failed (stage %d, errno %d, remap %d/%d, pages %llu/%llu, Mach %d).",
+      metrics.stage,metrics.error_code,metrics.remap_result,metrics.remap_errno,
+      (unsigned long long)metrics.pages_read,(unsigned long long)metrics.pages_expected,
+      metrics.page_result]);
+  return status>=0;
 }
 @interface CrumbHelper : UIViewController
 @property(nonatomic, strong) UILabel *label;

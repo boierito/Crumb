@@ -11,7 +11,7 @@ rm -rf "$HELPER"
 rm -f build/Native/CrumbDecryptTemplate.zip
 mkdir -p "$HELPER"
 xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.4 -Os -fobjc-arc \
-  -framework UIKit -framework Foundation -framework CoreGraphics -lz DecryptHelper/main.m DecryptHelper/CrumbJobControl.m DecryptHelper/CrumbMachO.c DecryptHelper/CrumbFileAccess.c DecryptHelper/CrumbLicenseResources.m DecryptHelper/CrumbIPAArchive.m -o "$HELPER/CrumbDecrypt"
+  -framework UIKit -framework Foundation -framework CoreGraphics -lz DecryptHelper/main.m DecryptHelper/CrumbJobControl.m DecryptHelper/CrumbMachO.c SharedDecrypt/CrumbDecrypt.c DecryptHelper/CrumbFileAccess.c DecryptHelper/CrumbLicenseResources.m DecryptHelper/CrumbIPAArchive.m -o "$HELPER/CrumbDecrypt"
 sips -z 120 120 branding/Crumb-AppIcon-1024.png --out "$HELPER/Icon60@2x.png" >/dev/null
 sips -z 180 180 branding/Crumb-AppIcon-1024.png --out "$HELPER/Icon60@3x.png" >/dev/null
 sips -z 152 152 branding/Crumb-AppIcon-1024.png --out "$HELPER/Icon76@2x.png" >/dev/null

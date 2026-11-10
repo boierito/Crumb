@@ -15,11 +15,15 @@ fn input<'a>(v: &'a Value, key: &str) -> Result<&'a str> {
     v[key].as_str().with_context(|| format!("Missing {key}"))
 }
 pub(super) fn extract(ipa: &Path, dest: &Path) -> Result<()> {
+    extract_checked(ipa, dest, || Ok(()))
+}
+pub(super) fn extract_checked(ipa: &Path, dest: &Path, check: impl Fn() -> Result<()>) -> Result<()> {
     let mut z = ZipArchive::new(fs::File::open(ipa)?)?;
     ensure!(z.len() <= 100000, "Too many archive entries");
     let mut total = 0u64;
     let mut names = std::collections::HashSet::new();
     for i in 0..z.len() {
+        check()?;
         let mut f = z.by_index(i)?;
         ensure!(!f.is_symlink(), "Archive links are unsupported");
         let relative = f.enclosed_name().context("Unsafe archive path")?;
@@ -45,7 +49,17 @@ pub(super) fn extract(ipa: &Path, dest: &Path) -> Result<()> {
             .write(true)
             .create_new(true)
             .open(&path)?;
-        let size = std::io::copy(&mut (&mut f).take(MAX_BYTES + 1), &mut out)?;
+        ensure!(f.size() <= 512 * 1024 * 1024, "Archive file exceeds 512 MiB");
+        let mut size = 0u64;
+        let mut buffer = [0u8; 65536];
+        loop {
+            check()?;
+            let n = f.read(&mut buffer)?;
+            if n == 0 { break; }
+            size += n as u64;
+            ensure!(size <= f.size(), "Archive entry exceeds declared size");
+            out.write_all(&buffer[..n])?;
+        }
         ensure!(size == f.size(), "Archive entry size mismatch");
         #[cfg(unix)]
         {

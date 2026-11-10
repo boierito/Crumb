@@ -1,4 +1,5 @@
 mod entitlement_der;
+mod local_probe;
 mod package;
 mod resign;
 mod signing;

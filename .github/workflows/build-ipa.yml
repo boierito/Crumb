@@ -2,7 +2,7 @@ name: Build IPA
 on:
   push:
     # Feature commits build via pull_request; avoid push/PR macOS cancellation races.
-    branches: [main, 'release/**', 'fix/**']
+    branches: [main, 'release/**', 'fix/**', 'experiment/worse-query-no-helper']
     tags: ['v*']
   pull_request:
   workflow_dispatch:
@@ -43,7 +43,9 @@ jobs:
         with:
           targets: aarch64-apple-ios
       - name: Compile and link helper against the iOS SDK
-        run: xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.4 -fobjc-arc -framework UIKit -framework Foundation -framework CoreGraphics -lz DecryptHelper/main.m DecryptHelper/CrumbJobControl.m DecryptHelper/CrumbMachO.c DecryptHelper/CrumbFileAccess.c DecryptHelper/CrumbLicenseResources.m DecryptHelper/CrumbIPAArchive.m -o "$RUNNER_TEMP/CrumbDecrypt-link-check"
+        run: xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.4 -fobjc-arc -framework UIKit -framework Foundation -framework CoreGraphics -lz DecryptHelper/main.m DecryptHelper/CrumbJobControl.m DecryptHelper/CrumbMachO.c SharedDecrypt/CrumbDecrypt.c DecryptHelper/CrumbFileAccess.c DecryptHelper/CrumbLicenseResources.m DecryptHelper/CrumbIPAArchive.m -o "$RUNNER_TEMP/CrumbDecrypt-link-check"
+      - name: Compile in-process probe against the iOS SDK
+        run: xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.4 -fobjc-arc -fsyntax-only Crumb/LocalProbe/CrumbLocalProbe.m Crumb/LocalProbe/Vendor/worse_query.m
       - name: Test helper cancellation and restart isolation
         run: |
           xcrun --sdk macosx clang -fobjc-arc -framework Foundation tests/CrumbJobControlTests.m DecryptHelper/CrumbJobControl.m -o "$RUNNER_TEMP/CrumbJobControlTests"
@@ -69,6 +71,7 @@ jobs:
           python3 scripts/verify-crumb-branding.py
           mkdir -p artifacts
           cargo test --locked --manifest-path NativeDevice/Cargo.toml
+          python3 scripts/test-local-probe-reader.py
           python3 scripts/test-device-macho.py
           python3 scripts/test-device-file-access.py
           python3 scripts/test-file-picker-injection.py
@@ -91,7 +94,7 @@ jobs:
           if [ -f scripts/verify-ipa.py ]; then
             python3 scripts/verify-ipa.py "artifacts/Crumb-$CONFIGURATION.ipa" | tee "artifacts/verification-$CONFIGURATION.json"
           fi
-          tar --exclude=target -czf artifacts/crumb-device-corresponding-source.tar.gz NativeDevice DecryptHelper scripts/build-device-native.sh
+          tar --exclude=target -czf artifacts/crumb-device-corresponding-source.tar.gz NativeDevice DecryptHelper SharedDecrypt Crumb/LocalProbe scripts/build-device-native.sh
           if [ -f build/Native/unicorn-tci-corresponding-source.tar.gz ]; then
             cp build/Native/unicorn-tci-corresponding-source.tar.gz artifacts/
             cp build/Native/UNICORN-COPYING artifacts/

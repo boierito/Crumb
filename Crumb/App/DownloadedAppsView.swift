@@ -7,6 +7,8 @@ struct DownloadedAppsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var device = DeviceWorkflow.shared
+    @StateObject private var localProbe = LocalProbeCoordinator.shared
+    @State private var probeRecord: DownloadRecord?
     @State private var deletion: DownloadRecord?
     @State private var signingDetails: DownloadRecord?
     @State private var confirmDeleteAll = false
@@ -70,6 +72,9 @@ struct DownloadedAppsView: View {
                         }
                     }
                 }
+                if localProbe.busy {
+                    Section { HStack { ProgressView(); Text(localProbe.stage); Spacer(); Button("Stop", role:.destructive) { localProbe.stop() } } }
+                }
                 Section("Encrypted") {
                     let records = appData.completedDownloads.filter { !$0.isDecrypted }
                     if records.isEmpty { Text("No encrypted apps").foregroundStyle(.secondary) }
@@ -83,7 +88,7 @@ struct DownloadedAppsView: View {
                 if !appData.completedDownloads.isEmpty || appData.downloadedIPAURL != nil {
                     Section {
                         Button("Delete all downloads", role: .destructive) { confirmDeleteAll = true }
-                            .disabled(appData.isDowngrading)
+                            .disabled(appData.isDowngrading || localProbe.busy)
                     }
                 }
             }
@@ -94,6 +99,7 @@ struct DownloadedAppsView: View {
                 if !embedded { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
             }
 
+            .sheet(item:$probeRecord) { record in LocalProbeView(record:record) }
             .sheet(item:$signingDetails) { record in
                 NavigationStack {
                     if let summary = record.lastSigning { SigningDetailsView(summary:summary).toolbar { ToolbarItem(placement:.confirmationAction) { Button("Done") { signingDetails = nil } } } }
@@ -159,6 +165,10 @@ struct DownloadedAppsView: View {
                         Button("Decrypt") { device.decrypt(record) }
                         Button("Decrypt and install") { device.decrypt(record,install:true) }
                     }
+                    if !record.isDecrypted {
+                        Button("Try without helper") { probeRecord = record }
+                            .disabled(localProbe.busy || device.busy || device.waitingForHelper)
+                    }
                     Button("Delete",role:.destructive) { requestDeletion(record) }
                 } label: { Image(systemName:"ellipsis").frame(width:44,height:44) }
                     .accessibilityLabel("Options for \(record.appName)")
@@ -171,6 +181,7 @@ struct DownloadedAppsView: View {
                 }
             }.buttonStyle(.bordered).controlSize(.regular)
         }
+        .disabled(localProbe.busy)
         .padding(.vertical,8)
         .swipeActions(allowsFullSwipe:false) {
             Button { requestDeletion(record) } label: { Label("Delete",systemImage:"trash") }.tint(.red)
