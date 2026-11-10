@@ -62,3 +62,9 @@ On-device signing: apple-codesign-quick 0.1.0, LGPL-2.1-or-later;
 modified to seal EmbeddedPayload as resources without re-signing its dylibs.
 Corresponding source, license and rebuild scripts: boierito/Crumb,
 NativeDevice/vendor/apple-codesign-quick. See THIRD_PARTY_NOTICES.md.
+
+Experimental worse_query integration
+Copyright 2026 Taj C (forcequit), GPL-3.0-or-later.
+Pinned upstream: forcequitOS/worse_query d1540e20cd82b974d891e0551ced6d6aeb570ac2.
+Crumb adapts the query wrapper to a separate journalled cache transaction.
+See the bundled WorseQuery-COPYING.txt and corresponding source artifacts.

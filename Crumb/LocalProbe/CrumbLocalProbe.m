@@ -1,5 +1,6 @@
 #import "CrumbLocalProbe.h"
 #import "../../SharedDecrypt/CrumbDecrypt.h"
+#import "../../SharedDecrypt/CrumbCacheLease.h"
 #import "../../NativeDevice/include/CrumbDevice.h"
 #import "Vendor/worse_query.h"
 #import <CommonCrypto/CommonDigest.h>
@@ -67,6 +68,8 @@ static NSDictionary *metrics_json(const CrumbDecryptMetrics *m) {
 @property(nonatomic) NSMutableDictionary *report;
 @property(nonatomic, copy) void (^progress)(NSString *);
 @property(nonatomic) NSString *lastProgress;
+- (NSArray *)effectiveGroups;
+- (NSURL *)groupRoot:(NSString *)group;
 @end
 static bool cancelled(void *ctx) {return atomic_load(&((__bridge CrumbLocalProbe *)ctx)->_cancelled);}
 static void native_checkpoint(void *ctx,const CrumbDecryptMetrics *m);
@@ -111,6 +114,40 @@ static void native_checkpoint(void *ctx,const CrumbDecryptMetrics *m);
     NSURL *sharedRoot=[fm containerURLForSecurityApplicationGroupIdentifier:sharedGroup];
     if(sharedRoot && remove_owned([sharedRoot URLByAppendingPathComponent:sharedName]))[fm removeItemAtURL:sharedLedger error:nil];
   }else if(!sharedState)[fm removeItemAtURL:sharedLedger error:nil];
+  NSURL *leaseLedger=[self.directory URLByAppendingPathComponent:@"group-lease.json"];
+  NSDictionary *leaseState=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfURL:leaseLedger]?:[NSData data] options:0 error:nil];
+  if(leaseState) {
+    NSString *group=leaseState[@"group"], *identifier=leaseState[@"identifier"], *target=leaseState[@"target"];
+    NSArray *effective=[self effectiveGroups];
+    if([group isKindOfClass:NSString.class] && [effective containsObject:group] &&
+       [identifier isKindOfClass:NSString.class] && [[NSUUID alloc]initWithUUIDString:identifier] &&
+       [target isKindOfClass:NSString.class]) {
+      NSURL *root=[self groupRoot:group];
+      NSURL *stage=[[self.directory URLByAppendingPathComponent:@"cache-links"] URLByAppendingPathComponent:identifier];
+      CrumbCacheLease lease={.lock_fd=-1};
+      if(root && root.path.length<PATH_MAX && target.length<PATH_MAX && stage.path.length<PATH_MAX) {
+        snprintf(lease.root,sizeof(lease.root),"%s",root.fileSystemRepresentation);
+        snprintf(lease.target,sizeof(lease.target),"%s",target.fileSystemRepresentation);
+        snprintf(lease.staging,sizeof(lease.staging),"%s",stage.fileSystemRepresentation);
+        snprintf(lease.identifier,sizeof(lease.identifier),"%s",identifier.UTF8String);
+        lease.had_caches=[leaseState[@"had_caches"] boolValue];
+        lease.original_device=[leaseState[@"original_device"] unsignedLongLongValue];
+        lease.original_inode=[leaseState[@"original_inode"] unsignedLongLongValue];
+        lease.link_device=[leaseState[@"link_device"] unsignedLongLongValue];
+        lease.link_inode=[leaseState[@"link_inode"] unsignedLongLongValue];
+        if(crumb_cache_restore(&lease)==0)[fm removeItemAtURL:leaseLedger error:nil];
+      }
+    }
+  }
+  if(![fm fileExistsAtPath:leaseLedger.path]) {
+    NSURL *links=[self.directory URLByAppendingPathComponent:@"cache-links"];
+    for(NSURL *url in [fm contentsOfDirectoryAtURL:links includingPropertiesForKeys:nil options:0 error:nil]) {
+      if([[NSUUID alloc]initWithUUIDString:url.lastPathComponent]) {
+        struct stat status;
+        if(lstat(url.fileSystemRepresentation,&status)==0 && S_ISLNK(status.st_mode))unlink(url.fileSystemRepresentation);
+      }
+    }
+  }
   // Only UUID job directories in our own private root are reaped.
   NSURL *runs=[self.directory URLByAppendingPathComponent:@"runs"];
   for(NSURL *url in [fm contentsOfDirectoryAtURL:runs includingPropertiesForKeys:nil options:0 error:nil])
@@ -168,39 +205,87 @@ static void native_checkpoint(void *ctx,const CrumbDecryptMetrics *m);
   if(fd>=0){uint8_t b[64];ssize_t n=read(fd,b,sizeof(b));matches=n==(ssize_t)expected.length && memcmp(b,expected.bytes,expected.length)==0;close(fd);}
   return @{@"open":@(fd>=0),@"errno":@(code),@"matches":@(matches)};
 }
+- (NSURL *)groupRoot:(NSString *)group {
+  return [NSFileManager.defaultManager containerURLForSecurityApplicationGroupIdentifier:group];
+}
+- (NSString *)selectGroup:(NSArray *)effective diagnostics:(NSMutableDictionary *)result root:(NSURL *__autoreleasing *)selectedRoot {
+  NSString *expected=[NSString stringWithFormat:@"group.%@.worsequery",NSBundle.mainBundle.bundleIdentifier];
+  NSMutableSet *valid=[NSMutableSet set];
+  NSCharacterSet *invalid=[[NSCharacterSet characterSetWithCharactersInString:@"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.-"] invertedSet];
+  for(id value in effective) {
+    if([value isKindOfClass:NSString.class] && [value hasPrefix:@"group."] && [value length]>6 &&
+       [value length]<256 && [value rangeOfCharacterFromSet:invalid].location==NSNotFound &&
+       ![value containsString:@".."] && ![value hasSuffix:@"."])[valid addObject:value];
+  }
+  NSArray *groups=[[valid allObjects] sortedArrayUsingComparator:^NSComparisonResult(NSString *a,NSString *b) {
+    int rankA=[a isEqual:expected]?0:([a hasSuffix:@".worsequery"]?1:2);
+    int rankB=[b isEqual:expected]?0:([b hasSuffix:@".worsequery"]?1:2);
+    return rankA==rankB?[a compare:b]:(rankA<rankB?NSOrderedAscending:NSOrderedDescending);
+  }];
+  result[@"entitlements_readable"]=@(effective!=nil);
+  result[@"effective_group_count"]=@(effective.count);
+  result[@"dedicated_group_authorized"]=@([valid containsObject:expected]);
+  result[@"selected_group_authorized"]=@NO;result[@"container_available"]=@NO;
+  result[@"payload_storage"]=@"private_container_only";
+  NSMutableArray *checks=[NSMutableArray array];result[@"candidates"]=checks;
+  NSString *selected=nil;NSUInteger accessible=0,eligible=0,index=0;
+  for(NSString *group in groups) {
+    NSURL *root=[self groupRoot:group];
+    NSMutableDictionary *check=[@{@"index":@(index),@"container_available":@(root!=nil)} mutableCopy];
+    [checks addObject:check];
+    if(root) {
+      accessible++;errno=0;int status=crumb_cache_inspect(root.fileSystemRepresentation);
+      check[@"cache_state"]=status==0?@"empty_or_missing":@"ineligible";check[@"errno"]=@(status?errno:0);
+      if(!status) {
+        eligible++;
+        if(!selected) {
+          selected=group;*selectedRoot=root;result[@"selected_index"]=@(index);
+          result[@"selection"]=[group isEqual:expected]?@"dedicated_expected":([group hasSuffix:@".worsequery"]?@"dedicated_alias":@"profile_granted");
+        }
+      }
+    }
+    index++;
+  }
+  result[@"accessible_group_count"]=@(accessible);result[@"eligible_group_count"]=@(eligible);
+  result[@"selected_group_authorized"]=@(selected!=nil);result[@"container_available"]=@(selected!=nil);
+  return selected;
+}
 - (int64_t)grant:(NSURL *)target group:(NSString *)group result:(NSMutableDictionary *)result {
   if(atomic_load(&_cancelled))return -256;
   NSFileManager *fm=NSFileManager.defaultManager;
-  NSURL *root=[fm containerURLForSecurityApplicationGroupIdentifier:group];
-  if([fm fileExistsAtPath:[self.directory URLByAppendingPathComponent:@"group-link.json"].path]){result[@"code"]=@"previous_grant_cleanup_pending";return -256;}
+  if(![[self effectiveGroups] containsObject:group]){result[@"code"]=@"group_not_in_effective_signature";return -1;}
+  NSURL *root=[self groupRoot:group];
+  NSURL *ledger=[self.directory URLByAppendingPathComponent:@"group-lease.json"];
+  if([fm fileExistsAtPath:ledger.path] || [fm fileExistsAtPath:[self.directory URLByAppendingPathComponent:@"group-link.json"].path]){result[@"code"]=@"previous_grant_cleanup_pending";return -256;}
   if(!root){result[@"code"]=@"group_container_unavailable";return -1;}
-  NSURL *caches=[root URLByAppendingPathComponent:@"Library/Caches"];
-  struct stat st;
-  if(lstat(caches.fileSystemRepresentation,&st)==0) {
-    if(!S_ISDIR(st.st_mode)){result[@"code"]=@"group_caches_not_directory";return -256;}
-    NSArray *contents=[fm contentsOfDirectoryAtURL:caches includingPropertiesForKeys:nil options:0 error:nil];
-    if(!contents || contents.count){result[@"code"]=@"group_caches_not_empty";return -256;}
-  }else if(errno!=ENOENT){result[@"code"]=@"group_caches_uninspectable";return -256;}
-  [fm createDirectoryAtURL:caches.URLByDeletingLastPathComponent withIntermediateDirectories:YES attributes:nil error:nil];
-  NSURL *ledger=[self.directory URLByAppendingPathComponent:@"group-link.json"];
-  if(![self saveJSON:@{@"group":group,@"target":target.path} to:ledger]){result[@"code"]=@"grant_ledger_failed";return -256;}
-  [self checkpoint:@"sandbox_extension" metrics:nil];
-  BOOL alt=NSProcessInfo.processInfo.operatingSystemVersion.majorVersion==26 && [target.path containsString:@"/Containers/Shared/AppGroup/"];
-  struct stat targetStatus;errno=0;
-  int targetStat=lstat(target.fileSystemRepresentation,&targetStatus);
-  result[@"target_stat_result"]=@(targetStat);result[@"target_stat_errno"]=@(targetStat?errno:0);
-  if(atomic_load(&_cancelled))return -256;
-  int64_t handle=worse_query(target.path,group,alt,false);result[@"result"]=@(handle);
-  if(handle>=0){atomic_store(&processHasGrant,true);result[@"code"]=@"extension_consumed";}
-  else result[@"code"]=@"extension_rejected";
-  // Verify cleanup, including the upstream's early-return paths.
-  NSString *link=[fm destinationOfSymbolicLinkAtPath:caches.path error:nil];
-  if([link isEqual:target.path])unlink(caches.fileSystemRepresentation);
-  if(![fm fileExistsAtPath:caches.path])[fm createDirectoryAtURL:caches withIntermediateDirectories:YES attributes:nil error:nil];
-  struct stat after;BOOL clean=lstat(caches.fileSystemRepresentation,&after)==0 && S_ISDIR(after.st_mode);
-  result[@"caches_restored"]=@(clean);
-  if(clean)[fm removeItemAtURL:ledger error:nil];
-  else{atomic_store(&_cancelled,true);result[@"code"]=@"group_cleanup_failed";}
+  NSURL *links=[self.directory URLByAppendingPathComponent:@"cache-links"];
+  if(![fm createDirectoryAtURL:links withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0700} error:nil]){result[@"code"]=@"private_lease_staging_failed";return -256;}
+  NSString *identifier=NSUUID.UUID.UUIDString;
+  NSURL *stage=[links URLByAppendingPathComponent:identifier];
+  CrumbCacheLease lease;
+  if(crumb_cache_begin(&lease,root.fileSystemRepresentation,target.fileSystemRepresentation,stage.fileSystemRepresentation,identifier.UTF8String)) {
+    result[@"code"]=@"cache_lease_unavailable";result[@"lease_errno"]=@(errno);return -256;
+  }
+  int64_t handle=-256;
+  @try {
+    NSDictionary *state=@{@"schema":@1,@"group":group,@"identifier":identifier,@"target":target.path,
+      @"had_caches":@(lease.had_caches),@"original_device":@(lease.original_device),@"original_inode":@(lease.original_inode),
+      @"link_device":@(lease.link_device),@"link_inode":@(lease.link_inode)};
+    if(![self saveJSON:state to:ledger]){result[@"code"]=@"grant_ledger_failed";return -256;}
+    [self checkpoint:@"sandbox_extension" metrics:nil];
+    if(atomic_load(&_cancelled))return -256;
+    if(crumb_cache_activate(&lease)){result[@"code"]=@"cache_lease_activation_failed";result[@"lease_errno"]=@(errno);return -256;}
+    BOOL alt=NSProcessInfo.processInfo.operatingSystemVersion.majorVersion==26 && [target.path containsString:@"/Containers/Shared/AppGroup/"];
+    struct stat targetStatus;errno=0;int targetStat=lstat(target.fileSystemRepresentation,&targetStatus);
+    result[@"target_stat_result"]=@(targetStat);result[@"target_stat_errno"]=@(targetStat?errno:0);
+    handle=worse_query_prepared(target.path,group,[[root URLByAppendingPathComponent:@"Library/Caches"] path],alt);result[@"result"]=@(handle);
+    if(handle>=0){atomic_store(&processHasGrant,true);result[@"code"]=@"extension_consumed";}
+    else result[@"code"]=@"extension_rejected";
+  }@finally {
+    int restored=crumb_cache_restore(&lease);result[@"caches_restored"]=@(restored==0);result[@"restore_errno"]=@(restored?errno:0);
+    if(!restored)[fm removeItemAtURL:ledger error:nil];
+    else{atomic_store(&_cancelled,true);result[@"code"]=@"group_cleanup_pending";}
+  }
   return handle;
 }
 - (NSURL *)installedBundle:(NSString *)bundleID result:(NSMutableDictionary *)result {
@@ -300,7 +385,7 @@ static void native_checkpoint(void *ctx,const CrumbDecryptMetrics *m);
   self.reportURL=[self.directory URLByAppendingPathComponent:[NSString stringWithFormat:@"report-%@.json",job]];
   char model[256]={0};size_t modelSize=sizeof(model);sysctlbyname("hw.machine",model,&modelSize,NULL,0);
   char build[256]={0};size_t buildSize=sizeof(build);sysctlbyname("kern.osversion",build,&buildSize,NULL,0);
-  self.report=[@{@"schema":@1,@"run_id":job,@"outcome":@"running",@"attempts":[NSMutableArray array],
+  self.report=[@{@"schema":@2,@"run_id":job,@"outcome":@"running",@"attempts":[NSMutableArray array],
     @"environment":@{@"model":@(model),@"os":os_version(),@"build":@(build),@"page_size":@(getpagesize()),
       @"crumb_build":[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"]?:@"unknown",
       @"worse_query_revision":@"d1540e20cd82b974d891e0551ced6d6aeb570ac2",@"baseline_contaminated":@(atomic_load(&processHasGrant))},
@@ -320,10 +405,10 @@ static void native_checkpoint(void *ctx,const CrumbDecryptMetrics *m);
     NSURL *buildURL=[NSBundle.mainBundle URLForResource:@"CrumbProbeBuild" withExtension:@"json"];
     NSDictionary *buildInfo=buildURL?[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfURL:buildURL]?:[NSData data] options:0 error:nil]:nil;
     self.report[@"source_revision"]=[buildInfo[@"source_revision"] isKindOfClass:NSString.class]?buildInfo[@"source_revision"]:@"unrecorded";
-    NSString *group=[NSString stringWithFormat:@"group.%@.worsequery",NSBundle.mainBundle.bundleIdentifier];
-    NSArray *groups=[self effectiveGroups];BOOL authorized=[groups containsObject:group];
-    NSURL *groupRoot=authorized?[fm containerURLForSecurityApplicationGroupIdentifier:group]:nil;
-    self.report[@"app_group"]=@{@"entitlements_readable":@(groups!=nil),@"dedicated_group_authorized":@(authorized),@"container_available":@(groupRoot!=nil)};
+    NSArray *groups=[self effectiveGroups];NSURL *groupRoot=nil;
+    NSMutableDictionary *groupDiagnostics=[NSMutableDictionary dictionary];
+    NSString *group=[self selectGroup:groups diagnostics:groupDiagnostics root:&groupRoot];
+    self.report[@"app_group"]=groupDiagnostics;
     NSMutableDictionary *discovery=[NSMutableDictionary dictionary];
     NSURL *installed=[self installedBundle:bundleID result:discovery];self.report[@"installed_discovery"]=discovery;
     NSURL *input=[work URLByAppendingPathComponent:@"archive/input"];
@@ -333,36 +418,19 @@ static void native_checkpoint(void *ctx,const CrumbDecryptMetrics *m);
       if(installed && [self attempt:@"installedApp" access:@"baseline" source:installed manifest:manifest work:work group:group])return self.report;
     }else self.report[@"baseline_skipped"]=@"restart_crumb_for_clean_baseline";
     if(groupRoot && !atomic_load(&_cancelled)) {
-      NSURL *canary=[work URLByAppendingPathComponent:@"canary"];NSData *bytes=[job dataUsingEncoding:NSUTF8StringEncoding];
+      NSURL *control=[work URLByAppendingPathComponent:@"control"];
+      [fm createDirectoryAtURL:control withIntermediateDirectories:NO attributes:@{NSFilePosixPermissions:@0700} error:nil];
+      NSURL *canary=[control URLByAppendingPathComponent:@"canary"];NSData *bytes=[job dataUsingEncoding:NSUTF8StringEncoding];
       [bytes writeToURL:canary options:NSDataWritingAtomic error:nil];
-      NSMutableDictionary *control=[NSMutableDictionary dictionary];control[@"before"]=[self readCanary:canary expected:bytes];
-      int64_t handle=[self grant:[NSURL fileURLWithPath:NSHomeDirectory() isDirectory:YES] group:group result:control];
-      control[@"after"]=[self readCanary:canary expected:bytes];if(handle>=0)worse_query_release(handle);
-      control[@"note"]=@"own_container_control_does_not_demonstrate_new_cross_app_access";self.report[@"canary"]=control;
+      NSMutableDictionary *canaryReport=[NSMutableDictionary dictionary];canaryReport[@"before"]=[self readCanary:canary expected:bytes];
+      int64_t handle=[self grant:control group:group result:canaryReport];
+      canaryReport[@"after"]=[self readCanary:canary expected:bytes];if(handle>=0)worse_query_release(handle);
+      canaryReport[@"note"]=@"own_container_control_does_not_demonstrate_new_cross_app_access";self.report[@"canary"]=canaryReport;
       if(!atomic_load(&_cancelled)) {
         if([self attempt:@"downloadedIPA" access:@"worseQuery" source:input manifest:manifest work:work group:group])return self.report;
         if(installed && [self attempt:@"installedApp" access:@"worseQuery" source:installed manifest:manifest work:work group:group])return self.report;
       }
-      if(!atomic_load(&_cancelled)) {
-        // One distinct storage-class experiment in a dedicated authorized group.
-        NSString *sharedJob=[@"CrumbProbe-" stringByAppendingString:job];
-        NSURL *shared=[groupRoot URLByAppendingPathComponent:sharedJob isDirectory:YES];
-        NSURL *ledger=[self.directory URLByAppendingPathComponent:@"shared-job.json"];
-        if(![fm fileExistsAtPath:ledger.path] && [self saveJSON:@{@"group":group,@"name":sharedJob} to:ledger]) {
-          @try {
-            [self checkpoint:@"shared_container_copy" metrics:nil];
-            BOOL created=[fm createDirectoryAtURL:shared withIntermediateDirectories:NO attributes:@{NSFilePosixPermissions:@0700,NSFileProtectionKey:NSFileProtectionComplete} error:nil];
-            BOOL excluded=created && [shared setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];
-            NSDictionary *copied=excluded?[self archive:@{@"operation":@"relocate",@"from":input.path,@"to":shared.path}]:@{@"ok":@NO};
-            if([copied[@"ok"] boolValue]) {
-              [self attempt:@"ownAppGroup" access:@"authorizedGroup" source:shared manifest:manifest work:work group:group];
-            }else self.report[@"shared_container"]=@"copy_failed";
-          }@finally {
-            BOOL cleaned=remove_owned(shared);self.report[@"shared_cleanup_complete"]=@(cleaned);
-            if(cleaned)[fm removeItemAtURL:ledger error:nil];
-          }
-        }
-      }
+      self.report[@"shared_container"]=@"skipped_private_payload_storage_only";
     }
     if(!self.outputURL)self.report[@"outcome"]=atomic_load(&_cancelled)?@"cancelled_or_local_failure":@"no_verified_route";
   }@catch(NSException *e){(void)e;self.report[@"outcome"]=@"local_exception";}

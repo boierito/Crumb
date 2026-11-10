@@ -55,7 +55,10 @@ in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); the project as a whole is n
 
 The `experiment/worse-query-no-helper` branch adds **Downloads → app menu → Try
 without helper**, which measures direct page decryption and worse_query access
-without pairing or a VPN. It can also test a matching installed app. A dedicated
-App Group must be authorized by Crumb's actual signature to exercise worse_query.
+without pairing or a VPN. It can also test a matching installed app. An eligible
+App Group must be authorized by Crumb's actual signature to exercise worse_query;
+build 23040 can select existing signer-provided groups without requiring a
+particular group name. Shared cache contents are preserved, and IPA/license
+resources remain in Crumb's private container.
 This is not yet physically validated as a working no-helper decryptor. See the
 [evidence, report guide and test procedure](docs/WORSE_QUERY_NO_HELPER.md).

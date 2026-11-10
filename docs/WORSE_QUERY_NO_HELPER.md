@@ -33,9 +33,12 @@ The optional installed-app route is an accepted partial outcome.
 ## Run once on the phone
 
 1. Sign/install the experimental Crumb IPA normally. To exercise worse_query,
-   the **actual installed signature and profile must authorize**
-   `group.<installed Crumb bundle ID>.worsequery`. The Xcode entitlement request
-   is included; an unsigned IPA or a matching group spelling cannot grant it.
+   the **actual installed signature must authorize an accessible App Group**.
+   Schema 2 prefers `group.<installed Crumb bundle ID>.worsequery`, then a
+   dedicated renamed `.worsequery` group, then another actually granted group
+   with an accessible empty/missing Caches directory. No identifier is guessed
+   or hardcoded from a user certificate. The Xcode entitlement request is
+   included; an unsigned IPA or a matching group spelling cannot grant it.
    A sideloader that drops/remaps this capability can leave it unavailable.
    There is no requirement for helper signing files, pairing or LocalDevVPN.
 2. Use an encrypted download belonging to the phone's licensed App Store
@@ -64,14 +67,15 @@ proof that the process has returned to its original access state.
 3. Try the private downloaded tree without a grant. Discover only the selected
    installed bundle; check its bundle ID/version/build and exact encrypted image
    hashes. A mismatched installed version is not mixed with the download.
-4. If the dedicated effective group exists, perform an own-container canary,
+4. If an eligible effective group exists, perform a private-canary-directory check,
    then independently try worse_query against the downloaded tree and selected
    installed bundle. The canary already belongs to Crumb; success does not prove
    new cross-app access. A failed canary does not by itself prove every target
    path is unsupported.
-5. Try one additional storage class in the already-authorized dedicated own
-   App Group. It is a separate hypothesis, not proof that the daemon accepts
-   shared containers. No other apps' data or system group is enumerated.
+5. Keep all IPA and SINF resources private. Schema 2 skips the previous
+   shared-payload storage experiment because signer-provided groups may be
+   shared with other apps. Only cache-directory metadata is inspected during
+   selection; no other apps' data or system group is enumerated.
 6. For every admitted encrypted image, use the shared read-only cryptid-2
    reader. First attempt without signature registration; record a registration
    retry separately if the remap fails. Read every encrypted page using
@@ -91,7 +95,7 @@ remains separately available and shares the same reader implementation.
 
 ## Debug report and interpretation
 
-Schema 1 reports contain a random run ID, source revision when built by the
+Schema 2 reports contain a random run ID, source revision when built by the
 repository script, device model/OS/build/page size, capability checks and a
 bounded attempt/image list. They exclude account identifiers, full local paths,
 SINF bytes/hashes, tokens, P12 material and raw OS logs. Image ciphertext SHA256
@@ -106,7 +110,12 @@ waits for an already-entered OS call to return.
 
 | Report | Interpretation |
 | --- | --- |
-| `app_group.dedicated_group_authorized=false` | Installed Crumb does not have the required grant; no conclusion about worse_query's kernel behavior |
+| `app_group.dedicated_group_authorized=false` | The expected dedicated name is absent; other effective groups may still be usable |
+| `effective_group_count` / `accessible_group_count` / `eligible_group_count` | Distinguishes signed grants, resolvable containers and empty-cache eligibility |
+| `selected_group_authorized=true` | A candidate from the effective signature was selected; `selection` describes dedicated vs profile-provided |
+| `candidates[].cache_state=ineligible` | Preserve numeric errno; occupied or inaccessible group data is not cleared |
+| `cache_lease_unavailable` / `cache_lease_activation_failed` | Exclusive transaction could not start; not a FairPlay error |
+| `caches_restored=false` | A private journal retains the original cache inode for recovery; foreign replacements are never overwritten |
 | `entitlements_readable=false` | Effective capability inspection unavailable; no group authorization is inferred |
 | `grant.result < 0` | Token acquisition failed; preserve target-stat errno and upstream result separately |
 | `source_unreadable` | Crumb could not hash the original; native decryption was not established |
@@ -144,3 +153,37 @@ worse_query behavior, App Store license acceptance and fresh protected-page
 recovery. Simulator, Linux and replay results do not establish those facts.
 FAT/32-bit images and existing archive budgets remain explicit unsupported
 inputs; no version gates in the existing helper flow are removed.
+
+## Schema 2: signing-service group compatibility (build 23040)
+
+A returned build-23039 report showed `dedicated_group_authorized=false` and
+`entitlements_readable=true`. A subsequent KSign profile view showed five
+concrete App Groups with service-selected names. That view proves profile
+permissions, not the exact installed process's grants. The old dedicated-name
+check was too restrictive to test those alternatives. Schema 2 reports counts
+and candidate outcomes from the actual process, without exporting group IDs.
+
+The upstream file-mutating wrapper is replaced with `worse_query_prepared`:
+it verifies the caller's symlink and only performs the original container query
+and token consumption. `CrumbCacheLease` owns the file transaction. It accepts
+only an empty/missing Caches directory, takes a cooperative process lock, writes
+a private journal before changing Caches, preserves the original directory by
+an atomic non-overwriting rename, then restores that exact inode. Contents that
+arrive after selection or through an already-open directory descriptor are
+preserved. If another app replaces Caches, the replacement and original backup
+are retained without overwrite and the journal remains pending. A temporary
+namespace change may still make simultaneous cache operations fail; occupied
+candidates are skipped rather than emptied.
+
+The link is prepared in Crumb's private storage; no IPA or SINF is copied into
+the selected shared group. A cross-volume rename fails explicitly and rolls
+back. Recovery rechecks the group's current effective entitlement before
+restoring a recorded transaction. No certificate, profile or extra entitlement
+is fabricated or installed by this change.
+
+`python3 scripts/test-cache-lease.py` tests real filesystem transitions with
+sanitizers: inode/mode preservation, occupied directories, late writes, crash
+replay, exclusive locking, foreign replacements, existing staging files and
+originally absent Caches. macOS tests additionally cover generic profile-group
+selection, dedicated aliases, redaction, exclusion of unsigned/wildcard guesses
+and JSON-journal recovery. These tests do not prove iOS token issuance.

@@ -30,7 +30,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-int64_t worse_query(NSString *path, NSString *group, bool alt_flags, bool create_dir);
+// Requires a caller-prepared Caches symlink; performs no file mutations.
+int64_t worse_query_prepared(NSString *path, NSString *group, NSString *preparedCaches, bool alt_flags);
 void worse_query_release(int64_t handle);
 
 #endif /* worse_query_h */

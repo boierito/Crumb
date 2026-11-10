@@ -55,8 +55,8 @@ final class LocalProbeCoordinator: ObservableObject {
                 self.outcome = Self.message(result["outcome"] as? String ?? "")
                 if result["outcome"] as? String == "no_verified_route",
                    let group = result["app_group"] as? [String: Any],
-                   group["dedicated_group_authorized"] as? Bool == false {
-                    self.outcome += " This signature does not grant the App Group required by worse_query.".localized
+                   group["selected_group_authorized"] as? Bool == false {
+                    self.outcome += " No authorized App Group with an accessible, empty cache was available for worse_query.".localized
                 }
                 if self.stopRequested {
                     if let generated { try? FileManager.default.removeItem(at: generated) }

@@ -211,3 +211,4 @@
 " The verified IPA is available to export here." = " The verified IPA is available to export here.";
 "Finish the current operation before starting the local test." = "Finish the current operation before starting the local test.";
 " This signature does not grant the App Group required by worse_query." = " This signature does not grant the App Group required by worse_query.";
+" No authorized App Group with an accessible, empty cache was available for worse_query." = " No authorized App Group with an accessible, empty cache was available for worse_query.";

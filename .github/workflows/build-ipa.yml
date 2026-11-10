@@ -75,6 +75,7 @@ jobs:
           python3 scripts/verify-crumb-branding.py
           mkdir -p artifacts
           cargo test --locked --manifest-path NativeDevice/Cargo.toml
+          python3 scripts/test-cache-lease.py
           python3 scripts/test-local-probe-reader.py
           python3 scripts/test-device-macho.py
           python3 scripts/test-device-file-access.py
@@ -98,7 +99,7 @@ jobs:
           if [ -f scripts/verify-ipa.py ]; then
             python3 scripts/verify-ipa.py "artifacts/Crumb-$CONFIGURATION.ipa" | tee "artifacts/verification-$CONFIGURATION.json"
           fi
-          tar --exclude=target -czf artifacts/crumb-device-corresponding-source.tar.gz NativeDevice DecryptHelper SharedDecrypt Crumb/LocalProbe Crumb/Resources/WorseQuery-COPYING.txt tests scripts/build-device-native.sh scripts/test-local-probe-reader.py docs/WORSE_QUERY_NO_HELPER.md
+          tar --exclude=target -czf artifacts/crumb-device-corresponding-source.tar.gz NativeDevice DecryptHelper SharedDecrypt Crumb/LocalProbe Crumb/Resources/WorseQuery-COPYING.txt tests scripts/build-device-native.sh scripts/test-local-probe-reader.py scripts/test-cache-lease.py docs/WORSE_QUERY_NO_HELPER.md
           if [ -f build/Native/unicorn-tci-corresponding-source.tar.gz ]; then
             cp build/Native/unicorn-tci-corresponding-source.tar.gz artifacts/
             cp build/Native/UNICORN-COPYING artifacts/

@@ -74,9 +74,11 @@ bundle them in a redistributed IPA. No such binaries have been copied here.
 forcequitOS/worse_query is pinned at d1540e20cd82b974d891e0551ced6d6aeb570ac2,
 Copyright 2026 Taj C (forcequit), GPL-3.0-or-later. The original headers are
 retained under Crumb/LocalProbe/Vendor and the license is bundled as
-Crumb/Resources/WorseQuery-COPYING.txt. Adaptations allow a known target's
-EPERM/EACCES metadata failure to proceed to the actual query without requesting
-creation, and free the query/restore Caches on the symlink-failure path.
-Crumb adds a dedicated-group, empty-Caches preflight and recovery ledger around
-the call. CI corresponding-source artifacts include these adapted files and
-the shared reader. Existing combined redistribution constraints above remain.
+Crumb/Resources/WorseQuery-COPYING.txt. The adapted `worse_query_prepared` entry point performs only the original query
+and token consumption against a caller-prepared symlink. Crumb's separate
+journalled cache lease replaces the upstream recursive Caches removal with
+non-overwriting directory moves, inode-preserving restoration and private
+staging. It filters candidates using effective signed grants and does not copy
+IPA or license resources into shared signer groups. CI corresponding-source
+artifacts include the adapted vendor files, lease, shared reader and tests.
+Existing combined redistribution constraints above remain.
