@@ -7,10 +7,13 @@ enum DeviceOperationError: LocalizedError {
 }
 // Only the FairPlay syscall boundary is stubbed. Exercise the production archive,
 // staging, cancellation and publication code without an iOS license/keychain.
-func crumb_group_decrypt(_ source: URL, _ destination: URL, _ encrypted: UnsafeMutablePointer<ObjCBool>) throws {
-    let bytes = try Data(contentsOf: source)
-    encrypted.pointee = ObjCBool(bytes == Data("encrypted-fixture".utf8))
-    try (encrypted.pointee.boolValue ? Data("verified-plaintext".utf8) : bytes).write(to: destination)
+func crumb_group_decrypt(_ source: URL, _ destination: URL, _ encrypted: UnsafeMutablePointer<ObjCBool>, _ error: NSErrorPointer) -> Bool {
+    do {
+        let bytes = try Data(contentsOf: source)
+        encrypted.pointee = ObjCBool(bytes == Data("encrypted-fixture".utf8))
+        try (encrypted.pointee.boolValue ? Data("verified-plaintext".utf8) : bytes).write(to: destination)
+        return true
+    } catch let caught { error?.pointee = caught as NSError; return false }
 }
 func require(_ condition: @autoclosure () throws -> Bool, _ message: String) throws {
     if try !condition() { throw DeviceOperationError.message(message) }

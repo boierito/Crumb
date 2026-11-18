@@ -135,7 +135,11 @@ enum AppGroupDecryption {
             var encrypted = ObjCBool(false)
             // This shares the helper's bounded Mach-O parser and complete page
             // checks. Unsupported FAT/32-bit images fail instead of partial export.
-            try crumb_group_decrypt(url, destination, &encrypted)
+            var nativeError: NSError?
+            guard crumb_group_decrypt(url, destination, &encrypted, &nativeError) else {
+                if let nativeError { throw nativeError }
+                throw fail("FairPlay rejected this image.")
+            }
             if encrypted.boolValue { decrypted += 1 }
             progress(0.1 + 0.75 * Double(index + 1) / Double(max(files.count, 1)))
         }
