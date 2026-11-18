@@ -1,12 +1,14 @@
 import SwiftUI
 import PartyUI
 import MapleSAP
+import UIKit
 
 struct ContentView: View {
     @EnvironmentObject var appData: AppData
     @StateObject private var device = DeviceWorkflow.shared
     @Environment(\.scenePhase) private var scenePhase
     @State private var confirmLogout = false
+    @State private var readyInstallation: DownloadRecord?
     @State private var scrollRequest = CrumbScrollRequest()
     @Environment(\.horizontalSizeClass) private var width
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -73,15 +75,28 @@ struct ContentView: View {
             OTAInstallationView(record:artifact.record,startImmediately:true,source:artifact.source,cleanup:artifact.workspace)
         }
         .sheet(isPresented: $appData.showStoreVersions) { StoreVersionsView() }
-        .sheet(item: $appData.downloadReady) { DownloadReadyView(record: $0) }
+        .sheet(item: $appData.downloadReady, onDismiss: finishDownloadReview) { record in
+            DownloadReadyView(record: record) { readyInstallation = record }
+        }
         .sheet(item: $appData.installationRequest) { OTAInstallationView(record: $0, startImmediately: true) }
         .onAppear { appData.restoreStoreAccount(); appData.restoreDownloadedIPA() }
+        .onChange(of: appData.downloadPhaseLabel) { phase in
+            if appData.isDowngrading && appData.selectedTab == .downloads {
+                UIAccessibility.post(notification: .announcement, argument: phase)
+            }
+        }
         .onChange(of: appData.isAuthenticated) { authenticated in
             if authenticated, appData.openVersionsAfterLogin {
                 appData.openVersionsAfterLogin = false
                 appData.openAppSelection(appData.appLink, country: appData.selectedCatalogCountry, resuming: true)
             }
         }
+    }
+
+    private func finishDownloadReview() {
+        guard let record = readyInstallation else { return }
+        readyInstallation = nil
+        device.install(record)
     }
 
     private func page<Content: View>(_ tab: AppTab, @ViewBuilder content: () -> Content) -> some View {

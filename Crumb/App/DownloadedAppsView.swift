@@ -71,7 +71,7 @@ struct DownloadedAppsView: View {
                     Section {
                         Label(appData.activeDownloadName, systemImage: "exclamationmark.circle").font(.headline)
                         Text(appData.storeError).font(.subheadline).foregroundStyle(.secondary)
-                        if let retry = appData.retryDownload {
+                        if appData.isAuthenticated, let retry = appData.retryDownload {
                             Button("Try again", action: retry).buttonStyle(CrumbActionStyle(primary: false))
                         }
                     } header: { Text("Download failed") }

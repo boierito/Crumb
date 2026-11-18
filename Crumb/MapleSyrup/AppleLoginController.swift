@@ -88,11 +88,12 @@ extension AppData {
         // request asks Apple to start another challenge; Apple controls code delivery.
         startAppleLogin(.requestNewCode)
         guard isAuthenticating else { return }
+        let cooldownSeconds: UInt64 = 30
         isCodeResendCoolingDown = true
-        codeResendAvailableAt = Date().addingTimeInterval(30)
+        codeResendAvailableAt = Date().addingTimeInterval(TimeInterval(cooldownSeconds))
         codeResendCooldownTask?.cancel()
         codeResendCooldownTask = Task {
-            do { try await Task.sleep(nanoseconds: 30_000_000_000) }
+            do { try await Task.sleep(nanoseconds: cooldownSeconds * 1_000_000_000) }
             catch { return }
             isCodeResendCoolingDown = false
             codeResendAvailableAt = nil

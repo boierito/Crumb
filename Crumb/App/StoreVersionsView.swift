@@ -118,7 +118,9 @@ struct StoreVersionsView: View {
                         TextField("Filter by version, build or ID", text: $filter)
                             .autocorrectionDisabled().textInputAutocapitalization(.never)
                         if filteredVersions.isEmpty {
-                            Text("No matching versions").foregroundStyle(.secondary)
+                            Text("Try an external version ID or clear the filter to load more version numbers.")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                            Button("Clear filter") { filter = "" }
                         }
                         ForEach(filteredVersions, id: \.self) { id in
                             Button { select(id, app: app) } label: {

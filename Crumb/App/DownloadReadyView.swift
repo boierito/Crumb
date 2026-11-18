@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DownloadReadyView: View {
     let record: DownloadRecord
+    let onInstall: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var complete = false
 
@@ -19,8 +20,8 @@ struct DownloadReadyView: View {
                 }
                 Section {
                     Button {
+                        onInstall()
                         dismiss()
-                        DeviceWorkflow.shared.install(record)
                     } label: {
                         Label("Install now", systemImage: "arrow.down.app")
                     }.buttonStyle(CrumbActionStyle())

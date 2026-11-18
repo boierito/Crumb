@@ -15,8 +15,8 @@ public enum InstallationPage {
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="color-scheme" content="light dark"><title>Install app</title>
         <style>
-        :root{color-scheme:light dark;--bg:#f2f2f7;--card:#fff;--text:#1c1c1e;--muted:#636366;--accent:#30695a}
-        @media(prefers-color-scheme:dark){:root{--bg:#000;--card:#1c1c1e;--text:#f5f5f7;--muted:#aeaeb2;--accent:#9ae4ca}}
+        :root{color-scheme:light dark;--bg:#f2f2f7;--card:#fff;--text:#1c1c1e;--muted:#636366;--accent:#145ac1}
+        @media(prefers-color-scheme:dark){:root{--bg:#000;--card:#1c1c1e;--text:#f5f5f7;--muted:#aeaeb2;--accent:#9bc5ff}}
         *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:17px/1.5 -apple-system,BlinkMacSystemFont,sans-serif}
         main{max-width:440px;margin:0 auto;padding:32px 20px max(28px,env(safe-area-inset-bottom))}
         .card{background:var(--card);border-radius:24px;padding:28px 24px;text-align:center}
