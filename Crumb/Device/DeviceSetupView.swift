@@ -5,7 +5,7 @@ struct DeviceSetupView: View {
     @StateObject private var device = DeviceWorkflow.shared
     @State private var importKind = "p12"
     @State private var importing = false
-    @Environment(\.scenePhase) private var scenePhase
+    @AppStorage(AppGroupDecryption.configuredGroupKey) private var configuredGroup = ""
 
     var body: some View {
         Form {
@@ -17,6 +17,14 @@ struct DeviceSetupView: View {
                     .font(.footnote).foregroundStyle(.secondary)
                 Text("Experimental: FairPlay may reject this method on your OS version. Unsupported FAT or 32-bit binaries fail without publishing a partial IPA.")
                     .font(.footnote).foregroundStyle(.secondary)
+            }
+            Section("App Group diagnostics") {
+                Text(AppGroupDecryption.diagnostics).font(.footnote.monospaced()).textSelection(.enabled)
+                TextField("Authorized group identifier (optional)", text: $configuredGroup)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                Text("Use the exact group identifier from KSign if automatic detection misses it. This field cannot grant an entitlement: the signed app must already be authorized for that group.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                ShareLink(item: AppGroupDecryption.diagnostics) { Label("Export group diagnostics", systemImage: "square.and.arrow.up") }
             }
             SigningIdentitySection()
         }

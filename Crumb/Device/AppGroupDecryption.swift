@@ -4,25 +4,45 @@ import ZIPFoundation
 // The system, not a folder name or a plist entry, grants access to this container.
 // Never stage in Crumb.app: modifying its sealed resources invalidates signing.
 enum AppGroupDecryption {
+    static let configuredGroupKey = "FairPlayAppGroupOverride"
+    static var signedGroups: [String]? { crumb_group_signed_groups() }
+    static var profileGroups: [String] {
+        guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
+              let data = try? Data(contentsOf: url),
+              let start = data.range(of: Data("<?xml".utf8)),
+              let end = data.range(of: Data("</plist>".utf8), options: .backwards),
+              start.lowerBound < end.upperBound,
+              let profile = try? PropertyListSerialization.propertyList(from: data.subdata(in: start.lowerBound..<end.upperBound), format: nil) as? [String: Any],
+              let entitlements = profile["Entitlements"] as? [String: Any],
+              let groups = entitlements["com.apple.security.application-groups"] as? [String] else { return [] }
+        return groups
+    }
+    static func candidates(signed: [String]?, profile: [String], configured: [String]) -> [String] {
+        var seen = Set<String>()
+        return ((signed ?? []) + configured + profile).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && !$0.contains("*") && seen.insert($0).inserted }
+    }
+    static var groupCandidates: [String] {
+        candidates(signed: signedGroups, profile: profileGroups, configured: [
+            UserDefaults.standard.string(forKey: configuredGroupKey) ?? "",
+            Bundle.main.object(forInfoDictionaryKey: "FairPlayAppGroup") as? String ?? ""
+        ])
+    }
     static func container() -> URL? {
-        var groups: [String] = []
-        if let configured = Bundle.main.object(forInfoDictionaryKey: "FairPlayAppGroup") as? String {
-            groups.append(configured)
-        }
-        if let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
-           let data = try? Data(contentsOf: url),
-           let start = data.range(of: Data("<?xml".utf8)),
-           let end = data.range(of: Data("</plist>".utf8), options: .backwards),
-           start.lowerBound < end.upperBound,
-           let profile = try? PropertyListSerialization.propertyList(from: data.subdata(in: start.lowerBound..<end.upperBound), format: nil) as? [String: Any],
-           let entitlements = profile["Entitlements"] as? [String: Any],
-           let authorized = entitlements["com.apple.security.application-groups"] as? [String] {
-            groups += authorized
-        }
-        for group in groups where !group.contains("*") {
-            if let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) { return url }
+        let fm = FileManager.default
+        for group in groupCandidates {
+            guard let url = fm.containerURL(forSecurityApplicationGroupIdentifier: group) else { continue }
+            let probe = url.appendingPathComponent(".crumb-group-probe-" + UUID().uuidString)
+            defer { try? fm.removeItem(at: probe) }
+            if (try? Data().write(to: probe, options: .withoutOverwriting)) != nil { return url }
         }
         return nil
+    }
+    static var diagnostics: String {
+        let effective = signedGroups.map { $0.isEmpty ? "none" : $0.joined(separator: ", ") } ?? "runtime reader unavailable"
+        let profile = profileGroups
+        let configured = UserDefaults.standard.string(forKey: configuredGroupKey) ?? ""
+        return "Signed App Groups: \(effective)\nProfile App Groups: \(profile.isEmpty ? "none listed" : profile.joined(separator: ", "))\nConfigured group: \(configured.isEmpty ? "none" : configured)\nWritable container: \(container() == nil ? "unavailable" : "available")"
     }
 
     static func fail(_ message: String) -> DeviceOperationError { .message(message) }

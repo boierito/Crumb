@@ -243,7 +243,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
             errorMessage = "Finish the current app first."; return
         }
         guard let root = AppGroupDecryption.container() else {
-            errorMessage = "No authorized App Group is accessible. Re-sign Crumb in KSign with an App Group enabled in both the provisioning profile and app entitlements. No VPN or helper is required."
+            errorMessage = "No writable App Group was found. Open Settings → Decrypter to check the groups in the signed app and provisioning profile. Certificate support alone does not enable this capability for Crumb."
             return
         }
         guard let source = record.fileURL else { errorMessage = "The downloaded IPA is missing."; return }

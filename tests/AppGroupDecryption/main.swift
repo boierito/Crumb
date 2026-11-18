@@ -7,6 +7,7 @@ enum DeviceOperationError: LocalizedError {
 }
 // Only the FairPlay syscall boundary is stubbed. Exercise the production archive,
 // staging, cancellation and publication code without an iOS license/keychain.
+func crumb_group_signed_groups() -> [String]? { nil }
 func crumb_group_decrypt(_ source: URL, _ destination: URL, _ encrypted: UnsafeMutablePointer<ObjCBool>, _ error: NSErrorPointer) -> Bool {
     do {
         let bytes = try Data(contentsOf: source)
@@ -64,3 +65,8 @@ try reject(plainIPA)
 let remaining = try fm.contentsOfDirectory(atPath: root.path).filter { $0.hasPrefix("crumb-fairplay-") }
 try require(remaining.isEmpty, "staging workspace leaked")
 print("App Group archive tests passed: plaintext round trip, original/license/root preservation, traversal rejection, cancellation, no-encryption rejection, workspace cleanup.")
+
+try require(AppGroupDecryption.candidates(signed: ["group.signed"], profile: ["group.*", "group.signed", "group.profile"], configured: [" group.manual ", ""]) == ["group.signed", "group.manual", "group.profile"], "effective groups must take priority; wildcard must not suppress them")
+try require(AppGroupDecryption.candidates(signed: nil, profile: ["group.profile"], configured: []) == ["group.profile"], "runtime-unavailable fallback failed")
+try require(AppGroupDecryption.candidates(signed: [], profile: [], configured: []) == [], "invented an App Group")
+print("Effective-entitlement group discovery tests passed.")

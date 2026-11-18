@@ -34,3 +34,16 @@ not implied by a successful build. The old native helper implementation is retai
 as source for regression tests but is not entered by the normal UI.
 
 Reference: https://github.com/mengangs/ipadn/tree/v2.2.0
+
+## KSign group discovery and diagnostics
+
+The app reads effective App Group entitlements from the running signed process
+through dynamically resolved Security entry points, then tries explicit configuration
+and concrete profile groups. If the runtime reader is unavailable, the latter two
+sources remain supported. Wildcard profile groups cannot name an actual container.
+Every candidate must also pass an actual write probe before decryption starts.
+
+Settings > Decrypter shows signed/profile groups and writable-container status.
+An optional identifier override supports signers that omit concrete group names
+from the embedded profile. It cannot grant App Group access. No group means the
+signer must add that capability to Crumb, even if its certificate supports it.
