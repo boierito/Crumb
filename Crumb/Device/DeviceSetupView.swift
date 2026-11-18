@@ -1,30 +1,10 @@
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct DeviceSetupView: View {
-    @StateObject private var device = DeviceWorkflow.shared
-    @State private var importKind = "p12"
-    @State private var importing = false
-    @AppStorage(AppGroupDecryption.configuredGroupKey) private var configuredGroup = ""
-
     var body: some View {
         Form {
             Section("On-device decryption") {
-                Label(AppGroupDecryption.container() == nil ? "App Group unavailable" : "App Group ready",
-                      systemImage: AppGroupDecryption.container() == nil ? "exclamationmark.triangle" : "checkmark.circle")
-                Text("Decrypt downloaded apps directly in Crumb. No helper, VPN or pairing is required. Keep Crumb open until verification finishes.")
-                Text("In KSign, sign Crumb with an App Group authorized by your provisioning profile. The Apple account licensed for the app must be available to FairPlay on this device.")
-                    .font(.footnote).foregroundStyle(.secondary)
-                Text("Experimental: FairPlay may reject this method on your OS version. Unsupported FAT or 32-bit binaries fail without publishing a partial IPA.")
-                    .font(.footnote).foregroundStyle(.secondary)
-            }
-            Section("App Group diagnostics") {
-                Text(AppGroupDecryption.diagnostics).font(.footnote.monospaced()).textSelection(.enabled)
-                TextField("Authorized group identifier (optional)", text: $configuredGroup)
-                    .textInputAutocapitalization(.never).autocorrectionDisabled()
-                Text("Use the exact group identifier from KSign if automatic detection misses it. This field cannot grant an entitlement: the signed app must already be authorized for that group.")
-                    .font(.footnote).foregroundStyle(.secondary)
-                ShareLink(item: AppGroupDecryption.diagnostics) { Label("Export group diagnostics", systemImage: "square.and.arrow.up") }
+                Text("Decrypt downloaded apps directly in Crumb. Keep Crumb open until verification finishes.")
             }
             SigningIdentitySection()
         }

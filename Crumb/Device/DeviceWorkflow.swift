@@ -243,7 +243,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
             errorMessage = "Finish the current app first."; return
         }
         guard let root = AppGroupDecryption.container() else {
-            errorMessage = "No writable App Group was found. Open Settings → Decrypter to check the groups in the signed app and provisioning profile. Certificate support alone does not enable this capability for Crumb."
+            errorMessage = "Crumb could not access its shared storage. Re-sign Crumb in KSign with an authorized App Group, then try again."
             return
         }
         guard let source = record.fileURL else { errorMessage = "The downloaded IPA is missing."; return }

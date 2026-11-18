@@ -38,12 +38,6 @@ enum AppGroupDecryption {
         }
         return nil
     }
-    static var diagnostics: String {
-        let effective = signedGroups.map { $0.isEmpty ? "none" : $0.joined(separator: ", ") } ?? "runtime reader unavailable"
-        let profile = profileGroups
-        let configured = UserDefaults.standard.string(forKey: configuredGroupKey) ?? ""
-        return "Signed App Groups: \(effective)\nProfile App Groups: \(profile.isEmpty ? "none listed" : profile.joined(separator: ", "))\nConfigured group: \(configured.isEmpty ? "none" : configured)\nWritable container: \(container() == nil ? "unavailable" : "available")"
-    }
 
     static func fail(_ message: String) -> DeviceOperationError { .message(message) }
 
