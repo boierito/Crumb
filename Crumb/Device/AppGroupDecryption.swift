@@ -93,11 +93,16 @@ enum AppGroupDecryption {
         guard let enumerator = fm.enumerator(at: unpacked, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey]) else { throw fail("Cannot enumerate IPA.") }
         var files: [URL] = []
         for case let url as URL in enumerator { files.append(url) }
+        let baseComponents = unpacked.resolvingSymlinksInPath().pathComponents
         var decrypted = 0
         for (index, url) in files.enumerated() {
             if cancelled() { throw CancellationError() }
-            guard url.path.hasPrefix(unpacked.path + "/") else { throw fail("Unexpected archive enumeration path.") }
-            let relative = String(url.path.dropFirst(unpacked.path.count + 1))
+            let components = url.resolvingSymlinksInPath().pathComponents
+            guard components.count > baseComponents.count,
+                  Array(components.prefix(baseComponents.count)) == baseComponents else {
+                throw fail("Unexpected archive enumeration path.")
+            }
+            let relative = components.dropFirst(baseComponents.count).joined(separator: "/")
             let destination = packed.appendingPathComponent(relative)
             let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
             guard values.isSymbolicLink != true else { throw fail("IPA contains a symbolic link.") }
@@ -115,7 +120,7 @@ enum AppGroupDecryption {
                     if !fm.fileExists(atPath: sinf.path) {
                         try fm.createDirectory(at: sinf.deletingLastPathComponent(), withIntermediateDirectories: true)
                         try fm.copyItem(at: primarySinf, to: sinf)
-                        let sinfRelative = String(sinf.path.dropFirst(unpacked.path.count + 1))
+                        let sinfRelative = sinf.resolvingSymlinksInPath().pathComponents.dropFirst(baseComponents.count).joined(separator: "/")
                         let outputSinf = packed.appendingPathComponent(sinfRelative)
                         try fm.createDirectory(at: outputSinf.deletingLastPathComponent(), withIntermediateDirectories: true)
                         try fm.copyItem(at: sinf, to: outputSinf)
