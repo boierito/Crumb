@@ -7,20 +7,22 @@
 
 import Foundation
 
-struct FavouriteApp: Identifiable, Codable, Equatable {
+struct FavouriteApp: Identifiable, Codable, Hashable {
     let id: UUID
     let appLink: String
     let bundleId: String
     let appName: String
     let catalogCountry: String?
+    let artworkURL: String?
     let dateAdded: Date
     
-    init(appLink: String, bundleId: String, appName: String, catalogCountry: String? = nil) {
+    init(appLink: String, bundleId: String, appName: String, catalogCountry: String? = nil, artworkURL: String? = nil) {
         self.id = UUID()
         self.appLink = appLink
         self.bundleId = bundleId
         self.appName = appName
         self.catalogCountry = catalogCountry
+        self.artworkURL = artworkURL
         self.dateAdded = Date()
     }
 }

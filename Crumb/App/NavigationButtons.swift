@@ -18,7 +18,7 @@ struct NavigationButtons: View {
                 ButtonLabel(text: "Sign in", icon: "key")
             }
         }
-        .buttonStyle(FancyButtonStyle())
+        .buttonStyle(CrumbActionStyle())
         .disabled(!appData.canSubmitAppleLogin || appData.isAuthenticating)
     }
 }

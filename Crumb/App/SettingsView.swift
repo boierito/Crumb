@@ -2,24 +2,49 @@ import SwiftUI
 import PartyUI
 
 struct SettingsView: View {
-    var embedded = false
-    @EnvironmentObject var appData: AppData
-    @Environment(\.dismiss) private var dismiss
+    @AppStorage("autoCleanApp") private var autoCleanApp = true
+    @StateObject private var localizationManager = LocalizationManager.shared
+    @AppStorage("crumbAppearance") private var appearance = CrumbAppearance.system
+
+    var body: some View {
+        List {
+            Section("Language and appearance") {
+                Picker("Appearance", selection: $appearance) {
+                    Text("Use system setting").tag(CrumbAppearance.system)
+                    Text("Light").tag(CrumbAppearance.light)
+                    Text("Dark").tag(CrumbAppearance.dark)
+                }
+                Picker("Language".localized, selection: $localizationManager.currentLanguage) {
+                    ForEach(Language.allCases) { language in
+                        Text(language.displayName).tag(language)
+                    }
+                }
+            }
+            Section {
+                Toggle("Auto-Clean App".localized, isOn: $autoCleanApp)
+            } header: {
+                Text("Storage")
+            } footer: {
+                Text("Automatically removes temporary files at launch and keeps completed downloads.")
+            }
+            Section("Device and signing") {
+                NavigationLink { DeviceSetupView() } label: { Label("Device tools", systemImage: "iphone") }
+                NavigationLink { SigningSettingsView() } label: { Label("Signing identity", systemImage: "checkmark.seal") }
+            }
+            Section {
+                NavigationLink { CrumbAboutView() } label: { Label("About Crumb", systemImage: "info.circle") }
+            }
+        }
+        .navigationTitle("Settings".localized)
+    }
+}
+
+private struct CrumbAboutView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    
-    @AppStorage("autoCleanApp") var autoCleanApp: Bool = true
-    @StateObject private var localizationManager = LocalizationManager.shared
-    
-    private var appVersionString: String {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
-        return "\(version) (\(build))"
-    }
-    
+
     var body: some View {
-        NavigationStack {
-            List {
+        List {
                 Section(header: HeaderLabel(text: "About".localized, icon: "info.circle")) {
                     VStack(alignment: .leading, spacing: 10) {
                         AppInfoCell()
@@ -43,33 +68,10 @@ struct SettingsView: View {
                     }
                 }
                 
-                Section(header: HeaderLabel(text: "Settings".localized, icon: "gearshape")) {
-                    Toggle(isOn: $autoCleanApp) {
-                        Text("Auto-Clean App".localized)
-                        Text("Auto-Clean Description".localized)
-                    }
-                }
-                
-                Section { NavigationLink("Decrypter") { DeviceSetupView() } }
+            Section("Translations") {
+                Link("Help translate Crumb", destination: URL(string: "https://poeditor.com/join/project/Ofr2qvyudt")!)
+            }
 
-                Section(header: HeaderLabel(text: "Language".localized, icon: "globe"), footer:
-                    Button(action: {
-                        openURL(URL(string: "https://poeditor.com/join/project/Ofr2qvyudt")!)
-                    }) {
-                        Text("Translation Thank You".localized)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                ) {
-                    Picker("Language".localized, selection: $localizationManager.currentLanguage) {
-                        ForEach(Language.allCases) { language in
-                            Text(language.displayName).tag(language)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                }
-                
                 Section(header: HeaderLabel(text: "Credits".localized, icon: "star")) {
                     LinkCreditCell(image: Image("mineek"), name: "mineek", description: "Original creator of MuffinStore Jailed.".localized, url: "https://github.com/mineek")
                     LinkCreditCell(image: Image("lunginspector"), name: "lunginspector", description: "Original creator of PancakeStore.".localized, url: "https://github.com/lunginspector")
@@ -79,17 +81,7 @@ struct SettingsView: View {
                     LinkCreditCell(image: Image(systemName: "shippingbox"), name: "majd / ipatool", description: "MIT-licensed reference for SAP, Apple authentication and App Store downloads.", url: "https://github.com/majd/ipatool")
                 }
             }
-            .navigationTitle("Settings".localized)
-            .toolbar {
-                if !embedded { ToolbarItem(placement: .topBarTrailing) {
-                    Button(action: {
-                        dismiss()
-                    }) {
-                        Image(systemName: "xmark")
-                    }
-                } }
-            }
-        }
+        .navigationTitle("About Crumb")
     }
 }
 

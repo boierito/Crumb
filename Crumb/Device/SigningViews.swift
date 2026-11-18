@@ -6,6 +6,11 @@ struct SigningSettingsView: View {
 
     var body: some View {
         Form {
+            Section {
+                CrumbEmptyState(title: "Signing identity",
+                    message: "Choose the certificate and provisioning profile for the app you want to install.",
+                    icon: "checkmark.seal")
+            }
             SigningIdentitySection()
         }
         .navigationTitle("Signing identity")
@@ -52,7 +57,8 @@ struct SigningIdentitySection: View {
                 fileRow("Provisioning profile", name: device.profileName, kind: "profile")
                 SecureField("Certificate password", text: $device.signingPassword)
                     .onChange(of: device.signingPassword) { _ in device.invalidateSigning() }
-                Button("Save signing") { device.saveSigning() }
+                Button("Save signing identity") { device.saveSigning() }
+                    .buttonStyle(CrumbActionStyle())
                     .disabled(device.busy || !device.hasCertificate || !device.hasProfile)
             }
             ForEach(device.installationProfiles) { profile in
@@ -121,14 +127,17 @@ struct SigningReviewView: View {
             Form {
                 Section {
                     Text(review.appName).font(.headline)
-                    Text(review.profileName).foregroundStyle(.secondary)
+                    LabeledContent("Provisioning profile", value: review.profileName)
+                } header: {
+                    Text("Identity")
                 }
                 Section("Bundle ID") {
                     TextField("Bundle ID", text: $bundleID)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                    if review.originalBundleID != review.bundleID {
+                    if review.originalBundleID != bundleID {
                         LabeledContent("Original", value: review.originalBundleID).font(.caption)
+                        LabeledContent("Proposed", value: bundleID).font(.caption)
                     }
                 }
                 if review.bundleCount > 1 {
@@ -155,6 +164,7 @@ struct SigningReviewView: View {
                             device.approveSigning()
                         }
                     }
+                    .buttonStyle(CrumbActionStyle())
                     .disabled(device.busy || bundleID.isEmpty)
                     if device.busy {
                         ProgressView("Checking signing…")

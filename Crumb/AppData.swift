@@ -11,13 +11,16 @@ import SwiftUI
 import Combine
 import MapleSAP
 
-enum AppTab: Hashable { case search, downloads, favourites, account, settings }
+enum AppTab: Hashable { case search, downloads, favourites, account }
 
 @MainActor
 final class AppData: ObservableObject {
     static let shared = AppData()
     @Published var selectedTab: AppTab = .search
     var openVersionsAfterLogin = false
+    var selectionSource: AppTab = .search
+    var selectsLatestVersion = false
+    @Published var linkedListing: CatalogListing?
     var selectedCatalogCountry: String?
     @Published var catalogRegion: String = UserDefaults.standard.string(forKey: "catalogRegion") ?? "" {
         didSet { UserDefaults.standard.set(catalogRegion, forKey: "catalogRegion") }
@@ -29,12 +32,13 @@ final class AppData: ObservableObject {
     var catalogCountry: String {
         Storefront.catalogCountries.contains(catalogRegion) ? catalogRegion : accountCountry
     }
-    func openAppSelection(_ input: String, country: String? = nil) {
+    func openAppSelection(_ input: String, country: String? = nil, latest: Bool = false, resuming: Bool = false) {
         guard !isDowngrading, storeRequestCount == 0, !showStoreVersions else { return }
+        if !resuming { selectionSource = selectedTab; selectsLatestVersion = latest }
         appLink = input
         selectedCatalogCountry = country ?? catalogCountry
         if isAuthenticated {
-            selectedTab = .search
+            selectedTab = selectionSource
             showStoreVersions = true
         } else {
             openVersionsAfterLogin = true
@@ -92,6 +96,7 @@ final class AppData: ObservableObject {
     @Published var isAuthenticating: Bool = false
     @Published var authenticationError: String = ""
     @Published var isCodeResendCoolingDown = false
+    @Published var codeResendAvailableAt: Date?
     var codeResendCooldownTask: Task<Void, Never>?
     var authenticationTask: Task<Void, Never>?
     var didRestoreStoreAccount = false
@@ -103,6 +108,7 @@ final class AppData: ObservableObject {
     @Published var installationRequest: DownloadRecord?
     @Published var completedDownloads: [DownloadRecord] = []
     @Published var storeError = ""
+    var retryDownload: (() -> Void)?
     @Published var storeRequestCount = 0
     var storeTask: Task<Void, Never>?
     @Published var isDowngrading: Bool = false

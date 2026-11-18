@@ -23,6 +23,7 @@ extension AppData {
         activeDownloadName = app.name
         isDowngrading = true; showsDowngradeProgress = true; downgradeProgress = 0
         storeError = ""
+        retryDownload = nil
         downloadReady = nil; installationRequest = nil
         downgradeProgressDetail = "Preparing download…"
 
@@ -91,7 +92,7 @@ extension AppData {
                 storeStage("IPA verified and saved. Ready to install or export.")
                 if decryptWhenReady { DeviceWorkflow.shared.decrypt(record,install:installWhenReady) }
                 else if installWhenReady { installationRequest = record }
-                else { downloadReady = nil }
+                else { downloadReady = record }
 
                 downgradeProgress = 1; applicationIcon = "checkmark.circle.fill"
             } catch {
@@ -100,7 +101,11 @@ extension AppData {
                 } else {
                     storeError = (error as? CDNHTTPFailure).map { "CDN request failed (HTTP \($0.status))." } ?? (error as? StoreError)?.localizedDescription ?? (error as? SAPError)?.localizedDescription ?? "Store operation failed (code \((error as NSError).code))."
                     applicationStatus = "Download failed."; applicationIcon = "xmark.circle.fill"
-                    Alertinator.shared.alert(title: "Download failed", body: storeError)
+                    retryDownload = { [weak self] in
+                        guard let self, self.ipaTool === tool else { return }
+                        self.download(app: app, version: version, tool: tool, expectedVersion: expectedVersion,
+                                      installWhenReady: installWhenReady, decryptWhenReady: decryptWhenReady)
+                    }
                 }
             }
         }

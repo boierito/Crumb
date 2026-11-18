@@ -89,11 +89,13 @@ extension AppData {
         startAppleLogin(.requestNewCode)
         guard isAuthenticating else { return }
         isCodeResendCoolingDown = true
+        codeResendAvailableAt = Date().addingTimeInterval(30)
         codeResendCooldownTask?.cancel()
         codeResendCooldownTask = Task {
             do { try await Task.sleep(nanoseconds: 30_000_000_000) }
             catch { return }
             isCodeResendCoolingDown = false
+            codeResendAvailableAt = nil
             codeResendCooldownTask = nil
         }
     }
@@ -107,6 +109,7 @@ extension AppData {
     private func clearCodeResendCooldown() {
         codeResendCooldownTask?.cancel(); codeResendCooldownTask = nil
         isCodeResendCoolingDown = false
+        codeResendAvailableAt = nil
     }
 
     func cancelAppleLogin() {

@@ -99,13 +99,18 @@ struct OTAInstallationView: View {
                 else {
                     Form {
                         Section {
-                            Text(record.appName).font(.headline)
-                            Text(record.version).foregroundStyle(.secondary)
+                            HStack(spacing: 12) {
+                                CrumbArtwork(symbol: "arrow.down.app")
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(record.appName).font(.headline)
+                                    Text(record.version).foregroundStyle(.secondary)
+                                }
+                            }
                         }
                         if !installer.status.isEmpty { Text(installer.status) }
-                        Button("Install") {
+                        Button(started ? "Try installation again" : "Prepare installation") {
                             requestInstallation()
-                        }
+                        }.buttonStyle(CrumbActionStyle())
                         if let url = source ?? record.fileURL { ShareLink(item: url) { Label("Export IPA instead", systemImage: "square.and.arrow.up") } }
                     }
                 }

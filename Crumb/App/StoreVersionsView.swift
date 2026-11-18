@@ -56,16 +56,28 @@ struct StoreVersionsView: View {
     @State private var latest = ""
     @State private var error = ""
     @State private var loading = true
-    @State private var manualID = ""
+    @State private var filter = ""
+    @State private var didReviewLatest = false
     @State private var selected: VersionSelection?
     @State private var showAdvanced = false
     @State private var loadAttempt = 0
+    private var filteredVersions: [String] {
+        let term = filter.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else { return versions }
+        return versions.filter { id in
+            id.localizedCaseInsensitiveContains(term) ||
+                labels.info[id]?.version.localizedCaseInsensitiveContains(term) == true ||
+                labels.info[id]?.build?.localizedCaseInsensitiveContains(term) == true
+        }
+    }
+
     var body: some View {
         NavigationStack {
             List {
                 if let app {
                     Section {
                         HStack(spacing: 12) {
+                            CrumbArtwork(symbol: "clock", size: 44)
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(app.name).font(.headline)
                                 Text(app.bundleID).font(.caption).foregroundStyle(.secondary)
@@ -73,6 +85,7 @@ struct StoreVersionsView: View {
                             Spacer()
                             Button { toggleFavourite(app) } label: {
                                 Image(systemName: appData.favourites.contains { $0.bundleId == app.bundleID } ? "star.fill" : "star")
+                                    .frame(width: 44, height: 44)
                             }
                             .buttonStyle(.borderless)
                             .accessibilityLabel(appData.favourites.contains { $0.bundleId == app.bundleID } ? "Remove from favourites" : "Add to favourites")
@@ -94,16 +107,32 @@ struct StoreVersionsView: View {
                         Button("Try again") { loadAttempt += 1 }
                     }
                 } else if let app {
+                    if !latest.isEmpty {
+                        Section {
+                            Button { select(latest, app: app) } label: {
+                                Label("Review latest version", systemImage: "arrow.down.circle")
+                            }.buttonStyle(CrumbActionStyle())
+                        }
+                    }
                     Section {
-                        ForEach(versions, id: \.self) { id in
+                        TextField("Filter by version, build or ID", text: $filter)
+                            .autocorrectionDisabled().textInputAutocapitalization(.never)
+                        if filteredVersions.isEmpty {
+                            Text("No matching versions").foregroundStyle(.secondary)
+                        }
+                        ForEach(filteredVersions, id: \.self) { id in
                             Button { select(id, app: app) } label: {
                                 HStack(spacing: 12) {
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text(labels.info[id]?.version ?? (id == latest ? "Latest version" : "Older version").localized)
-                                            .foregroundStyle(.primary)
-                                        if id == latest {
-                                            Text("Latest").font(.caption).foregroundStyle(.secondary)
-
+                                        Text(labels.info[id]?.version ?? (id == latest ? "Latest version" : "Version ID \(id)"))
+                                            .font(.headline).foregroundStyle(.primary)
+                                        if let build = labels.info[id]?.build {
+                                            Text("Build \(build)").font(.caption).foregroundStyle(.secondary)
+                                        } else if labels.failures[id] != nil {
+                                            Text("Version number unavailable").font(.caption).foregroundStyle(.secondary)
+                                        } else if labels.info[id] == nil {
+                                            Text(labels.active == id ? "Checking version…" : "Version number pending")
+                                                .font(.caption).foregroundStyle(.secondary)
                                         }
                                     }
                                     Spacer(minLength: 8)
@@ -140,16 +169,25 @@ struct StoreVersionsView: View {
                             else { HStack(spacing: 12) { ProgressView(); Text("Checking version…").foregroundStyle(.secondary) } }
 
                         }
-                        Section("Encrypted") {
-                            Button { download(choice, install:false) } label: { Label("Download encrypted",systemImage:"arrow.down.circle") }
-                            Button { download(choice, install:true) } label: { Label("Download encrypted and install",systemImage:"arrow.down.app") }
+                        Section {
+                            Button { download(choice, install:false) } label: {
+                                Label("Download", systemImage: "arrow.down.circle")
+                            }.buttonStyle(CrumbActionStyle())
+                            Button { download(choice, install:true) } label: {
+                                Label("Download and install", systemImage: "arrow.down.app")
+                            }.buttonStyle(CrumbActionStyle(primary: false))
                         }
-                        Section("Decrypted") {
+                        Section {
+                            DisclosureGroup("Advanced package options", isExpanded: $showAdvanced) {
                             Button { download(choice, install:false, decrypt:true) } label: { Label("Download decrypted",systemImage:"lock.open") }
                                 .disabled(!DeviceWorkflow.decryptSupported)
                             Button { download(choice, install:true, decrypt:true) } label: { Label("Download decrypted and install",systemImage:"arrow.down.app") }
                                 .disabled(!DeviceWorkflow.decryptSupported)
-                            NavigationLink("Decrypter settings") { DeviceSetupView() }
+                                if !DeviceWorkflow.decryptSupported {
+                                    Text("Decryption is unavailable on this device.").font(.footnote).foregroundStyle(.secondary)
+                                }
+                                NavigationLink("Decrypter settings") { DeviceSetupView() }
+                            }
                         }
 
                     }
@@ -169,7 +207,12 @@ struct StoreVersionsView: View {
                     app = resolved; appData.appBundleID = resolved.bundleID
                     let descriptor = try await tool.descriptor(app: resolved)
                     try Task.checkCancellation()
-                    latest = descriptor.externalVersionID; versions = descriptor.availableVersionIDs
+                    latest = descriptor.externalVersionID
+                    versions = descriptor.availableVersionIDs
+                    if appData.selectsLatestVersion, !didReviewLatest, !latest.isEmpty {
+                        didReviewLatest = true
+                        select(latest, app: resolved)
+                    }
                 } catch {
                     guard !Task.isCancelled else { return }
 
@@ -202,6 +245,7 @@ struct StoreVersionsView: View {
         }
     }
     private func select(_ id: String, app: StoreApp) {
+        showAdvanced = false
         selected = VersionSelection(id: id)
         if let tool = appData.ipaTool { labels.request(id, app: app, tool: tool, priority: true) }
     }

@@ -7,20 +7,54 @@ struct ContentView: View {
     @StateObject private var device = DeviceWorkflow.shared
     @Environment(\.scenePhase) private var scenePhase
     @State private var confirmLogout = false
+    @State private var scrollRequest = CrumbScrollRequest()
+    @Environment(\.horizontalSizeClass) private var width
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @FocusState private var codeFocused: Bool
+
+    private let destinations: [(tab: AppTab, title: LocalizedStringKey, icon: String, selectedIcon: String)] = [
+        (.search, "Search", "magnifyingglass", "magnifyingglass"),
+        (.downloads, "Downloads", "arrow.down.circle", "arrow.down.circle.fill"),
+        (.favourites, "Favourites", "star", "star.fill"),
+        (.account, "Account", "person.crop.circle", "person.crop.circle.fill")
+    ]
 
     var body: some View {
-        TabView(selection: $appData.selectedTab) {
-            AppSearchView(embedded: true)
-                .tabItem { Label("Search", systemImage: "magnifyingglass") }.tag(AppTab.search)
-            DownloadedAppsView(embedded: true)
-                .tabItem { Label("Downloads", systemImage: "square.and.arrow.down") }.tag(AppTab.downloads)
-            FavouritesView(embedded: true)
-                .tabItem { Label("Favourites".localized, systemImage: "star") }.tag(AppTab.favourites)
-            account
-                .tabItem { Label("Account", systemImage: "person.crop.circle") }.tag(AppTab.account)
-            SettingsView(embedded: true)
-                .tabItem { Label("Settings".localized, systemImage: "gearshape") }.tag(AppTab.settings)
+        HStack(spacing: 0) {
+            if width == .regular {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 10) {
+                        Image("CrumbMark").resizable().scaledToFit().frame(width: 36, height: 36)
+                            .clipShape(RoundedRectangle(cornerRadius: 9)).accessibilityHidden(true)
+                        Text("Crumb").font(.title2.weight(.bold)).accessibilityAddTraits(.isHeader)
+                    }.padding(.bottom, 20)
+                    ForEach(destinations.indices, id: \.self) { index in tabButton(index, compact: false) }
+                    Spacer()
+                }
+                .padding(18)
+                .frame(width: 216)
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                Divider()
+            }
+            ZStack {
+                page(.search) { AppSearchView() }
+                page(.downloads) { DownloadedAppsView(embedded: true) }
+                page(.favourites) { FavouritesView() }
+                page(.account) { account }
+            }
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if width != .regular {
+                HStack(spacing: 2) {
+                    ForEach(destinations.indices, id: \.self) { index in tabButton(index, compact: true) }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(.regularMaterial)
+                .overlay(alignment: .top) { Divider() }
+            }
+        }
+        .environment(\.crumbScrollRequest, scrollRequest)
         .sheet(isPresented:$device.setupNeeded,onDismiss:{ if device.ready { device.continueQueued() } }) {
             NavigationStack { DeviceSetupView().toolbar { ToolbarItem(placement:.confirmationAction) { Button("Done") { device.setupNeeded = false } } } }
         }
@@ -45,19 +79,70 @@ struct ContentView: View {
         .onChange(of: appData.isAuthenticated) { authenticated in
             if authenticated, appData.openVersionsAfterLogin {
                 appData.openVersionsAfterLogin = false
-                appData.openAppSelection(appData.appLink, country: appData.selectedCatalogCountry)
+                appData.openAppSelection(appData.appLink, country: appData.selectedCatalogCountry, resuming: true)
             }
         }
+    }
+
+    private func page<Content: View>(_ tab: AppTab, @ViewBuilder content: () -> Content) -> some View {
+        let selected = appData.selectedTab == tab
+        return content()
+            .frame(maxWidth: 920)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(uiColor: .systemGroupedBackground))
+            .opacity(selected ? 1 : 0)
+            .allowsHitTesting(selected)
+            .accessibilityHidden(!selected)
+    }
+
+    private func tabButton(_ index: Int, compact: Bool) -> some View {
+        let item = destinations[index]
+        let selected = appData.selectedTab == item.tab
+        let activeDownload = item.tab == .downloads && (appData.isDowngrading || device.activeRecord != nil)
+        let layout = compact ? AnyLayout(VStackLayout(spacing: 3)) : AnyLayout(HStackLayout(spacing: 12))
+        return Button {
+            if selected { scrollRequest = CrumbScrollRequest(tab: item.tab, count: scrollRequest.count + 1) }
+            else {
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) { appData.selectedTab = item.tab }
+            }
+        } label: {
+            layout {
+                Image(systemName: selected ? item.selectedIcon : item.icon)
+                    .font(.system(size: 19, weight: selected ? .semibold : .regular))
+                    .frame(width: 28, height: 23)
+                    .overlay(alignment: .topTrailing) {
+                        if activeDownload { Circle().fill(Color.accentColor).frame(width: 7, height: 7) }
+                    }
+                    .accessibilityHidden(true)
+                Text(item.title)
+                    .font(compact ? .caption2.weight(selected ? .semibold : .medium) : .subheadline.weight(.medium))
+                    .multilineTextAlignment(.center)
+            }
+            .padding(.horizontal, compact ? 1 : 10)
+            .padding(.vertical, 4)
+            .frame(maxWidth: .infinity, minHeight: 48, alignment: compact ? .center : .leading)
+            .foregroundStyle(selected ? Color.primary : Color.secondary)
+            .background(selected ? Color.accentColor.opacity(0.14) : Color.clear, in: RoundedRectangle(cornerRadius: 12))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityValue(activeDownload ? Text("Activity in progress") : Text(""))
     }
 
     private var account: some View {
         NavigationStack {
             List {
                 if appData.isAuthenticated {
-                    Section("Signed in") {
-                        Label(appData.appleId, systemImage: "person.crop.circle")
-                        LabeledContent("Account region", value: appData.accountCountry.uppercased())
-                    }
+                    Section {
+                        HStack(spacing: 12) {
+                            CrumbArtwork(symbol: "person.crop.circle", size: 54)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(appData.appleId).font(.headline)
+                                Text(regionName(appData.accountCountry)).font(.subheadline).foregroundStyle(.secondary)
+                            }
+                        }.padding(.vertical, 6).id(AppTab.account)
+                    } header: { Text("Apple account") }
                     Section {
                         Button("Sign out", role: .destructive) { confirmLogout = true }
                             .disabled(appData.isAuthenticating || appData.isDowngrading || appData.storeRequestCount > 0 || appData.showStoreVersions)
@@ -65,12 +150,14 @@ struct ContentView: View {
                         Text("Signing out keeps your favourites and downloaded IPAs.")
                     }
                 } else {
-                    LoginSection
-                    Section { NavigationButtons() }
+                    loginSection
+                }
+                Section {
+                    NavigationLink { SettingsView() } label: { Label("Settings", systemImage: "gearshape") }
                 }
             }
-            .navigationTitle("Apple account")
-            .navigationBarTitleDisplayMode(.inline)
+            .crumbPrimaryPage(.account)
+            .navigationTitle("Account")
             .alert("Sign out of Apple account?", isPresented: $confirmLogout) {
                 Button("Sign out", role: .destructive) {
                     appData.openVersionsAfterLogin = false
@@ -83,90 +170,76 @@ struct ContentView: View {
         }
     }
 
-    private var LoginSection: some View {
+    private var loginSection: some View {
         Group {
-            Section(header: HeaderLabel(text: "Login".localized, icon: "icloud"), footer: Text("Sign in to choose and download App Store versions.")) {
-                VStack {
-                    TextField("Apple ID".localized, text: $appData.appleId)
-                        .modifier(TextFieldBackground())
-                        .disabled(appData.hasSent2FACode || appData.isAuthenticating)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .keyboardType(.emailAddress)
-                        .textContentType(.username)
-                    
-                    HStack {
-                        if appData.showPassword {
-                            TextField("Password".localized, text: $appData.password)
-                                .textContentType(.password)
-                                .modifier(TextFieldBackground())
-                                .disabled(appData.hasSent2FACode || appData.isAuthenticating)
-                                .autocorrectionDisabled()
-                                .textInputAutocapitalization(.never)
-                        } else {
-                            SecureField("Password".localized, text: $appData.password)
-                                .textContentType(.password)
-                                .modifier(TextFieldBackground())
-                                .disabled(appData.hasSent2FACode || appData.isAuthenticating)
-                                .autocorrectionDisabled()
-                                .textInputAutocapitalization(.never)
-                        }
-                        
-                        Button(action: {
-                            appData.showPassword.toggle()
-                        }) {
-                            Image(systemName: appData.showPassword ? "eye" : "eye.slash")
-                                .frame(width: 22, height: 22, alignment: .center)
-                        }
-                        .buttonStyle(TranslucentButtonStyle(useFullWidth: false))
-                    }
-                }
-                if appData.isAuthenticating {
-                    HStack(spacing: 12) {
-                        ProgressView()
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(appData.applicationStatus).font(.subheadline)
-                        }
-                        Spacer(minLength: 0)
-                        Button("Cancel") { appData.cancelAppleLogin() }
-                            .buttonStyle(.borderless)
-                    }
-                    .accessibilityElement(children: .contain)
-                }
-                if !appData.authenticationError.isEmpty {
-                    Text(appData.authenticationError).font(.subheadline).foregroundStyle(.red).textSelection(.enabled)
-                }
-            }
             if appData.hasSent2FACode {
                 Section {
-                    TextField("2FA Code".localized, text: $appData.code)
-                        .modifier(TextFieldBackground())
+                    TextField("Six-digit code", text: $appData.code)
+                        .font(.title2.monospacedDigit())
                         .keyboardType(.numberPad)
                         .textContentType(.oneTimeCode)
+                        .focused($codeFocused)
                         .disabled(appData.isAuthenticating)
-                    VStack(spacing: 10) {
-                        Button { appData.requestNewVerificationCode() } label: {
-                            Label(appData.isCodeResendCoolingDown ? "Wait before requesting another code" : "Request new code", systemImage: "arrow.clockwise")
-                                .frame(maxWidth: .infinity, minHeight: 28)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(appData.isAuthenticating || appData.isCodeResendCoolingDown || !appData.signInForm.canRequestNewCode)
-                        Button { appData.changeAppleAccount() } label: {
-                            Label("Change Apple ID", systemImage: "person.crop.circle")
-                                .frame(maxWidth: .infinity, minHeight: 28)
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(appData.isAuthenticating)
+                    NavigationButtons()
+                    if let deadline = appData.codeResendAvailableAt, appData.isCodeResendCoolingDown {
+                        HStack {
+                            Text("Request a new code in")
+                            Text(timerInterval: Date()...max(Date(), deadline), countsDown: true)
+                                .monospacedDigit()
+                        }.font(.subheadline).foregroundStyle(.secondary)
+                    } else {
+                        Button("Request new code") { appData.requestNewVerificationCode() }
+                            .disabled(appData.isAuthenticating || !appData.signInForm.canRequestNewCode)
                     }
+                    Button("Change Apple ID") { appData.changeAppleAccount() }
+                        .disabled(appData.isAuthenticating)
                 } header: {
-                    HeaderLabel(text: "Verification Code".localized, icon: "key.viewfinder")
+                    Text("Verify your account").id(AppTab.account)
                 } footer: {
-                    Text("Apple decides when to send a code. You can also obtain one in your trusted device’s Apple account settings.")
+                    Text("Check a trusted Apple device for a sign-in request or get a verification code in its Apple Account settings.")
+                }
+            } else {
+                Section {
+                    TextField("Apple ID".localized, text: $appData.appleId)
+                        .autocorrectionDisabled().textInputAutocapitalization(.never)
+                        .keyboardType(.emailAddress).textContentType(.username)
+                        .disabled(appData.isAuthenticating)
+                    HStack {
+                        Group {
+                            if appData.showPassword { TextField("Password".localized, text: $appData.password) }
+                            else { SecureField("Password".localized, text: $appData.password) }
+                        }
+                        .textContentType(.password)
+                        .autocorrectionDisabled().textInputAutocapitalization(.never)
+                        .disabled(appData.isAuthenticating)
+                        Button { appData.showPassword.toggle() } label: {
+                            Image(systemName: appData.showPassword ? "eye.slash" : "eye").frame(width: 44, height: 44)
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel(appData.showPassword ? "Hide password" : "Show password")
+                    }
+                    NavigationButtons()
+                } header: {
+                    Text("Sign in to Apple").id(AppTab.account)
+                } footer: {
+                    Text("Sign in to choose and download App Store versions.")
                 }
             }
+            if appData.isAuthenticating {
+                Section {
+                    Label(appData.applicationStatus, systemImage: "hourglass")
+                        .foregroundStyle(.secondary)
+                    Button("Cancel") { appData.cancelAppleLogin() }
+                }
+            }
+            if !appData.authenticationError.isEmpty {
+                Label(appData.authenticationError, systemImage: "exclamationmark.circle")
+                    .font(.subheadline).foregroundStyle(.red).textSelection(.enabled)
+            }
         }
+        .onChange(of: appData.hasSent2FACode) { codeFocused = $0 }
     }
-    
+
 }
 
 struct ItemInfoCell: View {

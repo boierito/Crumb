@@ -12,45 +12,75 @@ struct DownloadedAppsView: View {
     @State private var confirmDeleteAll = false
     @State private var confirmDeletion = false
     @State private var deletionError = ""
+    @State private var query = ""
+    @State private var filter: PackageFilter = .all
+
+    private enum PackageFilter: String, CaseIterable {
+        case all, encrypted, decrypted
+
+        var title: LocalizedStringKey {
+            switch self {
+            case .all: "All files"
+            case .encrypted: "Encrypted"
+            case .decrypted: "Decrypted"
+            }
+        }
+    }
+
+    private var matchingRecords: [DownloadRecord] {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return appData.completedDownloads.filter { record in
+            let includesType = filter == .all || (filter == .decrypted) == record.isDecrypted
+            return includesType && (term.isEmpty || [record.appName, record.version, record.bundleID]
+                .contains { $0.localizedCaseInsensitiveContains(term) })
+        }
+    }
     var body: some View {
         NavigationStack {
             List {
+                Color.clear.frame(height: 0).listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear).accessibilityHidden(true).id(AppTab.downloads)
                 if appData.isDowngrading {
                     Section {
-                        VStack(alignment: .leading, spacing: 14) {
-                            HStack(alignment: .top, spacing: 12) {
-                                Image(systemName: "arrow.down.app").font(.title2).foregroundStyle(.tint)
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(spacing: 12) {
+                                let transferring = appData.downloadPhaseLabel == "Downloading"
+                                let fraction = min(max(appData.downgradeProgress / 0.85, 0), 1)
+                                CrumbProgressMark(progress: transferring ? fraction : nil)
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(appData.activeDownloadName.isEmpty ? "Downloading app" : appData.activeDownloadName)
                                         .font(.headline)
                                     Text(appData.downloadPhaseLabel).font(.subheadline).foregroundStyle(.secondary)
+                                    if transferring {
+                                        Text("\(appData.downloadProgressText) · \(Int(fraction * 100))%")
+                                            .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                                    }
                                 }
+                                .accessibilityElement(children: .combine)
                                 Spacer(minLength: 0)
                                 Button { appData.storeTask?.cancel() } label: {
-                                    Image(systemName: "xmark.circle.fill").font(.title2).foregroundStyle(.secondary)
-                                        .frame(minWidth: 44, minHeight: 44)
+                                    Image(systemName: "xmark").frame(width: 44, height: 44)
+                                        .background(.thinMaterial, in: Circle())
                                 }
                                 .buttonStyle(.borderless).accessibilityLabel("Cancel download")
                             }
-                            if appData.showsDowngradeProgress {
-                                ProgressView(value: appData.downgradeProgress)
-                                HStack {
-                                    Text(appData.downloadProgressText)
-                                    Spacer()
-                                    Text("\(Int(appData.downgradeProgress * 100))%")
-                                        .monospacedDigit()
-                                }
-                                .font(.caption).foregroundStyle(.secondary)
-                            }
+                        }.padding(.vertical, 6)
+                    } header: { Text("In progress") }
+                }
+                if !appData.storeError.isEmpty {
+                    Section {
+                        Label(appData.activeDownloadName, systemImage: "exclamationmark.circle").font(.headline)
+                        Text(appData.storeError).font(.subheadline).foregroundStyle(.secondary)
+                        if let retry = appData.retryDownload {
+                            Button("Try again", action: retry).buttonStyle(CrumbActionStyle(primary: false))
                         }
-                        .padding(.vertical, 8)
-                    }
+                    } header: { Text("Download failed") }
                 }
 
                 if device.activeRecord != nil || device.waitingForHelper {
                     Section {
                         HStack(spacing:12) {
-                            ProgressView()
+                            CrumbProgressMark(progress: device.progress)
                             VStack(alignment:.leading,spacing:4) {
                                 Text(device.activeRecord?.appName ?? "Decrypter".localized).font(.headline)
                                 Text(device.activityTitle.localized).font(.subheadline).foregroundStyle(.secondary)
@@ -60,7 +90,6 @@ struct DownloadedAppsView: View {
                                 .buttonStyle(.borderless)
                                 .frame(minWidth: 44, minHeight: 44)
                         }
-                        if let progress = device.progress { ProgressView(value:progress) }
                         if device.waitingForHelper && !device.busy {
                             HStack {
                                 Button("Open decrypter") { device.openHelper() }
@@ -70,15 +99,28 @@ struct DownloadedAppsView: View {
                         }
                     }
                 }
-                Section("Encrypted") {
-                    let records = appData.completedDownloads.filter { !$0.isDecrypted }
-                    if records.isEmpty { Text("No encrypted apps").foregroundStyle(.secondary) }
-                    ForEach(records) { record in downloadRow(record) }
-                }
-                Section("Decrypted") {
-                    let records = appData.completedDownloads.filter { $0.isDecrypted }
-                    if records.isEmpty { Text("No decrypted apps").foregroundStyle(.secondary) }
-                    ForEach(records) { record in downloadRow(record) }
+                if !appData.completedDownloads.isEmpty {
+                    Section {
+                        TextField("Search name, version or bundle ID", text: $query)
+                            .autocorrectionDisabled().textInputAutocapitalization(.never)
+                        Picker("File type", selection: $filter) {
+                            ForEach(PackageFilter.allCases, id: \.self) { item in
+                                Text(item.title).tag(item)
+                            }
+                        }
+                    }
+                    Section("Ready to install") {
+                        if matchingRecords.isEmpty {
+                            CrumbEmptyState(title: "No matching downloads", message: "Try another search or file type.", icon: "line.3.horizontal.decrease.circle")
+                        }
+                        ForEach(matchingRecords) { record in downloadRow(record) }
+                    }
+                } else if !appData.isDowngrading && device.activeRecord == nil && !device.waitingForHelper && appData.storeError.isEmpty {
+                    Section {
+                        CrumbEmptyState(title: "No downloads yet", message: "Downloaded apps appear here when they’re ready to install or export.", icon: "arrow.down.circle")
+                        Button("Search App Store") { appData.selectedTab = .search }
+                            .buttonStyle(CrumbActionStyle(primary: false))
+                    }
                 }
                 if !appData.completedDownloads.isEmpty || appData.downloadedIPAURL != nil {
                     Section {
@@ -87,8 +129,9 @@ struct DownloadedAppsView: View {
                     }
                 }
             }
+            .crumbPrimaryPage(.downloads)
             .navigationTitle("Downloads")
-            .navigationBarTitleDisplayMode(.inline)
+            .scrollDismissesKeyboard(.interactively)
             .listStyle(.insetGrouped)
              .toolbar {
                 if !embedded { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
@@ -116,7 +159,9 @@ struct DownloadedAppsView: View {
                 }
                 Button("Cancel", role: .cancel) { deletion = nil }
             } message: {
-                Text("The saved IPA will be removed. The installed app and its data will stay on this device.")
+                if let deletion {
+                    Text("Delete the saved IPA for \(deletion.appName), version \(deletion.version)? The installed app and its data stay on this device.")
+                }
             }
             .alert("Delete all downloads?", isPresented: $confirmDeleteAll) {
                 Button("Delete all", role: .destructive) {
@@ -142,15 +187,18 @@ struct DownloadedAppsView: View {
     private func downloadRow(_ record: DownloadRecord) -> some View {
         VStack(alignment:.leading,spacing:12) {
             HStack(spacing:12) {
-                Image(systemName:record.isDecrypted ? "lock.open.fill" : "app.fill")
-                    .font(.title3).foregroundStyle(.tint)
-                    .frame(width:42,height:42).background(Color.accentColor.opacity(0.1),in:RoundedRectangle(cornerRadius:10))
-                VStack(alignment:.leading,spacing:3) {
+                CrumbArtwork(url: appData.favourites.first { $0.bundleId == record.bundleID }?.artworkURL, size: 44)
+                VStack(alignment: .leading, spacing: 4) {
                     Text(record.appName).font(.headline)
-                    Text(record.version).font(.subheadline).foregroundStyle(.secondary)
+                    Text(record.version).font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+                    Text(record.isDecrypted ? "Decrypted IPA" : "Encrypted IPA")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer(minLength:8)
                 Menu {
+                    if let url = record.fileURL {
+                        ShareLink(item: url) { Label("Export IPA", systemImage: "square.and.arrow.up") }
+                    }
                     if record.isDecrypted {
                         Button("Signing options") { device.install(record,review:true) }
                         if record.lastSigning != nil { Button("Signing details") { signingDetails = record } }
@@ -163,13 +211,12 @@ struct DownloadedAppsView: View {
                 } label: { Image(systemName:"ellipsis").frame(width:44,height:44) }
                     .accessibilityLabel("Options for \(record.appName)")
             }
-            HStack(spacing:12) {
-                Button { device.install(record) } label: { Label("Install",systemImage:"arrow.down.app").frame(maxWidth:.infinity) }
-                    .disabled(device.busy || device.waitingForHelper)
-                if let url = record.fileURL {
-                    ShareLink(item:url) { Label("Export",systemImage:"square.and.arrow.up").frame(maxWidth:.infinity) }
-                }
-            }.buttonStyle(.bordered).controlSize(.regular)
+            Button { device.install(record) } label: {
+                Label("Install", systemImage: "arrow.down.app")
+            }
+            .buttonStyle(CrumbActionStyle())
+            .disabled(device.busy || device.waitingForHelper)
+
         }
         .padding(.vertical,8)
         .swipeActions(allowsFullSwipe:false) {

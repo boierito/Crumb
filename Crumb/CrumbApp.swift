@@ -14,12 +14,14 @@ struct CrumbApp: App {
     @StateObject private var appData = AppData.shared
     @StateObject private var localizationManager = LocalizationManager.shared
     
+    @AppStorage("crumbAppearance") private var appearance = CrumbAppearance.system
     @AppStorage("autoCleanApp") var autoCleanApp: Bool = true
     
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(appData)
+                .preferredColorScheme(appearance.colorScheme)
                 .environment(\.locale, .init(identifier: localizationManager.currentLanguage.rawValue))
                 .onAppear {
                     if autoCleanApp {
@@ -33,7 +35,8 @@ struct CrumbApp: App {
                     }
                     let rawURL = schemedURL.absoluteString.replacingOccurrences(of: "crumb:", with: "")
                     if let appLink = rawURL.removingPercentEncoding {
-                        appData.openAppSelection(appLink)
+                        appData.selectedTab = .search
+                        appData.linkedListing = CatalogListing(input: appLink, country: appData.catalogCountry)
                         #if DEBUG
                         print("Successfully received app link! \(appLink)")
                         #endif
