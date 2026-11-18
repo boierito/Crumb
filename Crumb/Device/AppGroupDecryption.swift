@@ -133,19 +133,20 @@ enum AppGroupDecryption {
                 }
             }
         }
-        guard let enumerator = fm.enumerator(at: unpacked, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey]) else { throw fail("Cannot enumerate IPA.") }
-        var files: [URL] = []
-        for case let url as URL in enumerator { files.append(url) }
-        let baseComponents = unpacked.resolvingSymlinksInPath().pathComponents
+        guard let enumerator = fm.enumerator(atPath: unpacked.path) else { throw fail("Cannot enumerate IPA.") }
+        // The relative enumerator avoids /var vs /private/var spelling changes
+        // in URL-based enumeration of App Group containers on Darwin.
+        var files: [String] = []
+        for case let relative as String in enumerator { files.append(relative) }
+        let appPrefix = "Payload/" + app.lastPathComponent + "/"
         var decrypted = 0
-        for (index, url) in files.enumerated() {
+        for (index, relative) in files.enumerated() {
             if cancelled() { throw CancellationError() }
-            let components = url.resolvingSymlinksInPath().pathComponents
-            guard components.count > baseComponents.count,
-                  Array(components.prefix(baseComponents.count)) == baseComponents else {
+            let parts = relative.split(separator: "/", omittingEmptySubsequences: false)
+            guard !relative.contains("\\"), parts.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else {
                 throw fail("Unexpected archive enumeration path.")
             }
-            let relative = components.dropFirst(baseComponents.count).joined(separator: "/")
+            let url = unpacked.appendingPathComponent(relative)
             let destination = packed.appendingPathComponent(relative)
             let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
             guard values.isSymbolicLink != true else { throw fail("IPA contains a symbolic link.") }
@@ -154,9 +155,7 @@ enum AppGroupDecryption {
                 continue
             }
             try fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let appComponents = app.resolvingSymlinksInPath().pathComponents
-            if components.count > appComponents.count,
-               Array(components.prefix(appComponents.count)) == appComponents, let primarySinf {
+            if relative.hasPrefix(appPrefix), let primarySinf {
                 let handle = try FileHandle(forReadingFrom: url)
                 let head = try handle.read(upToCount: 4)
                 try handle.close()
@@ -165,7 +164,7 @@ enum AppGroupDecryption {
                     if !fm.fileExists(atPath: sinf.path) {
                         try fm.createDirectory(at: sinf.deletingLastPathComponent(), withIntermediateDirectories: true)
                         try fm.copyItem(at: primarySinf, to: sinf)
-                        let sinfRelative = sinf.resolvingSymlinksInPath().pathComponents.dropFirst(baseComponents.count).joined(separator: "/")
+                        let sinfRelative = (relative as NSString).deletingLastPathComponent + "/SC_Info/" + url.lastPathComponent + ".sinf"
                         let outputSinf = packed.appendingPathComponent(sinfRelative)
                         try fm.createDirectory(at: outputSinf.deletingLastPathComponent(), withIntermediateDirectories: true)
                         try fm.copyItem(at: sinf, to: outputSinf)
