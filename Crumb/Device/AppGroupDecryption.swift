@@ -77,7 +77,10 @@ enum AppGroupDecryption {
            let sources = manifest["SinfPaths"] as? [String], let first = sources.first {
             func safeURL(_ relative: String) throws -> URL {
                 let url = app.appendingPathComponent(relative).standardizedFileURL
-                guard url.path.hasPrefix(app.path + "/"), !relative.hasPrefix("/") else { throw fail("Invalid SINF replication path.") }
+                let base = app.resolvingSymlinksInPath().pathComponents
+                let parts = url.resolvingSymlinksInPath().pathComponents
+                guard parts.count > base.count, Array(parts.prefix(base.count)) == base,
+                      !relative.hasPrefix("/") else { throw fail("Invalid SINF replication path.") }
                 return url
             }
             let sourceSinf = try safeURL(first)
@@ -111,7 +114,9 @@ enum AppGroupDecryption {
                 continue
             }
             try fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-            if url.path.hasPrefix(app.path + "/"), let primarySinf {
+            let appComponents = app.resolvingSymlinksInPath().pathComponents
+            if components.count > appComponents.count,
+               Array(components.prefix(appComponents.count)) == appComponents, let primarySinf {
                 let handle = try FileHandle(forReadingFrom: url)
                 let head = try handle.read(upToCount: 4)
                 try handle.close()
