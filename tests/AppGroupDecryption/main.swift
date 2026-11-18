@@ -33,6 +33,7 @@ let output = try AppGroupDecryption.run(source: ipa, root: root, cancelled: { fa
 defer { try? fm.removeItem(at: output) }
 let unpack = root.appendingPathComponent("check")
 try fm.unzipItem(at: output, to: unpack)
+print("Verified archive paths:", try fm.subpathsOfDirectory(atPath: unpack.path))
 try require(try Data(contentsOf: unpack.appendingPathComponent("Payload/Test.app/Test")) == Data("verified-plaintext".utf8), "plaintext missing")
 try require(try Data(contentsOf: unpack.appendingPathComponent("Payload/Test.app/SC_Info/Test.sinf")) == license, "license changed")
 try require(fm.fileExists(atPath: unpack.appendingPathComponent("iTunesMetadata.plist").path), "root resource lost")

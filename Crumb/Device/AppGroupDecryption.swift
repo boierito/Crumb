@@ -32,7 +32,7 @@ enum AppGroupDecryption {
     static func run(source: URL, root: URL, cancelled: () -> Bool,
                     progress: (Double) -> Void) throws -> URL {
         let fm = FileManager.default
-        let work = root.appendingPathComponent("crumb-fairplay-" + UUID().uuidString, isDirectory: true)
+        let work = root.resolvingSymlinksInPath().appendingPathComponent("crumb-fairplay-" + UUID().uuidString, isDirectory: true)
         try fm.createDirectory(at: work, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: work) }
         let unpacked = work.appendingPathComponent("original", isDirectory: true)
@@ -96,6 +96,7 @@ enum AppGroupDecryption {
         var decrypted = 0
         for (index, url) in files.enumerated() {
             if cancelled() { throw CancellationError() }
+            guard url.path.hasPrefix(unpacked.path + "/") else { throw fail("Unexpected archive enumeration path.") }
             let relative = String(url.path.dropFirst(unpacked.path.count + 1))
             let destination = packed.appendingPathComponent(relative)
             let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
