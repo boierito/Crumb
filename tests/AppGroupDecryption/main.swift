@@ -31,7 +31,7 @@ let license = Data("original-license".utf8)
 try license.write(to: app.appendingPathComponent("SC_Info/Test.sinf"))
 let sinfManifest: [String: Any] = [
     "SinfPaths": ["SC_Info/Test.sinf"],
-    "SinfReplicationPaths": ["PlugIns/Widget.appex/SC_Info/Widget.sinf", "Frameworks/A Framework.framework/SC_Info/A Framework.sinf"]
+    "SinfReplicationPaths": ["PlugIns/Widget.appex/SC_Info/Widget.sinf", "Frameworks/A Framework.framework/SC_Info/A Framework.sinf", "", "../escape.sinf", "/escape.sinf", "obsolete-extension"]
 ]
 try PropertyListSerialization.data(fromPropertyList: sinfManifest, format: .binary, options: 0)
     .write(to: app.appendingPathComponent("SC_Info/Manifest.plist"))
@@ -46,7 +46,7 @@ try fm.unzipItem(at: output, to: unpack)
 print("Verified archive paths:", try fm.subpathsOfDirectory(atPath: unpack.path))
 try require(try Data(contentsOf: unpack.appendingPathComponent("Payload/Test.app/Test")) == Data("verified-plaintext".utf8), "plaintext missing")
 try require(try Data(contentsOf: unpack.appendingPathComponent("Payload/Test.app/SC_Info/Test.sinf")) == license, "license changed")
-for path in sinfManifest["SinfReplicationPaths"] as! [String] {
+for path in (sinfManifest["SinfReplicationPaths"] as! [String]).prefix(2) {
     try require(try Data(contentsOf: unpack.appendingPathComponent("Payload/Test.app/" + path)) == license, "nested SINF replication lost")
 }
 try require(fm.fileExists(atPath: unpack.appendingPathComponent("iTunesMetadata.plist").path), "root resource lost")
@@ -65,6 +65,7 @@ let archive = try Archive(url: malicious, accessMode: .create)
 try archive.addEntry(with: "../escaped", fileURL: app.appendingPathComponent("Test"))
 try reject(malicious)
 try require(!fm.fileExists(atPath: root.appendingPathComponent("escaped").path), "path traversal escaped")
+try require(!fm.fileExists(atPath: root.appendingPathComponent("escape.sinf").path), "unsafe replication hint escaped staging")
 let plainTree = root.appendingPathComponent("plain-input")
 try fm.createDirectory(at: plainTree.appendingPathComponent("Payload/Plain.app"), withIntermediateDirectories: true)
 try Data("already plain".utf8).write(to: plainTree.appendingPathComponent("Payload/Plain.app/Test"))

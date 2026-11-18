@@ -122,7 +122,11 @@ enum AppGroupDecryption {
             let sourceSinf = try sinfURL(first, in: app)
             primarySinf = sourceSinf
             for path in manifest["SinfReplicationPaths"] as? [String] ?? [] {
-                let destination = try sinfURL(path, in: app)
+                // Replication hints may be stale or refer to removed extensions.
+                // Ignore unusable hints without ever writing an unsafe path;
+                // actual Mach-O files below still get their own checked SINF.
+                guard path.lowercased().hasSuffix(".sinf"),
+                      let destination = try? sinfURL(path, in: app) else { continue }
                 if !fm.fileExists(atPath: destination.path) {
                     try fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
                     try fm.copyItem(at: sourceSinf, to: destination)
