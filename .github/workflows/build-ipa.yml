@@ -42,6 +42,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.99.1
         with:
           targets: aarch64-apple-ios
+      - name: Test App Group archive pipeline
+        run: bash scripts/test-app-group-decryption.sh
       - name: Compile and link helper against the iOS SDK
         run: xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.4 -fobjc-arc -framework UIKit -framework Foundation -framework CoreGraphics -lz DecryptHelper/main.m DecryptHelper/CrumbJobControl.m DecryptHelper/CrumbMachO.c DecryptHelper/CrumbFileAccess.c DecryptHelper/CrumbLicenseResources.m DecryptHelper/CrumbIPAArchive.m -o "$RUNNER_TEMP/CrumbDecrypt-link-check"
       - name: Test helper cancellation and restart isolation
