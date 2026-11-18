@@ -47,6 +47,30 @@ enum AppGroupDecryption {
 
     static func fail(_ message: String) -> DeviceOperationError { .message(message) }
 
+    // Validate the relative manifest path before joining it to the app URL.
+    // standardizing/resolving an existing base and a not-yet-created destination
+    // can produce different /var vs /private/var aliases on Darwin. Containment
+    // must not depend on comparing those physical path spellings.
+    static func sinfURL(_ relative: String, in app: URL) throws -> URL {
+        let parts = relative.split(separator: "/", omittingEmptySubsequences: false)
+        guard !relative.isEmpty, !relative.contains("\\"), !relative.contains("\0"),
+              parts.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else {
+            throw fail("Invalid SINF relative path: absolute, empty or traversal component.")
+        }
+        var destination = app
+        for part in parts {
+            destination.appendPathComponent(String(part))
+            // The archive already rejects links. Also refuse a substituted link
+            // before using a manifest destination, including any parent component.
+            if let attributes = try? FileManager.default.attributesOfItem(atPath: destination.path),
+               attributes[.type] as? FileAttributeType == .typeSymbolicLink {
+                throw fail("Invalid SINF relative path: symbolic link.")
+            }
+        }
+        return destination
+    }
+
+
     // Blocking operation. Its task owns the workspace until completion, including
     // cancellation; no later job may reset the C cancellation flag before then.
     static func run(source: URL, root: URL, cancelled: () -> Bool,
@@ -95,18 +119,10 @@ enum AppGroupDecryption {
         if let data = try? Data(contentsOf: manifestURL),
            let manifest = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
            let sources = manifest["SinfPaths"] as? [String], let first = sources.first {
-            func safeURL(_ relative: String) throws -> URL {
-                let url = app.appendingPathComponent(relative).standardizedFileURL
-                let base = app.resolvingSymlinksInPath().pathComponents
-                let parts = url.resolvingSymlinksInPath().pathComponents
-                guard parts.count > base.count, Array(parts.prefix(base.count)) == base,
-                      !relative.hasPrefix("/") else { throw fail("Invalid SINF replication path.") }
-                return url
-            }
-            let sourceSinf = try safeURL(first)
+            let sourceSinf = try sinfURL(first, in: app)
             primarySinf = sourceSinf
             for path in manifest["SinfReplicationPaths"] as? [String] ?? [] {
-                let destination = try safeURL(path)
+                let destination = try sinfURL(path, in: app)
                 if !fm.fileExists(atPath: destination.path) {
                     try fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
                     try fm.copyItem(at: sourceSinf, to: destination)
