@@ -32,6 +32,12 @@ compatible sideloader. Requires **iOS 16.4 or later**.
 Sign in, find an app and choose the version you want. Downloaded IPAs are available
 in **Downloads**, where you can install, export or delete them.
 
+## Experimental App Group decryption
+
+This branch decrypts inside Crumb using an authorized App Group, without a helper,
+VPN or pairing. Sign with App Groups enabled in KSign, then choose **Decrypt**
+in Downloads. See [setup and limitations](docs/APP_GROUP_DECRYPTION.md).
+
 ## Origins and credits
 
 Crumb builds on [WaffleStore](https://github.com/nxtcoreee3/WaffleStore), whose roots

@@ -19,10 +19,8 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         let v = ProcessInfo.processInfo.operatingSystemVersion
         return v.majorVersion == 27 && v.minorVersion == 0 && (0...1).contains(v.patchVersion)
     }
-    static var decryptSupported: Bool {
-        let v = ProcessInfo.processInfo.operatingSystemVersion
-        return v.majorVersion == 27 && v.minorVersion == 0 && v.patchVersion == 1
-    }
+    static var decryptSupported: Bool { true } // App Group method: attempt on device; no pairing gate.
+    private var groupWorker: Task<URL, Error>?
     @Published private(set) var phase = "idle"
     @Published private(set) var message = ""
     @Published private(set) var pin: String?
@@ -92,14 +90,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
                 helperBundle = info["helper_bundle"] ?? helperBundle
                 signingReady = true
             }
-            if let data = try DeviceKeychain.read("pending"),
-               let value = try JSONSerialization.jsonObject(with: data) as? [String: String] {
-                pending = value; helperInstalled = true; waitingForHelper = true
-                installAfterDecrypt = value["install"] == "true"
-                if let text = value["download_record"] ?? value["record"], let data = Data(base64Encoded: text) {
-                    activeRecord = try? JSONDecoder().decode(DownloadRecord.self, from: data)
-                }
-            }
+            try? DeviceKeychain.remove("pending")
         } catch { message = "Could not read protected device settings." }
         loadSharedSigning()
         network.pathUpdateHandler = { [weak self] path in
@@ -162,6 +153,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         if busy && lastRequest["operation"] as? String == "fetch" { return "Saving app" }
         if waitingForHelper { return "Decrypting" }
         switch phase {
+        case "group-decrypt": return "Decrypting on this device"
         case "preparing": return "Preparing decrypter"
         case "installing": return "Installing decrypter"
         case "fetching": return "Saving app"
@@ -174,9 +166,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         connected = false
     }
     func autoConnect() {
-        guard connectionPolicy.shouldCheck(paired: paired, busy: busy, connected: connected,
-            cellular: onCellular, helperPending: waitingForHelper || resultRequest.requested || signingContext != nil || signedInstallation != nil) else { return }
-        verify()
+        // App Group decryption and signed OTA installation need no device tunnel.
     }
     private func signingRequest(operation: String, installation: Bool = false) throws -> [String: Any] {
         let fm = FileManager.default
@@ -249,10 +239,49 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         catch { cleanup(); errorMessage = error.localizedDescription }
     }
     func decrypt(_ record: DownloadRecord, install: Bool = false) {
-        guard (!busy || lastRequest["operation"] as? String == "verify"), !waitingForHelper, signingContext == nil, signedInstallation == nil else { errorMessage = "Finish the current app first."; return }
-        guard Self.decryptSupported else { errorMessage = "Decryption is supported on iOS 27.0.1. Pairing on other versions does not enable this method."; return }
-        queuedRecord = record; installAfterDecrypt = install
-        continueQueued()
+        guard !busy, groupWorker == nil, !waitingForHelper, signingContext == nil, signedInstallation == nil else {
+            errorMessage = "Finish the current app first."; return
+        }
+        guard let root = AppGroupDecryption.container() else {
+            errorMessage = "No authorized App Group is accessible. Re-sign Crumb in KSign with an App Group enabled in both the provisioning profile and app entitlements. No VPN or helper is required."
+            return
+        }
+        guard let source = record.fileURL else { errorMessage = "The downloaded IPA is missing."; return }
+        crumb_group_reset()
+        busy = true; activeRecord = record; phase = "group-decrypt"; progress = 0
+        message = "Decrypting on this device…"; errorMessage = ""; output = nil
+        let token = UUID(); generation = token
+        background = UIApplication.shared.beginBackgroundTask(withName: "Crumb App Group decryption") { [weak self] in
+            Task { @MainActor in self?.cancel() }
+        }
+        let worker = Task.detached(priority: .userInitiated) {
+            try AppGroupDecryption.run(source: source, root: root, cancelled: { Task.isCancelled }) { value in
+                Task { @MainActor [weak self] in
+                    guard let self, self.generation == token, self.groupWorker != nil else { return }
+                    self.progress = value
+                }
+            }
+        }
+        groupWorker = worker
+        Task {
+            do {
+                let destination = try await worker.value
+                guard !worker.isCancelled else { try? FileManager.default.removeItem(at: destination); throw CancellationError() }
+                var result = DownloadRecord(filename: destination.lastPathComponent, appID: record.appID,
+                    appName: record.appName, bundleID: record.bundleID, version: record.version,
+                    build: record.build, externalVersionID: record.externalVersionID, date: Date())
+                result.decrypted = true
+                do { try result.save() } catch { try? FileManager.default.removeItem(at: destination); throw error }
+                groupWorker = nil; busy = false; activeRecord = nil; progress = nil; phase = "idle"; endBackground()
+                output = destination; message = "Decrypted and verified. Ready to export or sign and install."
+                AppData.shared.restoreDownloadedIPA()
+                if install { self.install(result) }
+            } catch {
+                groupWorker = nil; busy = false; activeRecord = nil; progress = nil; phase = "idle"; endBackground()
+                if worker.isCancelled || error is CancellationError { message = "Decryption stopped. Original IPA retained." }
+                else { errorMessage = error.localizedDescription; message = "Decryption failed. Original IPA retained." }
+            }
+        }
     }
     func continueQueued() {
         if ready && connected { setupNeeded = false }
@@ -399,6 +428,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
         catch { message = error.localizedDescription }
     }
     func cancel() {
+        if let groupWorker { groupWorker.cancel(); crumb_group_cancel(); message = "Cancelling…"; return }
         guard let job else { return }
         resultRequest = DeviceResultRequest()
         crumb_device_cancel(job)
@@ -409,6 +439,7 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
     // Abandon the UI session immediately, including an external helper with no
     // native Job. A cancelled worker owns its workspace until it has stopped.
     func stopDecryption(notifyHelper: Bool = true) {
+        if groupWorker != nil { cancel(); return }
         let helperJob = waitingForHelper && pending?["cancel_protocol"] == "1" ? pending?["job_id"] : nil
         let retiredJob = job
         let retiredWorkspace = staged

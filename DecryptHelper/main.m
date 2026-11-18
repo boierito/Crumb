@@ -256,6 +256,7 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
   }
   return ok;
 }
+#ifndef CRUMB_FAIRPLAY_LIBRARY
 @interface CrumbHelper : UIViewController
 @property(nonatomic, strong) UILabel *label;
 @property(nonatomic, strong) UIProgressView *progress;
@@ -670,3 +671,5 @@ int main(int argc, char **argv) {
                              NSStringFromClass(Delegate.class));
   }
 }
+
+#endif // CRUMB_FAIRPLAY_LIBRARY

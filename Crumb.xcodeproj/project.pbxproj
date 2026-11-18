@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A77700000000000000000001 = {isa = PBXBuildFile; productRef = A77700000000000000000002; };
 		B00100000000000000000007 = {isa = PBXBuildFile; fileRef = B00100000000000000000008; };
 		B00100000000000000000009 = {isa = PBXBuildFile; fileRef = B0010000000000000000000A; };
 		B00100000000000000000004 /* UnicornTCI in Frameworks */ = {isa = PBXBuildFile; fileRef = B00100000000000000000005; };
@@ -36,6 +37,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A77700000000000000000001,
 				B00100000000000000000004 /* UnicornTCI in Frameworks */,
 				B00100000000000000000001 /* MapleSAP in Frameworks */,
 				E6F5D493301692B600FEEC8A /* Zip in Frameworks */,
@@ -85,6 +87,7 @@
 			);
 			name = Crumb;
 			packageProductDependencies = (
+				A77700000000000000000002,
 				B00100000000000000000002 /* MapleSAP */,
 				63A7EF12A4ADD015377FF7FF /* PartyUI */,
 				4B51818CFD6F6A0FD21DFB33 /* Telegraph */,
@@ -124,6 +127,7 @@
 			mainGroup = E6F5D40A30168FCC00FEEC8A;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				A77700000000000000000003,
 				B00100000000000000000003 /* XCLocalSwiftPackageReference "MapleSyrup/SAPKit" */,
 				7FA68C9A5DCE94F7088B1AC7 /* XCRemoteSwiftPackageReference "PartyUI" */,
 				D8D4B724CB6FBC9A7913D52B /* XCRemoteSwiftPackageReference "Telegraph" */,
@@ -421,6 +425,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+        A77700000000000000000003 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/weichsel/ZIPFoundation.git"; requirement = {kind = exactVersion; version = 0.9.20; }; };
 		145A16138ECC23B7B003929E /* XCRemoteSwiftPackageReference "Zip" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/marmelroy/Zip.git";
@@ -452,6 +457,7 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+        A77700000000000000000002 = {isa = XCSwiftPackageProductDependency; package = A77700000000000000000003; productName = ZIPFoundation; };
 		B00100000000000000000002 /* MapleSAP */ = {isa = XCSwiftPackageProductDependency; productName = MapleSAP; };
 		4B51818CFD6F6A0FD21DFB33 /* Telegraph */ = {
 			isa = XCSwiftPackageProductDependency;
