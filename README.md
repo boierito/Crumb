@@ -2,57 +2,28 @@
 
 <p align="center"><img src="branding/Crumb-AppIcon-1024.png" width="120" alt="Crumb icon"></p>
 
-[![Build IPA](https://github.com/boierito/Crumb/actions/workflows/build-ipa.yml/badge.svg)](https://github.com/boierito/Crumb/actions/workflows/build-ipa.yml)
-[![Protocol tests](https://github.com/boierito/Crumb/actions/workflows/sap-tests.yml/badge.svg)](https://github.com/boierito/Crumb/actions/workflows/sap-tests.yml)
+Crumb is an iPhone and iPad app for finding App Store apps and downloading their IPA files. It runs on iOS and iPadOS 16.4 or later without a jailbreak.
 
-Crumb lets you find App Store apps, choose a version and download its IPA on your
-iPhone or iPad. It runs as a normally sideloaded app,
-without jailbreak, TrollStore or external JIT.
+## What it does
 
-## Features
+- Signs in with your Apple Account and supports two-factor authentication.
+- Finds apps by name, App Store link, app ID, or bundle ID and saves favourites.
+- Lists available versions, downloads the version you choose, and lets you manage, export, or install downloaded IPAs.
+- Acquires licenses for free apps when Apple allows it.
+- Offers experimental on-device decryption for eligible downloads.
 
-- Sign in with your Apple ID and two-factor authentication. Sessions are stored
-  in Keychain; passwords and verification codes are not saved.
-- Search by app name, App Store link, app ID or bundle ID, and save favourites.
-- Browse available versions and download the latest release or an older version.
-- Obtain free-app licenses through your account when Apple permits it.
-- Track downloads, check the downloaded version and build, and install or export
-  individual IPAs through the share sheet.
-- Manage downloaded IPAs and delete them individually or all at once.
+## What it doesn't do
 
-App availability, licenses and installation remain subject to Apple's account
-and device restrictions. Browsing another region does not guarantee a download.
-
-## Installation
-
-Download **Crumb-Release.ipa** from the [latest release](https://github.com/boierito/Crumb/releases/latest)
-and sign it with SideStore, AltStore, Sideloadly, ksign with a certificate or another
-compatible sideloader. Requires **iOS 16.4 or later**.
-
-Sign in, find an app and choose the version you want. Downloaded IPAs are available
-in **Downloads**, where you can install, export or delete them.
-
-## Experimental App Group decryption
-
-This branch decrypts inside Crumb using an authorized App Group, without a helper,
-VPN or pairing. Sign with App Groups enabled in KSign, then choose **Decrypt**
-in Downloads. See [setup and limitations](docs/APP_GROUP_DECRYPTION.md).
+- It doesn't buy paid apps or subscriptions or grant access to apps your account isn't eligible to download.
+- It doesn't remove Apple's account, regional, or device restrictions.
+- It doesn't guarantee that every app or version can be downloaded, decrypted, or installed.
 
 ## Origins and credits
 
-Crumb builds on [WaffleStore](https://github.com/nxtcoreee3/WaffleStore), whose roots
-include [MuffinStore Jailed](https://github.com/mineek/MuffinStoreJailed-Public) and
-[PancakeStore](https://github.com/jailbreakdotparty/PancakeStore). Its modern Apple
-authentication and download backend adapts logic from
-[ipatool](https://github.com/majd/ipatool) to run inside the iOS sandbox.
+- **mineek, lunginspector, skadz, jailbreak.party, and nxtcoreee3** for [MuffinStore Jailed](https://github.com/mineek/MuffinStoreJailed-Public), [PancakeStore](https://github.com/jailbreakdotparty/PancakeStore), and [WaffleStore](https://github.com/nxtcoreee3/WaffleStore), the projects Crumb builds on.
+- **[boierito](https://github.com/boierito)** for Crumb coordination and device testing.
+- **Majd Alfhaily** for [ipatool](https://github.com/majd/ipatool), the reference for Apple sign-in and downloads.
+- **[ipadn contributors](https://github.com/mengangs/ipadn/tree/v2.2.0)** for the reference behind on-device decryption.
+- **OpenAI Codex and ImageGen** for AI-assisted implementation and the app icon.
 
-- **mineek, lunginspector, skadz, jailbreak.party and nxtcoreee3** — original projects
-  and contributions that Crumb is based on.
-- **[boierito](https://github.com/boierito)** — Crumb coordination and device testing.
-- **[Majd Alfhaily / ipatool](https://github.com/majd/ipatool)** — modern backend reference, MIT licensed.
-- **OpenAI Codex and ImageGen** — AI-assisted implementation and app icon. **AI slop.**
-
-For build instructions and technical details, see [IMPLEMENTATION.md](IMPLEMENTATION.md),
-[TESTING.md](TESTING.md), and the [development guide](docs/DEVELOPMENT.md).
-Licensing and third-party attributions are documented
-in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); the project as a whole is not MIT licensed.
+[Third-party notices](THIRD_PARTY_NOTICES.md)
