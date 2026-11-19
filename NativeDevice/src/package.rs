@@ -191,7 +191,7 @@ fn preserve_license_resources(target: &Path, helper: &Path) -> Result<Value> {
         let relative = relative.to_str().context("Invalid license resource path")?;
         resources.insert(
             relative.to_owned(),
-            json!({"file":file, "size":size,
+            json!({"file":file, "mode":original_mode(&entry.metadata()?), "size":size,
             "sha256":format!("{:x}", Sha256::digest(&bytes))}),
         );
     }
@@ -275,7 +275,7 @@ fn preserve_archive_resources(input: &Path, helper: &Path) -> Result<(Value, Val
         );
         resources.insert(
             relative.to_owned(),
-            json!({"file":file, "size":size, "sha256":format!("{:x}", digest.finalize())}),
+            json!({"file":file, "mode":original_mode(&entry.metadata()?), "size":size, "sha256":format!("{:x}", digest.finalize())}),
         );
     }
     Ok((Value::Object(resources), Value::Array(directories)))
@@ -436,6 +436,17 @@ pub fn prepare(v: &Value) -> Result<String> {
     }
     result
 }
+fn original_mode(metadata: &fs::Metadata) -> u32 {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        metadata.permissions().mode() & 0o777
+    }
+    #[cfg(not(unix))]
+    {
+        if metadata.is_dir() { 0o755 } else { 0o644 }
+    }
+}
 // Capture the entire target before installd can remove or alter resources.
 fn payload_inventory(target: &Path) -> Result<Value> {
     let mut inventory = serde_json::Map::new();
@@ -449,7 +460,10 @@ fn payload_inventory(target: &Path) -> Result<Value> {
             .context("Invalid payload path")?
             .to_owned();
         if entry.file_type().is_dir() {
-            inventory.insert(relative, json!({"directory":true}));
+            inventory.insert(
+                relative,
+                json!({"directory":true,"mode":original_mode(&entry.metadata()?)}),
+            );
         } else {
             let mut file = fs::File::open(entry.path())?;
             let size = entry.metadata()?.len();
@@ -468,7 +482,7 @@ fn payload_inventory(target: &Path) -> Result<Value> {
                 }
                 digest.update(&buffer[..n]);
             }
-            inventory.insert(relative, json!({"size":size,"encrypted":encrypted,"sha256":format!("{:x}",digest.finalize())}));
+            inventory.insert(relative, json!({"size":size,"mode":original_mode(&entry.metadata()?),"encrypted":encrypted,"sha256":format!("{:x}",digest.finalize())}));
         }
     }
     Ok(Value::Object(inventory))

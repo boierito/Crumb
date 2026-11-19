@@ -36,7 +36,7 @@ struct ContentView: View {
         }
         .sheet(item:$device.signingReview,onDismiss:{ device.signingReviewDismissed() }) { SigningReviewView(review:$0) }
         .sheet(item:$device.signedInstallation) { artifact in
-            OTAInstallationView(record:artifact.record,startImmediately:true,source:artifact.source,cleanup:artifact.workspace)
+            OTAInstallationView(record:artifact.record,startImmediately:artifact.installImmediately,source:artifact.source,cleanup:artifact.workspace)
         }
         .sheet(isPresented: $appData.showStoreVersions) { StoreVersionsView() }
         .sheet(item: $appData.downloadReady) { DownloadReadyView(record: $0) }

@@ -1,6 +1,7 @@
 #import "CrumbIPAArchive.h"
 #import <CommonCrypto/CommonDigest.h>
 #import <stdio.h>
+#import <sys/stat.h>
 #import <stdlib.h>
 #import <zlib.h>
 static NSError *archive_failure(NSString *message) {
@@ -82,8 +83,6 @@ static BOOL pack_impl(NSURL *root, NSURL *out, NSMutableArray *hashes,
       }
       NSString *name = [path substringFromIndex:prefix.length];
       if (directory) {
-        if ([name.pathComponents.firstObject isEqualToString:@"Payload"])
-          continue;
         name = [name stringByAppendingString:@"/"];
       }
       uint64_t size =
@@ -169,8 +168,14 @@ static BOOL pack_impl(NSURL *root, NSURL *out, NSMutableArray *hashes,
       put16(central, 0);
       put16(central, 0);
       put16(central, 0);
-      put32(central, ((directory ? 0040755U : 0100755U) << 16) |
-                         (directory ? 0x10U : 0));
+      struct stat permissions;
+      if (lstat(url.fileSystemRepresentation, &permissions) != 0) {
+        *error = archive_failure(@"Cannot inspect original file permissions.");
+        ok = NO;
+        break;
+      }
+      uint32_t mode = (directory ? 0040000U : 0100000U) | (permissions.st_mode & 0777U);
+      put32(central, (mode << 16) | (directory ? 0x10U : 0));
       put32(central, (uint32_t)offset);
       [central appendData:n];
       offset += h.length + size;

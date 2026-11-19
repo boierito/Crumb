@@ -106,11 +106,11 @@ struct OTAInstallationView: View {
                         Button("Install") {
                             requestInstallation()
                         }
-                        if let url = source ?? record.fileURL { ShareLink(item: url) { Label("Export IPA instead", systemImage: "square.and.arrow.up") } }
+                        if let url = source ?? record.fileURL { ShareLink(item: url) { Label((source != nil && !startImmediately ? "Export signed IPA" : "Export IPA instead").localized, systemImage: "square.and.arrow.up") } }
                     }
                 }
             }
-            .navigationTitle("Install app")
+            .navigationTitle(source != nil && !startImmediately ? "Export signed IPA" : "Install app")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Close") { installer.stop(); dismiss() } }

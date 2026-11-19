@@ -121,3 +121,8 @@
 "Shared Keychain" = "Llavero compartido";
 "Push notifications" = "Notificaciones push";
 "Associated domains" = "Dominios asociados";
+
+"Original IPA" = "IPA original";
+"Signed IPA" = "IPA firmada";
+"Sign and export" = "Firmar y exportar";
+"Keep the original encrypted IPA to verify the decrypted export." = "Conserva la IPA encriptada original para verificar la exportación desencriptada.";

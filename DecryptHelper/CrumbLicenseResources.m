@@ -64,7 +64,9 @@ static BOOL copy_resource(NSURL *bundle, NSString *relative,
   NSString *file = resource[@"file"], *expectedHash = resource[@"sha256"];
   NSNumber *expectedSize = resource[@"size"];
   uint64_t limit = archive ? 512ULL * 1024 * 1024 : 4ULL * 1024 * 1024;
-  if (!valid_path(relative, archive) || ![file isKindOfClass:NSString.class] ||
+  NSNumber *originalMode = resource[@"mode"];
+  if ((originalMode && (![originalMode isKindOfClass:NSNumber.class] || originalMode.unsignedLongLongValue > 0777)) ||
+      !valid_path(relative, archive) || ![file isKindOfClass:NSString.class] ||
       ![file.lastPathComponent isEqualToString:file] ||
       ![file.pathExtension isEqualToString:@"bin"] ||
       ![expectedHash isKindOfClass:NSString.class] ||
@@ -186,6 +188,13 @@ static BOOL copy_resource(NSURL *bundle, NSString *relative,
          [NSFileManager.defaultManager moveItemAtURL:temporary
                                                toURL:target
                                                error:&moveError];
+    NSNumber *mode = resource[@"mode"];
+    if (ok && mode) {
+      ok = [mode isKindOfClass:NSNumber.class] && mode.unsignedLongLongValue <= 0777 &&
+           [NSFileManager.defaultManager setAttributes:@{NSFilePosixPermissions:mode}
+                                           ofItemAtPath:target.path error:&moveError];
+      if (!ok && !moveError) moveError = resource_failure(@"Invalid original resource permissions.");
+    }
     if (!ok)
       *error = moveError;
   }
