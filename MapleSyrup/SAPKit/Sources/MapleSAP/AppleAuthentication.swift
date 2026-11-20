@@ -85,7 +85,7 @@ public struct AppleAuthentication {
         let code = try TwoFactorAuthentication.normalize(code)
         var endpoint = try AuthenticationEndpoint.validate(endpoint)
         var recovery = AuthenticationRecoveryBudget(attempts: recoveryAttempts, window: recoveryWindow, now: now())
-        var logicalAttempt = 1
+        var logicalAttempt = code.isEmpty ? 1 : 2
         var redirects = 0
         var body = try payload(email: email, password: password, code: code, guid: identity.guid, attempt: logicalAttempt)
         while true {
@@ -169,7 +169,7 @@ public struct AppleAuthentication {
             var request = URLRequest(url: endpoint)
             request.timeoutInterval = try recovery.requestTimeout(now: now())
             request.httpMethod = "POST"; request.httpBody = body
-            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            request.setValue("application/x-apple-plist", forHTTPHeaderField: "Content-Type")
             request.setValue(SAPProtocol.signInUserAgent, forHTTPHeaderField: "User-Agent")
             request.setValue("close", forHTTPHeaderField: "Connection")
             let signature = try await signer.actionSignature(body: body)
@@ -197,10 +197,24 @@ public struct AppleAuthentication {
                 let missingLocation = [301, 302, 307, 308].contains(status)
                     && (response.value(forHTTPHeaderField: "Location")?
                         .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
-                if populated || (!missingLocation && (300..<400).contains(status)) || status == 200 { return (data, response) }
-                let failure: AuthenticationError = missingLocation ? .redirectUnavailable(status)
-                    : (status == 429 ? .rateLimited : .http(status))
-                guard missingLocation || [204, 403, 404, 429].contains(status) || status / 100 == 5 else { throw AuthenticationError.invalidResponse(status) }
+                if populated || (!missingLocation && (300..<400).contains(status)) || (status == 200 && result != nil) {
+                    return (data, response)
+                }
+                let failure: AuthenticationError
+                switch status {
+                case 200:
+                    // iPadn retries an empty or non-plist HTTP 200 once with the
+                    // same signed payload. A decoded Apple response is handled above.
+                    guard attempt == 1 else { throw AuthenticationError.invalidResponse(status) }
+                    failure = .invalidResponse(status)
+                case 429:
+                    failure = .rateLimited
+                default:
+                    guard missingLocation || [204, 403, 404].contains(status) || status / 100 == 5 else {
+                        throw AuthenticationError.invalidResponse(status)
+                    }
+                    failure = missingLocation ? .redirectUnavailable(status) : .http(status)
+                }
                 guard attempt < recoveryAttempts else { throw failure }
                 let delay = try retryDelay(response.value(forHTTPHeaderField: "Retry-After"), attempt: attempt)
                 try recovery.reserveRetry(delay: delay, now: now(), failure: failure)

@@ -33,10 +33,10 @@ final class AuthenticationTests: XCTestCase {
         let body = try XCTUnwrap(requests.first?.httpBody)
         XCTAssertEqual(signer.bodies, [body])
         XCTAssertEqual(requests[0].value(forHTTPHeaderField: "X-Apple-ActionSignature"), "fixture-signature-not-valid")
-        XCTAssertEqual(requests[0].value(forHTTPHeaderField: "Content-Type"), "application/x-www-form-urlencoded")
+        XCTAssertEqual(requests[0].value(forHTTPHeaderField: "Content-Type"), "application/x-apple-plist")
         let parsed = try PropertyListSerialization.propertyList(from: body, format: nil) as! [String: String]
         XCTAssertEqual(parsed, ["appleId": "fixture@example.test", "password": "p<&>secret123456", "guid": identity.guid,
-                                "attempt": "1", "rmp": "0", "why": "signIn"])
+                                "attempt": "2", "rmp": "0", "why": "signIn"])
         XCTAssertEqual(account.dsid, "123456789"); XCTAssertEqual(account.pod, "42")
         XCTAssertEqual(account.authenticationURL, endpoint)
         XCTAssertEqual(try store.load(), account)
@@ -319,6 +319,31 @@ final class AuthenticationTests: XCTestCase {
         }
     }
 
+    func testUnreadableHTTP200RetriesOnceWithSameSignedPayload() async throws {
+        let unreadable = Data("<html>temporary</html>".utf8)
+        let transport = FixtureAuthenticationTransport([.http(200, unreadable, [:]),
+            .http(200, try success(), responseHeaders)])
+        let signer = FixtureSigner()
+        guard case .authenticated = try await login(transport, code: "123456", signer: signer) else {
+            return XCTFail("Retry did not recover")
+        }
+        let requests = await transport.requests
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertEqual(requests.first?.httpBody, requests.last?.httpBody)
+        XCTAssertEqual(signer.bodies, requests.compactMap { $0.httpBody })
+
+        let failingTransport = FixtureAuthenticationTransport([.http(200, Data(), [:]),
+            .http(200, unreadable, [:])])
+        do {
+            _ = try await login(failingTransport)
+            XCTFail("Accepted an unreadable login response")
+        } catch {
+            XCTAssertEqual(error as? AuthenticationError, .invalidResponse(200))
+        }
+        let failedRequests = await failingTransport.requests
+        XCTAssertEqual(failedRequests.count, 2)
+    }
+
     func testTwoFactorRecoversIncompleteRedirectAtValidatedPod() async throws {
         let pod = URL(string: "https://p42-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate")!
         let transport = FixtureAuthenticationTransport([
@@ -484,7 +509,7 @@ final class AuthenticationTests: XCTestCase {
         let requests = await transport.requests; XCTAssertEqual(requests.count, 13)
         XCTAssertTrue(requests.allSatisfy {
             $0.value(forHTTPHeaderField: "User-Agent") ==
-                "Configurator/2.21 (Macintosh; OS X 27.0.1; 26A434) AppleWebKit/0625.2.5.11.6"
+                "Configurator/2.21 (Macintosh; OS X 15.2; 24C5089c) AppleWebKit/0620.1.16.11.6"
         })
         let delays = await sleeps.values; XCTAssertEqual(delays.count, 11)
         XCTAssertNotNil(try store.load())
@@ -497,13 +522,13 @@ final class AuthenticationTests: XCTestCase {
         do {
             _ = try await AppleAuthentication(transport: transport, signer: FixtureSigner(), persistence: FixtureAccountStore(),
                 automaticRecovery: true, sleep: { _ in })
-                .login(email: "fixture@example.test", password: "secret", code: "123456", identity: identity, endpoint: endpoint)
+                .login(email: "fixture@example.test", password: "secret", identity: identity, endpoint: endpoint)
             XCTFail("Logical attempt reset recovery allowance")
         } catch { XCTAssertEqual(error as? AuthenticationError, .http(503)) }
         let requests = await transport.requests; XCTAssertEqual(requests.count, 13)
         let last = try ApplePlist.dictionary(XCTUnwrap(requests.last?.httpBody))
         XCTAssertEqual(last?["attempt"] as? String, "2")
-        XCTAssertEqual(last?["password"] as? String, "secret123456")
+        XCTAssertEqual(last?["password"] as? String, "secret")
     }
 
     func testAccountDialogStopsRetryAndRedactsAccountDetails() async throws {
