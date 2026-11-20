@@ -2,8 +2,13 @@
 
 This branch replaces the normal decrypt flow with App Group staging, following
 ipadn v2.2.0's approach. No ipadn source is copied. Crumb reuses its existing
-read-only cryptid=2 FairPlay implementation, bounded thin-arm64 parser, full page
-reads, entropy/code checks and cancellation. FAT/32-bit targets remain unsupported.
+bounded thin-arm64 parser, full page reads and cancellation. The FairPlay path
+now follows the v2.3.0 entropy verdict and tries cryptid=2/read-only and
+cryptid=1/read+execute, each with and without registering the original signature.
+Ciphertext is snapshotted before any attempt into unlinked temporary storage.
+A successful syscall, complete page reads, changed bytes, source entropy above
+7.9, plaintext entropy below 7.5 and a drop of at least 0.5 remain mandatory.
+ARM64 instruction landmarks are no longer a hard requirement. FAT/32-bit targets remain unsupported.
 
 Sign Crumb in KSign with an App Group enabled in BOTH the app's signed entitlements
 and its provisioning profile. The runtime discovers concrete group identifiers in
@@ -48,3 +53,12 @@ Diagnostic readouts, diagnostic exports and the temporary manual group editor ha
 been removed after successful device testing. Existing saved overrides and the
 Info.plist override remain recognized for signing compatibility. Neither override
 can grant App Group access.
+
+
+Reference reviewed on 2026-11-20: latest GitHub release iPadn v2.3.0,
+commit 92540912281b1d11c57d0e00e114506ec459a494. Its updated verdict removes the
+RET/PACIBSP requirement for data-only/obfuscated encrypted regions. This is an
+original adaptation using Crumb's existing reader; no upstream source is vendored.
+The unsupported FAT/32-bit restriction remains in this scoped correction.
+Failure messages identify the relative file and attempted operation; no full
+sandbox paths, account credentials or permanent diagnostic UI are added.

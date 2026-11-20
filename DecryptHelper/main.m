@@ -7,7 +7,10 @@
 #import <stdbool.h>
 static atomic_bool jobCancelled = false;
 #import <CommonCrypto/CommonDigest.h>
+#ifndef CRUMB_FAIRPLAY_LIBRARY
 #import <UIKit/UIKit.h>
+#endif
+#import "CrumbFairPlayPolicy.h"
 #import <dlfcn.h>
 #import <errno.h>
 #import <fcntl.h>
@@ -20,16 +23,19 @@ static atomic_bool jobCancelled = false;
 #import <unistd.h>
 #import <zlib.h>
 
-static int remap_image(void *address, size_t length, uint32_t cpu,
+#ifdef CRUMB_FAIRPLAY_TESTING
+static int remap_image(void *, size_t, uint32_t, uint32_t, uint32_t);
+#else
+static int remap_image(void *address, size_t length, uint32_t cryptid, uint32_t cpu,
                        uint32_t subtype) {
   typedef int (*Remap)(void *, size_t, uint32_t, uint32_t, uint32_t);
   Remap symbol = (Remap)dlsym(RTLD_DEFAULT, "mremap_encrypted");
   if (symbol)
-    return symbol(address, length, 2, cpu, subtype);
+    return symbol(address, length, cryptid, cpu, subtype);
 #if defined(__arm64__)
   register uint64_t arg0 __asm__("x0") = (uint64_t)address;
   register uint64_t arg1 __asm__("x1") = length;
-  register uint64_t arg2 __asm__("x2") = 2;
+  register uint64_t arg2 __asm__("x2") = cryptid;
   register uint64_t arg3 __asm__("x3") = cpu;
   register uint64_t arg4 __asm__("x4") = subtype;
   register uint64_t number __asm__("x16") = 489;
@@ -47,6 +53,7 @@ static int remap_image(void *address, size_t length, uint32_t cpu,
   return -1;
 #endif
 }
+#endif // CRUMB_FAIRPLAY_TESTING
 static NSError *failure(NSString *s) {
   return [NSError errorWithDomain:@"CrumbDecrypt"
                              code:1
@@ -65,15 +72,6 @@ static NSError *file_failure(NSString *operation, CrumbFileAccess status) {
   return [NSError errorWithDomain:NSPOSIXErrorDomain
                              code:status.error_code
                          userInfo:@{NSLocalizedDescriptionKey : message}];
-}
-static uint32_t codewords(const uint8_t *b, size_t n) {
-  uint32_t count = 0, w;
-  for (size_t p = 0; p + 4 <= n; p += 4) {
-    memcpy(&w, b + p, 4);
-    if (w == 0xd65f03c0 || w == 0xd503237f || w == 0xd65f0fff)
-      count++;
-  }
-  return count;
 }
 static double histogram_entropy(uint64_t h[256], size_t n) {
   double e = 0;
@@ -189,70 +187,132 @@ static BOOL decrypt(NSURL *source, NSURL *dest, BOOL *encrypted,
     *error = failure(@"Cannot create decrypted image.");
     return NO;
   }
-  if (register_signature(fd, map, size)) {
-    munmap(map, size);
-    map = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
-  }
-  errno = 0;
-  int remap_status =
-      (map == MAP_FAILED || atomic_load(&jobCancelled))
-          ? -1
-          : remap_image(map + enc.offset, enc.length, enc.cpu, enc.subtype);
-  int remap_errno = errno;
-  int page_status = 0;
-  BOOL ok = map != MAP_FAILED && remap_status == 0;
+  // Snapshot ciphertext before ANY remap. Unlinked temporary storage bounds RAM
+  // and preserves the same baseline for all attempts, independently of VM/cache
+  // behavior. Never reread the reference from the remapped source afterwards.
+  FILE *baseline = tmpfile();
   uint8_t *plain = malloc(pg), *cipher = malloc(pg);
-  uint64_t before[256] = {0}, after[256] = {0};
-  uint64_t oldwords = 0, newwords = 0;
-  BOOL changed = NO;
-  if (!plain || !cipher)
-    ok = NO;
+  BOOL ok = baseline && plain && cipher;
+  NSError *lastError = nil;
+  NSMutableArray<NSString *> *attemptErrors = [NSMutableArray array];
+  uint64_t before[256] = {0};
   for (size_t p = 0; ok && p < enc.length; p += pg) {
-    if (atomic_load(&jobCancelled)) { ok = NO; break; }
     size_t len = MIN(pg, enc.length - p);
-    vm_size_t got = 0;
-    kern_return_t kr = vm_read_overwrite(mach_task_self(),
-                                         (vm_address_t)(map + enc.offset + p),
-                                         len, (vm_address_t)plain, &got);
-    if (kr != KERN_SUCCESS || got != len ||
-        pread(fd, cipher, len, enc.offset + p) != (ssize_t)len) {
-      page_status = (int)kr;
-      ok = NO;
-      break;
+    if (atomic_load(&jobCancelled)) { ok = NO; lastError = failure(@"Cancelled"); break; }
+    errno = 0;
+    if (pread(fd, cipher, len, enc.offset + p) != (ssize_t)len ||
+        pwrite(fileno(baseline), cipher, len, p) != (ssize_t)len) {
+      ok = NO; lastError = failure([NSString stringWithFormat:
+          @"Cannot preserve encrypted reference (errno %d).", errno ?: EIO]); break;
     }
-    changed |= memcmp(cipher, plain, len) != 0;
-    oldwords += codewords(cipher, len);
-    newwords += codewords(plain, len);
-    for (size_t i = 0; i < len; i++) {
-      before[cipher[i]]++;
-      after[plain[i]]++;
-    }
-    if (pwrite(out, plain, len, enc.offset + p) != (ssize_t)len) {
-      ok = NO;
-      break;
-    }
+    for (size_t i = 0; i < len; i++) before[cipher[i]]++;
   }
-  free(plain);
-  free(cipher);
-  if (map != MAP_FAILED)
-    munmap(map, size);
+  munmap(map, size);
   close(fd);
-  // Conservative heuristics supplement complete fault-free FairPlay page reads.
-  ok = ok && !atomic_load(&jobCancelled) && changed && histogram_entropy(before, enc.length) > 7.9 &&
-       histogram_entropy(after, enc.length) < 7.5 && newwords > oldwords;
+  double entropyBefore = ok ? histogram_entropy(before, enc.length) : 0;
+  BOOL verified = NO;
+  for (size_t attempt = 0; ok && !verified && attempt < 4; attempt++) {
+    if (atomic_load(&jobCancelled)) { lastError = failure(@"Cancelled"); break; }
+    CrumbFairPlayMode mode = crumb_fairplay_modes[attempt];
+    fd = crumb_open_installed_image(source.fileSystemRepresentation, &access);
+    if (fd < 0) { lastError = file_failure(@"Cannot reopen FairPlay image", access); break; }
+    // Always parse signature metadata from a read-only header map before adding
+    // PROT_EXEC for cryptid=1. Each attempt gets a new mapping and file handle.
+    map = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (map == MAP_FAILED) {
+      int saved = errno; close(fd);
+      lastError = failure([NSString stringWithFormat:@"FairPlay mapping failed (errno %d).", saved]);
+      [attemptErrors addObject:lastError.localizedDescription]; continue;
+    }
+    if (mode.signature) (void)register_signature(fd, map, size);
+    munmap(map, size);
+    int protection = PROT_READ | (mode.cryptid == 1 ? PROT_EXEC : 0);
+    map = mmap(NULL, size, protection, MAP_PRIVATE, fd, 0);
+    if (map == MAP_FAILED) {
+      int saved = errno; close(fd);
+      lastError = failure([NSString stringWithFormat:@"FairPlay mapping failed (mode %u, errno %d).", mode.cryptid, saved]);
+      [attemptErrors addObject:lastError.localizedDescription]; continue;
+    }
+    errno = 0;
+    int remap = remap_image(map + enc.offset, enc.length, mode.cryptid, enc.cpu, enc.subtype);
+    int remapError = remap ? errno : 0;
+    FILE *candidate = remap == 0 ? tmpfile() : NULL;
+    BOOL readable = remap == 0 && candidate != NULL;
+    if (!readable) lastError = failure([NSString stringWithFormat:
+        @"FairPlay attempt %zu/4 failed (mode %u, signature %@, remap %d, errno %d).",
+        attempt + 1, mode.cryptid, mode.signature ? @"yes" : @"no", remap,
+        remap ? remapError : (errno ?: EIO)]);
+    uint64_t after[256] = {0};
+    BOOL changed = NO;
+    size_t bytesRead = 0;
+    for (size_t p = 0; readable && p < enc.length; p += pg) {
+      if (atomic_load(&jobCancelled)) { readable = NO; lastError = failure(@"Cancelled"); break; }
+      size_t len = MIN(pg, enc.length - p);
+      vm_size_t got = 0;
+      kern_return_t kr = vm_read_overwrite(mach_task_self(), (vm_address_t)(map + enc.offset + p),
+                                          len, (vm_address_t)plain, &got);
+      if (kr != KERN_SUCCESS || got != len) {
+        readable = NO; lastError = failure([NSString stringWithFormat:
+            @"FairPlay page read failed at page %zu (kernel %d, bytes %llu/%zu).",
+            p / pg, kr, (unsigned long long)got, len]); break;
+      }
+      errno = 0;
+      if (pread(fileno(baseline), cipher, len, p) != (ssize_t)len ||
+          pwrite(fileno(candidate), plain, len, p) != (ssize_t)len) {
+        readable = NO; lastError = failure([NSString stringWithFormat:
+            @"FairPlay temporary file I/O failed (errno %d).", errno ?: EIO]); break;
+      }
+      bytesRead += len;
+      changed |= memcmp(cipher, plain, len) != 0;
+      for (size_t i = 0; i < len; i++) after[plain[i]]++;
+    }
+    munmap(map, size); close(fd);
+    double entropyAfter = bytesRead ? histogram_entropy(after, bytesRead) : 0;
+    BOOL verdict = readable && !atomic_load(&jobCancelled) &&
+        crumb_fairplay_verified(remap == 0, bytesRead, enc.length, changed, entropyBefore, entropyAfter);
+    if (readable && !verdict && !atomic_load(&jobCancelled)) {
+      lastError = failure([NSString stringWithFormat:
+          @"FairPlay verification rejected attempt %zu/4 (mode %u, signature %@, "
+           "bytes %zu/%u, changed %@, entropy %.3f → %.3f).",
+          attempt + 1, mode.cryptid, mode.signature ? @"yes" : @"no", bytesRead, enc.length,
+          changed ? @"yes" : @"no", entropyBefore, entropyAfter]);
+    }
+    // Nothing is published or marked plain until a complete attempt validates.
+    if (verdict) {
+      verified = YES;
+      for (size_t p = 0; verified && p < enc.length; p += pg) {
+        size_t len = MIN(pg, enc.length - p);
+        errno = 0;
+        if (atomic_load(&jobCancelled) ||
+            pread(fileno(candidate), plain, len, p) != (ssize_t)len ||
+            pwrite(out, plain, len, enc.offset + p) != (ssize_t)len) {
+          verified = NO; ok = NO; lastError = failure([NSString stringWithFormat:
+              @"Cannot write verified plaintext (errno %d).", errno ?: EIO]);
+        }
+      }
+    }
+    if (!verified && lastError) [attemptErrors addObject:lastError.localizedDescription];
+    if (candidate) fclose(candidate);
+  }
+  free(plain); free(cipher);
+  if (baseline) fclose(baseline);
+  ok = ok && verified && !atomic_load(&jobCancelled);
   if (ok) {
     uint32_t zero = 0;
-    ok = pwrite(out, &zero, 4, enc.command) == 4;
+    errno = 0;
+    if (pwrite(out, &zero, 4, enc.command) != 4 || fsync(out) != 0) {
+      ok = NO; lastError = failure([NSString stringWithFormat:
+          @"Cannot finalize decrypted image (errno %d).", errno ?: EIO]);
+    }
   }
-  if (ok)
-    ok = fsync(out) == 0;
   close(out);
   if (!ok) {
     [NSFileManager.defaultManager removeItemAtURL:dest error:nil];
-    *error = failure([NSString
-        stringWithFormat:@"FairPlay verification failed (remap %d, errno %d, "
-                         @"page %d). Check the licensed device account.",
-                         remap_status, remap_errno, page_status]);
+    if (lastError && ![attemptErrors.lastObject isEqualToString:lastError.localizedDescription])
+      [attemptErrors addObject:lastError.localizedDescription];
+    *error = atomic_load(&jobCancelled) ? failure(@"Cancelled") :
+        (attemptErrors.count ? failure([attemptErrors componentsJoinedByString:@"\n"]) :
+         failure(@"Cannot allocate FairPlay verification buffers or temporary storage."));
   }
   return ok;
 }

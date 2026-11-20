@@ -170,7 +170,7 @@ enum AppGroupDecryption {
             // checks. Unsupported FAT/32-bit images fail instead of partial export.
             var nativeError: NSError?
             guard crumb_group_decrypt(url, destination, &encrypted, &nativeError) else {
-                if let nativeError { throw nativeError }
+                if let nativeError { throw fail("\(relative): \(nativeError.localizedDescription)") }
                 throw fail("FairPlay rejected this image.")
             }
             if encrypted.boolValue { decrypted += 1 }
