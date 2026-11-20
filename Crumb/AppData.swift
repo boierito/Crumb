@@ -91,6 +91,9 @@ final class AppData: ObservableObject {
     @Published var isAuthenticated: Bool = false
     @Published var isAuthenticating: Bool = false
     @Published var authenticationError: String = ""
+    @Published var authenticationDiagnostic = ""
+    var authenticationStage: AuthenticationStage?
+    var authenticationResponseDiagnostic = ""
     @Published var isCodeResendCoolingDown = false
     var codeResendCooldownTask: Task<Void, Never>?
     var authenticationTask: Task<Void, Never>?

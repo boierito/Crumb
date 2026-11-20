@@ -135,6 +135,12 @@ struct ContentView: View {
                 }
                 if !appData.authenticationError.isEmpty {
                     Text(appData.authenticationError).font(.subheadline).foregroundStyle(.red).textSelection(.enabled)
+                    if !appData.authenticationDiagnostic.isEmpty {
+                        ShareLink(item: appData.authenticationDiagnostic) {
+                            Label("Share sign-in details", systemImage: "square.and.arrow.up")
+                        }
+                        .buttonStyle(.borderless)
+                    }
                 }
             }
             if appData.hasSent2FACode {

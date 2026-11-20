@@ -8,6 +8,9 @@ import MapleSAP
 extension AppData {
     func startAppleLogin(_ action: AppleSignInAction = .submit) {
         guard !isAuthenticating else { return }
+        authenticationDiagnostic = ""
+        authenticationStage = nil
+        authenticationResponseDiagnostic = ""
         let input: AppleSignInSubmission
         do { input = try signInForm.begin(action) }
         catch {
@@ -37,7 +40,11 @@ extension AppData {
                 let signer = try await prepared.prepare { self.setAuthenticationStage($0) }
                 try Task.checkCancellation()
                 let authentication = AppleAuthentication(transport: prepared.loginTransport, signer: signer,
-                    persistence: KeychainStoreAccount(), automaticRecovery: true)
+                    persistence: KeychainStoreAccount(), diagnostic: { entry in
+                        // ResponseDiagnostic supplies fixed fields, never request data.
+                        guard entry.hasPrefix("scope=authentication;") else { return }
+                        await MainActor.run { self.authenticationResponseDiagnostic = entry }
+                    }, automaticRecovery: true)
                 guard let endpoint = prepared.endpoint else { throw CancellationError() }
                 let outcome = try await authentication.login(email: input.email, password: input.password, code: input.code,
                     identity: prepared.identity, endpoint: endpoint, resolvedEndpoint: { endpoint in
@@ -66,6 +73,13 @@ extension AppData {
                 // Apple/SAP errors have sanitized, bounded descriptions. Arbitrary
                 // URL errors can include routing secrets: expose only numeric codes.
                 authenticationError = authenticationMessage(error)
+                let submission = input.code.isEmpty ? "password" : "verification"
+                let stage = authenticationStage?.rawValue ?? "Preparing account"
+                let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
+                authenticationDiagnostic = [
+                    "Crumb build \(build)", "submission=\(submission)", "stage=\(stage)",
+                    ResponseDiagnostic.category(error), authenticationResponseDiagnostic
+                ].filter { !$0.isEmpty }.joined(separator: "\n")
                 applicationStatus = "Sign-in failed."
                 #if DEBUG
                 print("Apple sign-in failed (code \((error as NSError).code)).")
@@ -115,6 +129,7 @@ extension AppData {
         clearLoginPreparation()
         signInForm.cancel()
         authenticationError = ""
+        authenticationDiagnostic = ""
         applicationStatus = "Not logged in!".localized
     }
 
@@ -175,6 +190,7 @@ extension AppData {
     }
 
     private func setAuthenticationStage(_ stage: AuthenticationStage) {
+        authenticationStage = stage
         switch stage {
         case .bag, .sap, .signing, .prepared: applicationStatus = "Preparing sign-in…"
         case .authenticating, .redirect: applicationStatus = "Connecting to Apple…"
