@@ -60,7 +60,7 @@ final class AuthenticationTests: XCTestCase {
         XCTAssertEqual(signer.bodies, requests.map { $0.httpBody! })
     }
 
-    func testBagLoginUsesCanonicalInitialURLAndPreservesPodRedirectExactly() async throws {
+    func testBagLoginNormalizesValidatedPodRedirectAndPreservesItsQuery() async throws {
         let bag = try plist(["urlBag": ["authenticateAccount": endpoint.absoluteString + "?route=a%2Fb+c",
             "sign-sap-setup": "https://play.itunes.apple.com/setup",
             "sign-sap-setup-cert": "https://s.mzstatic.com/sap/cert", "sign-sap-version": "200"]])
@@ -75,7 +75,8 @@ final class AuthenticationTests: XCTestCase {
         let requests = await transport.requests
         XCTAssertEqual(requests.count, 2)
         XCTAssertEqual(requests[0].url?.absoluteString, endpoint.absoluteString + "/?route=a%2Fb+c")
-        XCTAssertEqual(requests[1].url, pod) // Never rewrite Apple's redirect URL.
+        XCTAssertEqual(requests[1].url?.absoluteString,
+            "https://p42-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate/?Pod=42&route=b%2Fc+d")
         XCTAssertEqual(requests[0].httpBody, requests[1].httpBody)
         XCTAssertTrue(requests.allSatisfy { $0.httpMethod == "POST" })
         XCTAssertEqual(signer.bodies.count, 2)
@@ -84,6 +85,7 @@ final class AuthenticationTests: XCTestCase {
 
     func testResolvedPodIsReusableForTwoFactorWithoutAnotherRedirect() async throws {
         let pod = URL(string: "https://p42-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate")!
+        let canonicalPod = URL(string: pod.absoluteString + "/")!
         let challenge = try plist(["customerMessage": "MZFinance.BadLogin.Configurator_message"])
         let transport = FixtureAuthenticationTransport([.http(302, Data(), ["Location": pod.absoluteString]),
             .http(200, challenge, [:]), .http(200, try success(), responseHeaders)])
@@ -95,12 +97,12 @@ final class AuthenticationTests: XCTestCase {
             return XCTFail("No challenge")
         }
         let resolved = await route.last
-        XCTAssertEqual(resolved, pod)
+        XCTAssertEqual(resolved, canonicalPod)
         _ = try await auth.login(email: "fixture@example.test", password: "secret", code: "123456",
             identity: identity, endpoint: XCTUnwrap(resolved))
         let requests = await transport.requests
         XCTAssertEqual(requests.count, 3)
-        XCTAssertEqual(requests[2].url, pod)
+        XCTAssertEqual(requests[2].url, canonicalPod)
         XCTAssertEqual(signer.bodies.count, 3) // fresh signing, including 2FA
         let payload = try PropertyListSerialization.propertyList(from: requests[2].httpBody!, format: nil) as! [String: String]
         XCTAssertEqual(payload["password"], "secret123456")

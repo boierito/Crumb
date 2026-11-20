@@ -183,7 +183,10 @@ public struct AppleAuthentication {
             do {
                 await diagnostic(await transport.cookieDiagnostic(for: endpoint))
                 let (data, response) = try await transport.send(request)
-                await diagnostic(ResponseDiagnostic.response(data, status: response.statusCode, scope: "authentication", attempt: attempt, secrets: secrets))
+                let route = endpoint.host?.lowercased() == "buy.itunes.apple.com" ? "store" : "pod"
+                let responseDetails = ResponseDiagnostic.response(data, status: response.statusCode,
+                    scope: "authentication", attempt: attempt, secrets: secrets)
+                await diagnostic("\(responseDetails); route=\(route)")
                 guard data.count <= SAPProtocol.maximumBodySize else { throw SAPError.oversizedResponse }
                 let result = try? ApplePlist.dictionary(data)
                 let populated = result.map {

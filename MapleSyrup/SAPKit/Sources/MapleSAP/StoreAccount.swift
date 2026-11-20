@@ -83,10 +83,9 @@ public enum AuthenticationEndpoint {
         return url
     }
 
-    // ipatool f9aa653: normalize the INITIAL Bag URL only, after validating it.
-    // Apple's bare authenticate path can return unusable 301/204/HTML replies.
-    // Preserve the advertised host, port and encoded routing query. Redirects
-    // use validate/redirect instead: an Apple-supplied pod URL is replayed as-is.
+    // Like iPadn, normalize validated authentication URLs from the Bag and
+    // pod redirects. Apple's bare path can return unusable 301/204/HTML replies.
+    // Preserve the advertised host, port and encoded routing query.
     public static func initial(_ url: URL) throws -> URL {
         let validated = try validate(url)
         guard var components = URLComponents(url: validated, resolvingAgainstBaseURL: false) else {
@@ -102,6 +101,6 @@ public enum AuthenticationEndpoint {
         guard !text.isEmpty, let url = URL(string: text, relativeTo: base)?.absoluteURL else {
             throw AuthenticationError.invalidRedirect
         }
-        return try validate(url)
+        return try initial(url)
     }
 }
