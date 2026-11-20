@@ -62,3 +62,7 @@ original adaptation using Crumb's existing reader; no upstream source is vendore
 The unsupported FAT/32-bit restriction remains in this scoped correction.
 Failure messages identify the relative file and attempted operation; no full
 sandbox paths, account credentials or permanent diagnostic UI are added.
+
+Storage preflight reserves four times the expanded archive size to cover the
+original unpacked tree, plaintext tree, ciphertext snapshot and candidate buffers
+on disk. Temporary references are unlinked and closed before IPA packaging.

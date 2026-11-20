@@ -96,7 +96,7 @@ enum AppGroupDecryption {
             total += entry.uncompressedSize
         }
         if let free = try? root.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage,
-           free < Int64(total) * 3 { throw fail("Not enough space to unpack, decrypt and verify this IPA.") }
+           free < Int64(total) * 4 { throw fail("Not enough space to unpack, decrypt and verify this IPA.") }
         for entry in archive {
             try Task.checkCancellation()
             if cancelled() { throw CancellationError() }
