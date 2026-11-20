@@ -1,5 +1,10 @@
 # Development changelog
 
+## Crumb 2.0.2 — build 23056
+
+- fix decrypter
+
+
 ## Crumb 2.0.1 — build 23055
 
 - Fix de login.
