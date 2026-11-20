@@ -1,6 +1,7 @@
 // Protocol, retry and redirect behavior adapted from majd/ipatool (MIT),
 // pkg/appstore/appstore_login.go; Bag normalization follows f9aa653 (Oct 5).
-// No CLI or password persistence. See docs/LOGIN_AUDIT.md for current comparison.
+// iPadn request semantics: plist content type, explicit 2FA attempt, phone Store routing.
+// No CLI or password persistence. See docs/IPADN_LOGIN.md for the port boundary.
 import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
@@ -84,15 +85,15 @@ public struct AppleAuthentication {
         let code = try TwoFactorAuthentication.normalize(code)
         var endpoint = try AuthenticationEndpoint.validate(endpoint)
         var recovery = AuthenticationRecoveryBudget(attempts: recoveryAttempts, window: recoveryWindow, now: now())
-        var logicalAttempt = 1
+        let logicalAttempt = code.isEmpty ? 1 : 2
         var redirects = 0
-        var body = try payload(email: email, password: password, code: code, guid: identity.guid, attempt: logicalAttempt)
+        let body = try payload(email: email, password: password, code: code, guid: identity.guid, attempt: logicalAttempt)
         while true {
             try Task.checkCancellation()
             // Only publish endpoints after the same strict validation used for
             // credential replay. A warm 2FA/retry can skip an already resolved pod.
             await resolvedEndpoint(endpoint)
-            let (data, response) = try await send(body: body, endpoint: endpoint, progress: progress, secrets: [password, code, email], recovery: &recovery)
+            let (data, response) = try await send(body: body, endpoint: endpoint, progress: progress, secrets: [password, code, email], storefront: phoneNumberStorefront(email), recovery: &recovery)
             if (300..<400).contains(response.statusCode) {
                 await diagnostic("authentication-redirect=received; HTTP=\(response.statusCode); location-present=\(response.value(forHTTPHeaderField: "Location") != nil)")
                 guard [301, 302, 307, 308].contains(response.statusCode),
@@ -109,11 +110,6 @@ public struct AppleAuthentication {
             guard let result = try? ApplePlist.dictionary(data) else { throw AuthenticationError.invalidResponse(response.statusCode) }
             let failure = string(result["failureType"])
             let message = string(result["customerMessage"])
-            if failure == "-5000", logicalAttempt == 1 {
-                logicalAttempt = 2
-                body = try payload(email: email, password: password, code: code, guid: identity.guid, attempt: logicalAttempt)
-                continue
-            }
             if failure.isEmpty, message == "MZFinance.BadLogin.Configurator_message" {
                 if code.isEmpty { await progress(.twoFactor); return .twoFactorRequired(await transport.cookies()) }
                 throw AuthenticationError.verificationRejected
@@ -124,7 +120,7 @@ public struct AppleAuthentication {
                 throw AuthenticationError.apple(failure: safe(failure, secrets: [password, code, email]),
                     message: safe(message, secrets: [password, code, email, string(result["passwordToken"])]))
             }
-            let dsid = string(result["dsPersonId"])
+            let dsid = sessionDSID(result, response: response)
             let token = string(result["passwordToken"])
             let storefront = response.value(forHTTPHeaderField: "X-Set-Apple-Store-Front") ?? ""
             if !message.isEmpty, token.isEmpty || dsid.isEmpty {
@@ -149,12 +145,48 @@ public struct AppleAuthentication {
         }
     }
 
+    // iPadn-compatible account routing. Keep the Apple ID itself unchanged.
+    func phoneNumberStorefront(_ appleID: String) -> String? {
+        var number = appleID.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: " ", with: "").replacingOccurrences(of: "-", with: "")
+        var international = false
+        if number.hasPrefix("+") { international = true; number.removeFirst() }
+        else if number.hasPrefix("00") { international = true; number.removeFirst(2) }
+        guard !number.isEmpty, number.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
+        if number.count == 13 && number.hasPrefix("861") { return "143465" }
+        if number.count == 12 && number.hasPrefix("91") { number.removeFirst(2) }
+        else if international { return nil }
+        if number.count == 11 && number.hasPrefix("1") { return "143465" }
+        if !international && number.count == 11 && number.hasPrefix("0") { number.removeFirst() }
+        if number.count == 10, let first = number.first, ("6"..."9").contains(first) { return "143467" }
+        return nil
+    }
+
+    private func sessionDSID(_ result: [String: Any], response: HTTPURLResponse) -> String {
+        let bodyID = string(result["dsPersonId"])
+        if !bodyID.isEmpty { return bodyID }
+        let headerID = response.value(forHTTPHeaderField: "X-Dsid")?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !headerID.isEmpty && headerID.allSatisfy({ $0.isASCII && $0.isNumber }) { return headerID }
+        guard let url = response.url else { return "" }
+        let headers = response.allHeaderFields.reduce(into: [String: String]()) {
+            $0[String(describing: $1.key)] = String(describing: $1.value)
+        }
+        for cookie in HTTPCookie.cookies(withResponseHeaderFields: headers, for: url) {
+            for prefix in ["mz_at0-", "mz_at_ssl-"] where cookie.name.hasPrefix(prefix) {
+                let candidate = String(cookie.name.dropFirst(prefix.count))
+                if !candidate.isEmpty && candidate.allSatisfy({ $0.isASCII && $0.isNumber }) { return candidate }
+            }
+        }
+        return ""
+    }
+
     private func payload(email: String, password: String, code: String, guid: String, attempt: Int) throws -> Data {
         try PropertyListSerialization.data(fromPropertyList: ["appleId": email, "attempt": String(attempt),
             "guid": guid, "password": password + code, "rmp": "0", "why": "signIn"], format: .xml, options: 0)
     }
 
-    private func send(body: Data, endpoint: URL, progress: (AuthenticationStage) async -> Void, secrets: [String], recovery: inout AuthenticationRecoveryBudget) async throws -> (Data, HTTPURLResponse) {
+    private func send(body: Data, endpoint: URL, progress: (AuthenticationStage) async -> Void, secrets: [String], storefront: String?, recovery: inout AuthenticationRecoveryBudget) async throws -> (Data, HTTPURLResponse) {
         for attempt in 1...recoveryAttempts {
             try Task.checkCancellation()
             try recovery.checkDeadline(now: now())
@@ -163,7 +195,8 @@ public struct AppleAuthentication {
             var request = URLRequest(url: endpoint)
             request.timeoutInterval = try recovery.requestTimeout(now: now())
             request.httpMethod = "POST"; request.httpBody = body
-            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            request.setValue("application/x-apple-plist", forHTTPHeaderField: "Content-Type")
+            request.setValue(storefront, forHTTPHeaderField: "X-Apple-Store-Front")
             request.setValue(SAPProtocol.userAgent, forHTTPHeaderField: "User-Agent")
             request.setValue("close", forHTTPHeaderField: "Connection")
             let signature = try await signer.actionSignature(body: body)
@@ -188,10 +221,10 @@ public struct AppleAuthentication {
                 let missingLocation = [301, 302, 307, 308].contains(status)
                     && (response.value(forHTTPHeaderField: "Location")?
                         .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
-                if populated || (!missingLocation && (300..<400).contains(status)) || status == 200 { return (data, response) }
+                if populated || (!missingLocation && (300..<400).contains(status)) || (status == 200 && result != nil) { return (data, response) }
                 let failure: AuthenticationError = missingLocation ? .redirectUnavailable(status)
                     : (status == 429 ? .rateLimited : .http(status))
-                guard missingLocation || [204, 403, 404, 429].contains(status) || status / 100 == 5 else { throw AuthenticationError.invalidResponse(status) }
+                guard missingLocation || [200, 204, 403, 404, 429].contains(status) || status / 100 == 5 else { throw AuthenticationError.invalidResponse(status) }
                 guard attempt < recoveryAttempts else { throw failure }
                 let delay = try retryDelay(response.value(forHTTPHeaderField: "Retry-After"), attempt: attempt)
                 try recovery.reserveRetry(delay: delay, now: now(), failure: failure)

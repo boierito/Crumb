@@ -33,10 +33,10 @@ final class AuthenticationTests: XCTestCase {
         let body = try XCTUnwrap(requests.first?.httpBody)
         XCTAssertEqual(signer.bodies, [body])
         XCTAssertEqual(requests[0].value(forHTTPHeaderField: "X-Apple-ActionSignature"), "fixture-signature-not-valid")
-        XCTAssertEqual(requests[0].value(forHTTPHeaderField: "Content-Type"), "application/x-www-form-urlencoded")
+        XCTAssertEqual(requests[0].value(forHTTPHeaderField: "Content-Type"), "application/x-apple-plist")
         let parsed = try PropertyListSerialization.propertyList(from: body, format: nil) as! [String: String]
         XCTAssertEqual(parsed, ["appleId": "fixture@example.test", "password": "p<&>secret123456", "guid": identity.guid,
-                                "attempt": "1", "rmp": "0", "why": "signIn"])
+                                "attempt": "2", "rmp": "0", "why": "signIn"])
         XCTAssertEqual(account.dsid, "123456789"); XCTAssertEqual(account.pod, "42")
         XCTAssertEqual(account.authenticationURL, endpoint)
         XCTAssertEqual(try store.load(), account)
@@ -44,6 +44,52 @@ final class AuthenticationTests: XCTestCase {
         let dictionary = try JSONSerialization.jsonObject(with: serialized) as! [String: Any]
         XCTAssertNil(dictionary["password"]); XCTAssertNil(dictionary["code"])
         XCTAssertFalse(String(data: serialized, encoding: .utf8)!.contains("p<&>secret"))
+    }
+
+    func testIPadnPhoneNumberRouting() async throws {
+        for (appleID, expected) in [
+            ("13800138000", "143465"), ("+86 138-0013-8000", "143465"),
+            ("008613800138000", "143465"), ("9876543210", "143467"),
+            ("+91 98765 43210", "143467"), ("09876543210", "143467"),
+            ("+1 415 555 0100", ""), ("user@example.com", "")
+        ] {
+            let transport = FixtureAuthenticationTransport([.http(200, try success(), responseHeaders)])
+            _ = try await AppleAuthentication(transport: transport, signer: FixtureSigner(), persistence: FixtureAccountStore())
+                .login(email: appleID, password: "secret", identity: identity, endpoint: endpoint)
+            let requests = await transport.requests
+            XCTAssertEqual(requests[0].value(forHTTPHeaderField: "X-Apple-Store-Front") ?? "", expected)
+            let body = try ApplePlist.dictionary(XCTUnwrap(requests[0].httpBody))
+            XCTAssertEqual(body?["appleId"] as? String, appleID)
+        }
+    }
+
+    func testMissingBodyDSIDUsesResponseHeaderOrCookie() async throws {
+        let data = try plist(["passwordToken": "fixture-token"])
+        for extra in [
+            ["X-Dsid": "123456789"],
+            ["Set-Cookie": "mz_at_ssl-123456789=fixture; Path=/; Secure"]
+        ] {
+            let transport = FixtureAuthenticationTransport([
+                .http(200, data, responseHeaders.merging(extra) { _, new in new })
+            ])
+            guard case .authenticated(let account) = try await login(transport) else {
+                return XCTFail("Missing account")
+            }
+            XCTAssertEqual(account.dsid, "123456789")
+        }
+    }
+
+    func testHTMLSuccessRetriesExactSignedTwoFactorPayload() async throws {
+        let transport = FixtureAuthenticationTransport([
+            .http(200, Data("<html>Unavailable</html>".utf8), [:]),
+            .http(200, try success(), responseHeaders)
+        ])
+        let signer = FixtureSigner()
+        _ = try await login(transport, code: "123456", signer: signer)
+        let requests = await transport.requests
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertEqual(requests[0].httpBody, requests[1].httpBody)
+        XCTAssertEqual(signer.bodies, requests.map { $0.httpBody! })
     }
 
     func testPodRedirectsPreservePOSTBodyAndAttempt() async throws {
@@ -252,7 +298,7 @@ final class AuthenticationTests: XCTestCase {
         let requests = await transport.requests; XCTAssertEqual(requests.count, 5)
     }
 
-    func testInvalidCredentialsLogicalRetryChangesOnlyAttemptAndDoesNotSaveFailure() async throws {
+    func testInvalidCredentialsAreNotReplayedAndDoNotSaveFailure() async throws {
         let failure = try plist(["failureType": "-5000", "customerMessage": "Incorrect password"])
         let transport = FixtureAuthenticationTransport([.http(200, failure, [:]), .http(200, failure, [:])])
         let store = FixtureAccountStore()
@@ -260,8 +306,7 @@ final class AuthenticationTests: XCTestCase {
         catch { XCTAssertEqual(error as? AuthenticationError, .apple(failure: "-5000", message: "Incorrect password")) }
         let requests = await transport.requests
         let attempts = try requests.map { try PropertyListSerialization.propertyList(from: $0.httpBody!, format: nil) as! [String: String] }
-        XCTAssertEqual(attempts.map { $0["attempt"]! }, ["1", "2"])
-        XCTAssertEqual(attempts[0]["password"], attempts[1]["password"])
+        XCTAssertEqual(attempts.map { $0["attempt"]! }, ["1"])
         XCTAssertNil(try store.load())
     }
 
@@ -484,7 +529,7 @@ final class AuthenticationTests: XCTestCase {
         XCTAssertNotNil(try store.load())
     }
 
-    func testLogicalCredentialAttemptDoesNotResetAutomaticRetryAllowance() async throws {
+    func testCredentialFailureStopsAutomaticRecovery() async throws {
         let failedCredential = try plist(["failureType": "-5000", "customerMessage": "Incorrect password"])
         let transport = FixtureAuthenticationTransport(Array(repeating: .http(204, Data(), [:]), count: 6)
             + [.http(200, failedCredential, [:])] + Array(repeating: .http(503, Data(), [:]), count: 12))
@@ -493,8 +538,8 @@ final class AuthenticationTests: XCTestCase {
                 automaticRecovery: true, sleep: { _ in })
                 .login(email: "fixture@example.test", password: "secret", code: "123456", identity: identity, endpoint: endpoint)
             XCTFail("Logical attempt reset recovery allowance")
-        } catch { XCTAssertEqual(error as? AuthenticationError, .http(503)) }
-        let requests = await transport.requests; XCTAssertEqual(requests.count, 13)
+        } catch { XCTAssertEqual(error as? AuthenticationError, .apple(failure: "-5000", message: "Incorrect password")) }
+        let requests = await transport.requests; XCTAssertEqual(requests.count, 7)
         let last = try ApplePlist.dictionary(XCTUnwrap(requests.last?.httpBody))
         XCTAssertEqual(last?["attempt"] as? String, "2")
         XCTAssertEqual(last?["password"] as? String, "secret123456")

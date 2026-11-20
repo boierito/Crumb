@@ -1,5 +1,9 @@
 # Development changelog
 
+## Crumb 2.0.1 — build 23055
+
+- Fix de login.
+
 ## Crumb 1.0.0 — build 23022
 
 - Unifica formulario y desafío 2FA en un estado tipado, ligado a la cuenta y sólo en RAM.
