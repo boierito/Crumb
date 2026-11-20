@@ -132,11 +132,9 @@ final class AuthenticationTests: XCTestCase {
         guard case .authenticated = try await auth.login(email: "fixture@example.test", password: "secret", code: "123456",
             identity: identity, endpoint: XCTUnwrap(resolved)) else { return XCTFail("Not verified") }
         let setupRequests = await sapTransport.requests
-        XCTAssertEqual(setupRequests.map { $0.value(forHTTPHeaderField: "User-Agent") }, [
-            "Configurator/2.21 (Macintosh; OS X 27.0.1; 26A434) AppleWebKit/0625.2.5.11.6",
-            SAPProtocol.userAgent,
-            SAPProtocol.userAgent
-        ])
+        XCTAssertEqual(setupRequests.count, 3) // One Bag, one certificate and one setup POST.
+        XCTAssertEqual(setupRequests[0].value(forHTTPHeaderField: "User-Agent"),
+            "Configurator/2.17 (Macintosh; OS X 15.2; 24C5089c) AppleWebKit/0620.1.16.11.6")
         XCTAssertEqual(guest.initializations, 1)
         XCTAssertEqual(guest.exchanges, 2)
         XCTAssertEqual(guest.signedBodies.count, 3)

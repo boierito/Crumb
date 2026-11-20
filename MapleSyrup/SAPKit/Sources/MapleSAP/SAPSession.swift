@@ -67,7 +67,8 @@ public struct SAPProtocol {
         let url = URL(string: "https://init.itunes.apple.com/bag.xml?guid=\(identity.guid)")!
         var request = URLRequest(url: url)
         request.setValue("application/xml", forHTTPHeaderField: "Accept")
-        request.setValue(Self.signInUserAgent, forHTTPHeaderField: "User-Agent")
+        // Configurator 2.21 advertises native authentication and gets a different
+        // Bag endpoint. Discover the signed MZFinance endpoint with 2.17.
         let body = try await send(request)
         return try SAPConfiguration.parse(bag: body)
     }
@@ -89,9 +90,7 @@ public struct SAPProtocol {
 
     private func send(_ request: URLRequest) async throws -> Data {
         var request = request
-        if request.value(forHTTPHeaderField: "User-Agent") == nil {
-            request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
-        }
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         let (data, response) = try await transport.send(request)
         guard response.statusCode == 200 else { throw SAPError.http(response.statusCode) }
         guard data.count <= Self.maximumBodySize else { throw SAPError.oversizedResponse }
