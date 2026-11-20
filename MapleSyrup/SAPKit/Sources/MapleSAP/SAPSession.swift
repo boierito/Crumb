@@ -56,6 +56,8 @@ public final class AppleSAPTransport: NSObject, SAPTransport, URLSessionTaskDele
 public struct SAPProtocol {
     public static let maximumBodySize = 1 << 20
     public static let userAgent = "Configurator/2.17 (Macintosh; OS X 15.2; 24C5089c) AppleWebKit/0620.1.16.11.6"
+    // Matches the Store authentication client in ipatool 2.8.1.
+    static let signInUserAgent = "Configurator/2.21 (Macintosh; OS X 27.0.1; 26A434) AppleWebKit/0625.2.5.11.6"
     private let transport: SAPTransport
     public init(transport: SAPTransport) { self.transport = transport }
 
@@ -65,6 +67,7 @@ public struct SAPProtocol {
         let url = URL(string: "https://init.itunes.apple.com/bag.xml?guid=\(identity.guid)")!
         var request = URLRequest(url: url)
         request.setValue("application/xml", forHTTPHeaderField: "Accept")
+        request.setValue(Self.signInUserAgent, forHTTPHeaderField: "User-Agent")
         let body = try await send(request)
         return try SAPConfiguration.parse(bag: body)
     }
@@ -86,7 +89,9 @@ public struct SAPProtocol {
 
     private func send(_ request: URLRequest) async throws -> Data {
         var request = request
-        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+        if request.value(forHTTPHeaderField: "User-Agent") == nil {
+            request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+        }
         let (data, response) = try await transport.send(request)
         guard response.statusCode == 200 else { throw SAPError.http(response.statusCode) }
         guard data.count <= Self.maximumBodySize else { throw SAPError.oversizedResponse }

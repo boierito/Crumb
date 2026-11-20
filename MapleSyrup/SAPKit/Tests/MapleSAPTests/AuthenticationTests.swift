@@ -132,7 +132,11 @@ final class AuthenticationTests: XCTestCase {
         guard case .authenticated = try await auth.login(email: "fixture@example.test", password: "secret", code: "123456",
             identity: identity, endpoint: XCTUnwrap(resolved)) else { return XCTFail("Not verified") }
         let setupRequests = await sapTransport.requests
-        XCTAssertEqual(setupRequests.count, 3) // One Bag, one certificate and one setup POST.
+        XCTAssertEqual(setupRequests.map { $0.value(forHTTPHeaderField: "User-Agent") }, [
+            "Configurator/2.21 (Macintosh; OS X 27.0.1; 26A434) AppleWebKit/0625.2.5.11.6",
+            SAPProtocol.userAgent,
+            SAPProtocol.userAgent
+        ])
         XCTAssertEqual(guest.initializations, 1)
         XCTAssertEqual(guest.exchanges, 2)
         XCTAssertEqual(guest.signedBodies.count, 3)
@@ -480,6 +484,10 @@ final class AuthenticationTests: XCTestCase {
             return XCTFail("Last eligible response was discarded")
         }
         let requests = await transport.requests; XCTAssertEqual(requests.count, 13)
+        XCTAssertTrue(requests.allSatisfy {
+            $0.value(forHTTPHeaderField: "User-Agent") ==
+                "Configurator/2.21 (Macintosh; OS X 27.0.1; 26A434) AppleWebKit/0625.2.5.11.6"
+        })
         let delays = await sleeps.values; XCTAssertEqual(delays.count, 11)
         XCTAssertNotNil(try store.load())
     }
@@ -498,6 +506,26 @@ final class AuthenticationTests: XCTestCase {
         let last = try ApplePlist.dictionary(XCTUnwrap(requests.last?.httpBody))
         XCTAssertEqual(last?["attempt"] as? String, "2")
         XCTAssertEqual(last?["password"] as? String, "secret123456")
+    }
+
+    func testAccountDialogStopsRetryAndRedactsAccountDetails() async throws {
+        let dialog = try plist(["dialog": [
+            "message": "Account action required",
+            "explanation": "Check fixture@example.test.",
+            "okButtonAction": ["kind": "OpenURL", "url": "https://example.test"]
+        ]])
+        let transport = FixtureAuthenticationTransport([.http(403, dialog, [:])])
+        let store = FixtureAccountStore()
+        do {
+            _ = try await login(transport, store: store)
+            XCTFail("Account dialog was accepted")
+        } catch {
+            XCTAssertEqual(error as? AuthenticationError,
+                .apple(failure: "", message: "Account action required Check [redacted]."))
+        }
+        let requests = await transport.requests
+        XCTAssertEqual(requests.count, 1)
+        XCTAssertNil(try store.load())
     }
 
     func testAppleCredentialErrorOn403IsNotTreatedAsTransientHTML() async throws {

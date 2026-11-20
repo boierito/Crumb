@@ -21,6 +21,7 @@ public enum AuthenticationError: Error, LocalizedError, Equatable {
         case .accountDisabled: return "Apple reports that this account is disabled or locked."
         case .apple(let failure, let message): return message.isEmpty ? "Apple rejected sign-in (code \(failure))." : message
         case .invalidResponse(let status): return "Apple returned no usable login response (HTTP \(status)). Try again later or from another network."
+        case .http(204): return "Apple returned an empty sign-in response (HTTP 204) after retrying. Try again later."
         case .http(let status): return "Apple authentication failed after bounded retries (HTTP \(status))."
         case .rateLimited: return "Apple rate limited sign-in. Wait before trying again."
         case .retryLater: return "Apple requested a wait longer than 30 seconds. Try again later."
@@ -109,6 +110,11 @@ public struct AppleAuthentication {
             guard let result = try? ApplePlist.dictionary(data) else { throw AuthenticationError.invalidResponse(response.statusCode) }
             let failure = string(result["failureType"])
             let message = string(result["customerMessage"])
+            if let dialog = accountDialog(result) {
+                let secrets = [password, code, email, string(result["passwordToken"])]
+                throw AuthenticationError.apple(failure: safe(failure, secrets: secrets),
+                    message: safe(dialog, secrets: secrets))
+            }
             if failure == "-5000", logicalAttempt == 1 {
                 logicalAttempt = 2
                 body = try payload(email: email, password: password, code: code, guid: identity.guid, attempt: logicalAttempt)
@@ -164,7 +170,7 @@ public struct AppleAuthentication {
             request.timeoutInterval = try recovery.requestTimeout(now: now())
             request.httpMethod = "POST"; request.httpBody = body
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-            request.setValue(SAPProtocol.userAgent, forHTTPHeaderField: "User-Agent")
+            request.setValue(SAPProtocol.signInUserAgent, forHTTPHeaderField: "User-Agent")
             request.setValue("close", forHTTPHeaderField: "Connection")
             let signature = try await signer.actionSignature(body: body)
             guard !signature.isEmpty else { throw SAPError.emptySignature }
@@ -180,7 +186,10 @@ public struct AppleAuthentication {
                 await diagnostic(ResponseDiagnostic.response(data, status: response.statusCode, scope: "authentication", attempt: attempt, secrets: secrets))
                 guard data.count <= SAPProtocol.maximumBodySize else { throw SAPError.oversizedResponse }
                 let result = try? ApplePlist.dictionary(data)
-                let populated = result.map { !string($0["failureType"]).isEmpty || !string($0["customerMessage"]).isEmpty || !string($0["passwordToken"]).isEmpty } ?? false
+                let populated = result.map {
+                    !string($0["failureType"]).isEmpty || !string($0["customerMessage"]).isEmpty
+                        || !string($0["passwordToken"]).isEmpty || accountDialog($0) != nil
+                } ?? false
                 let status = response.statusCode
                 // An allowed redirect status without a usable Location is not an
                 // unsafe destination. Retry the current validated endpoint only;
@@ -232,6 +241,15 @@ public struct AppleAuthentication {
     }
     private func fallbackDelay(attempt: Int) -> TimeInterval {
         recoveryWindow == nil ? Double(10 << (attempt - 1)) : min(15, Double(2 << min(attempt - 1, 3)))
+    }
+    private func accountDialog(_ result: [String: Any]) -> String? {
+        guard let dialog = result["dialog"] as? [String: Any] else { return nil }
+        let text = [dialog["message"], dialog["explanation"]]
+            .compactMap { $0 as? String }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        return text.isEmpty ? nil : text
     }
     private func string(_ value: Any?) -> String { (value as? String) ?? (value as? NSNumber)?.stringValue ?? "" }
     private func safe(_ text: String, secrets: [String]) -> String {
