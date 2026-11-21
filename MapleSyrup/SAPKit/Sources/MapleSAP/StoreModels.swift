@@ -81,7 +81,17 @@ public enum StoreParsing {
         guard let text = item["URL"] as? String else { throw StoreError.invalidResponse }
         let url = try CDNPolicy.validate(text)
         let versions = (metadata["softwareVersionExternalIdentifiers"] as? [Any] ?? []).compactMap(identifier)
-        metadata["apple-id"] = email; metadata["userName"] = email
+        // Do not package the account email or any opaque account-specific fields
+        // from Apple's response into iTunesMetadata.plist. License SINF is handled
+        // separately and must remain private until successfully decrypted.
+        let nonPersonalKeys: Set<String> = [
+            "itemId", "softwareVersionExternalIdentifier", "softwareVersionBundleId",
+            "softwareVersionExternalIdentifiers", "bundleShortVersionString",
+            "bundleVersion", "softwareVersionBundleVersion", "kind",
+            "softwareVersionBundleShortVersionString"
+        ]
+        metadata = metadata.filter { nonPersonalKeys.contains($0.key) }
+        _ = email // Retained in public API for source compatibility.
         let sinfItems = item["sinfs"] as? [[String: Any]] ?? []
         var sinfs: [Data] = []
         for entry in sinfItems {
