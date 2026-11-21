@@ -49,5 +49,5 @@ with zipfile.ZipFile(ipa) as archive:
     print(json.dumps({"ipa": str(ipa), "build": expected_build, "version": expected_version,
                       "bundleID": info["CFBundleIdentifier"], "displayName": info["CFBundleDisplayName"],
                       "minimumOS": info["MinimumOSVersion"], "cpu": "arm64",
-                      "FilesEnabled": True, "CrumbURLScheme": True, "DeviceHelperTemplate": True,
+                      "FilesEnabled": False, "CrumbURLScheme": True, "DeviceHelperTemplate": True,
                       "sha256": hashlib.file_digest(ipa.open("rb"), "sha256").hexdigest()}, indent=2))
