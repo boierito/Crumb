@@ -106,7 +106,7 @@ struct OTAInstallationView: View {
                         Button("Install") {
                             requestInstallation()
                         }
-                        if let url = source ?? record.fileURL { ShareLink(item: url) { Label("Export IPA instead", systemImage: "square.and.arrow.up") } }
+                        if source != nil || record.isDecrypted, let url = source ?? record.fileURL { ShareLink(item: url) { Label("Export IPA instead", systemImage: "square.and.arrow.up") } }
                     }
                 }
             }
@@ -115,7 +115,7 @@ struct OTAInstallationView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Close") { installer.stop(); dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    if let url = source ?? record.fileURL {
+                    if source != nil || record.isDecrypted, let url = source ?? record.fileURL {
                         ShareLink(item:url) { Image(systemName:"square.and.arrow.up") }
                             .accessibilityLabel(source == nil ? "Export IPA" : "Export signed IPA")
                     }
