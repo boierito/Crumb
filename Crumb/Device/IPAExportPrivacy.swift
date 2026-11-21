@@ -27,3 +27,14 @@ enum IPAExportPrivacy {
         return hasApp
     }
 }
+
+
+extension DownloadRecord {
+    // A persisted decrypted flag is not proof of a safe export.
+    // Verify the actual ZIP archive for legacy helper outputs as well.
+    var exportableFileURL: URL? {
+        guard isDecrypted, let url = fileURL,
+              IPAExportPrivacy.isSafeToShare(url) else { return nil }
+        return url
+    }
+}
