@@ -28,16 +28,23 @@ enum AppGroupDecryption {
             Bundle.main.object(forInfoDictionaryKey: "FairPlayAppGroup") as? String ?? ""
         ])
     }
-    static func container() -> URL? {
+    // Equivalent to iPadN SigningCapability.resolved: resolve once per signed
+    // process. A profile string is only a candidate, never authorization.
+    // A successful real write probe proves the container is usable.
+    struct Resolution { let identifier: String; let url: URL }
+    static let resolution: Resolution? = {
         let fm = FileManager.default
         for group in groupCandidates {
             guard let url = fm.containerURL(forSecurityApplicationGroupIdentifier: group) else { continue }
             let probe = url.appendingPathComponent(".crumb-group-probe-" + UUID().uuidString)
             defer { try? fm.removeItem(at: probe) }
-            if (try? Data().write(to: probe, options: .withoutOverwriting)) != nil { return url }
+            if (try? Data().write(to: probe, options: .withoutOverwriting)) != nil {
+                return Resolution(identifier: group, url: url)
+            }
         }
         return nil
-    }
+    }()
+    static func container() -> URL? { resolution?.url }
 
     static func fail(_ message: String) -> DeviceOperationError { .message(message) }
 
