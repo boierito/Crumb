@@ -4,10 +4,36 @@
 #include "../../DecryptHelper/CrumbFileAccess.c"
 #include "../../DecryptHelper/CrumbMachO.c"
 #import "GroupFairPlay.h"
+#import "FairPlayCore.h"
 void crumb_group_reset(void) { atomic_store(&jobCancelled, false); }
 void crumb_group_cancel(void) { atomic_store(&jobCancelled, true); }
+// iPadN FairPlayCore is the only production decrypt engine. The old Crumb helper
+// is kept for independent regression fixtures, not selected by the app.
 BOOL crumb_group_decrypt(NSURL *source, NSURL *destination, BOOL *encrypted, NSError **error) {
-    return decrypt(source, destination, encrypted, error);
+    if (encrypted) *encrypted = NO;
+    if (atomic_load(&jobCancelled)) {
+        if (error) *error = [NSError errorWithDomain:@"CrumbFairPlay" code:-2
+            userInfo:@{NSLocalizedDescriptionKey: @"Decryption cancelled."}];
+        return NO;
+    }
+    fp_file_stats_t stats = {0};
+    const int result = fp_decrypt_file_ex(source.fileSystemRepresentation,
+        destination.fileSystemRepresentation, NULL, NULL, &stats);
+    if (atomic_load(&jobCancelled)) {
+        [NSFileManager.defaultManager removeItemAtURL:destination error:nil];
+        if (error) *error = [NSError errorWithDomain:@"CrumbFairPlay" code:-2
+            userInfo:@{NSLocalizedDescriptionKey: @"Decryption cancelled."}];
+        return NO;
+    }
+    if (result < 0) {
+        [NSFileManager.defaultManager removeItemAtURL:destination error:nil];
+        if (error) *error = [NSError errorWithDomain:@"CrumbFairPlay" code:-1
+            userInfo:@{NSLocalizedDescriptionKey:
+                @"FairPlayCore rejected the image. Check the Apple license, App Group entitlement and iOS permissions."}];
+        return NO;
+    }
+    if (encrypted) *encrypted = (result == 0 && stats.slices_ok > 0);
+    return YES;
 }
 
 NSArray<NSString *> *crumb_group_signed_groups(void) {
