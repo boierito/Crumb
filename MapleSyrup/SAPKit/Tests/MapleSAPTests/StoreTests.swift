@@ -489,8 +489,10 @@ extension StoreTests {
         let service = try session(transport)
         let output = try await service.descriptor(app: free, externalVersionID: "999")
         XCTAssertEqual(output.externalVersionID, "999")
-        XCTAssertEqual(await service.currentAccount().storefront, "143441-1,29")
-        let purchases = await transport.requests.filter { $0.url?.path.hasSuffix("buyProduct") == true }
+        let correctedAccount = await service.currentAccount()
+        XCTAssertEqual(correctedAccount.storefront, "143441-1,29")
+        let requests = await transport.requests
+        let purchases = requests.filter { $0.url?.path.hasSuffix("buyProduct") == true }
         XCTAssertEqual(purchases.count, 2)
         XCTAssertEqual(purchases[0].value(forHTTPHeaderField: "X-Apple-Store-Front"), "143505-1,29")
         XCTAssertEqual(purchases[1].value(forHTTPHeaderField: "X-Apple-Store-Front"), "143441-1,29")
