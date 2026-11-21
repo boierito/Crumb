@@ -177,6 +177,34 @@ enum AppGroupDecryption {
             progress(0.1 + 0.75 * Double(index + 1) / Double(max(files.count, 1)))
         }
         guard decrypted > 0 else { throw fail("No encrypted images found; no decrypted result was published.") }
+        // The original encrypted archive is private and contains account-bound
+        // FairPlay license data. Export only from the verified plaintext tree:
+        // remove all Apple purchase metadata, SINF/SUPP and per-bundle SC_Info.
+        // Signed installation uses the decrypted binary, not the purchase token.
+        guard let privateEnumerator = fm.enumerator(atPath: packed.path) else {
+            throw fail("Cannot inspect export privacy.")
+        }
+        let privateEntries = privateEnumerator.allObjects.compactMap { $0 as? String }
+        for relative in privateEntries.sorted(by: { $0.count > $1.count }) {
+            let components = relative.split(separator: "/").map(String.init)
+            let name = components.last ?? ""
+            let accountMetadata = ["iTunesMetadata.plist", "iTunesArtwork", "iTunesArtwork@2x"].contains(name)
+            let licenseResource = components.contains("SC_Info")
+            guard accountMetadata || licenseResource else { continue }
+            let candidate = packed.appendingPathComponent(relative)
+            if fm.fileExists(atPath: candidate.path) {
+                try fm.removeItem(at: candidate)
+            }
+        }
+        // Fail closed: never publish an export containing original license files.
+        if let residual = fm.enumerator(atPath: packed.path) {
+            for case let relative as String in residual {
+                let parts = relative.split(separator: "/")
+                guard !parts.contains("SC_Info"), parts.last != "iTunesMetadata.plist" else {
+                    throw fail("Personal Apple license metadata remains in output.")
+                }
+            }
+        }
         if cancelled() { throw CancellationError() }
         let downloads = fm.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("Downloads", isDirectory: true)
         try fm.createDirectory(at: downloads, withIntermediateDirectories: true)
