@@ -13,7 +13,7 @@ struct DownloadReadyView: View {
                 }
                 Section {
                     Button { dismiss(); DeviceWorkflow.shared.install(record) } label: { Label("Install now", systemImage: "arrow.down.app") }
-                    if record.isDecrypted, let url = record.fileURL {
+                    if let url = record.exportableFileURL {
                         ShareLink(item: url) { Label("Export IPA", systemImage: "square.and.arrow.up") }
                     } else {
                         Text("The encrypted original stays private. Decrypt before exporting.")
