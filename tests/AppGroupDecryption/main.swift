@@ -41,6 +41,8 @@ try fm.zipItem(at: tree, to: ipa, shouldKeepParent: false)
 let original = try Data(contentsOf: ipa)
 let output = try AppGroupDecryption.run(source: ipa, root: root, cancelled: { false }, progress: { _ in })
 defer { try? fm.removeItem(at: output) }
+try require(IPAExportPrivacy.isSafeToShare(output), "verified decrypted export denied")
+try require(!IPAExportPrivacy.isSafeToShare(ipa), "original licensed IPA was shareable")
 let unpack = root.appendingPathComponent("check")
 try fm.unzipItem(at: output, to: unpack)
 print("Verified archive paths:", try fm.subpathsOfDirectory(atPath: unpack.path))
