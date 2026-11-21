@@ -168,7 +168,7 @@ struct DownloadedAppsView: View {
                     .disabled(device.busy || device.waitingForHelper)
                 // Encrypted originals carry account-bound FairPlay SINF and are
                 // strictly local; only verified, scrubbed decrypted IPAs export.
-                if record.isDecrypted, let url = record.fileURL {
+                if let url = record.exportableFileURL {
                     ShareLink(item:url) { Label("Export",systemImage:"square.and.arrow.up").frame(maxWidth:.infinity) }
                 }
             }.buttonStyle(.bordered).controlSize(.regular)
