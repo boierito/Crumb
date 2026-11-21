@@ -16,6 +16,13 @@ BOOL crumb_group_decrypt(NSURL *source, NSURL *destination, BOOL *encrypted, NSE
             userInfo:@{NSLocalizedDescriptionKey: @"Decryption cancelled."}];
         return NO;
     }
+    // FairPlayCore accepts Mach-O only. Keep every other archive asset byte
+    // identical (plists, localized resources, artwork, etc.), then scrub Apple
+    // license resources from the plaintext export in AppGroupDecryption.
+    if (!fp_is_macho(source.fileSystemRepresentation)) {
+        return [NSFileManager.defaultManager copyItemAtURL:source
+                                                    toURL:destination error:error];
+    }
     fp_file_stats_t stats = {0};
     const int result = fp_decrypt_file_ex(source.fileSystemRepresentation,
         destination.fileSystemRepresentation, NULL, NULL, &stats);
