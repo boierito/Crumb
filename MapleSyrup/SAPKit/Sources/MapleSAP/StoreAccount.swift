@@ -74,6 +74,7 @@ public protocol StoreAccountPersistence {
 
 public enum AuthenticationEndpoint {
     private static let path = "/WebObjects/MZFinance.woa/wa/authenticate"
+    private static let nativePaths: Set<String> = ["/auth/v1/native", "/auth/v1/native/", "/auth/v1/native/fast", "/auth/v1/native/fast/"]
     // Same authentication host/path policy as current ipatool. Bag-only SAP
     // probes may discover other endpoints; credentials never use a fallback.
     public static func validate(_ url: URL) throws -> URL {
@@ -83,8 +84,10 @@ public enum AuthenticationEndpoint {
         // URL.path may strip a terminal slash. Validate the URLComponents raw
         // HTTP path instead; exact literals also reject encoded path aliases.
         let rawPath = URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedPath
-        guard (host == "buy.itunes.apple.com" || host.hasSuffix("-buy.itunes.apple.com")),
-              rawPath == path || rawPath == path + "/"
+        let native = host == "auth.itunes.apple.com" && rawPath.map { nativePaths.contains($0) } == true
+        let finance = (host == "buy.itunes.apple.com" || host.hasSuffix("-buy.itunes.apple.com")) &&
+            (rawPath == path || rawPath == path + "/")
+        guard native || finance
         else { throw AuthenticationError.invalidRedirect }
         return url
     }
@@ -98,7 +101,9 @@ public enum AuthenticationEndpoint {
         guard var components = URLComponents(url: validated, resolvingAgainstBaseURL: false) else {
             throw AuthenticationError.invalidRedirect
         }
-        components.percentEncodedPath = path + "/"
+        if validated.host?.lowercased() != "auth.itunes.apple.com" {
+            components.percentEncodedPath = path + "/"
+        }
         guard let normalized = components.url else { throw AuthenticationError.invalidRedirect }
         return try validate(normalized)
     }

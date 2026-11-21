@@ -68,6 +68,27 @@ final class SAPTests: XCTestCase {
         }
     }
 
+    func testNativeAndFastIpadNLoginPathsAreAllowedButLookalikesAreRejected() throws {
+        for path in ["/auth/v1/native", "/auth/v1/native/",
+                     "/auth/v1/native/fast", "/auth/v1/native/fast/"] {
+            let address = URL(string: "https://auth.itunes.apple.com" + path)!
+            XCTAssertNoThrow(try AuthenticationEndpoint.validate(address))
+            XCTAssertEqual(try AuthenticationEndpoint.initial(address), address)
+            let parsed = try SAPConfiguration.parse(bag: bag(["authenticateAccount": address.absoluteString]))
+            XCTAssertEqual(parsed.authenticationURL, address)
+        }
+        for address in [
+            "https://auth.itunes.apple.com.evil.test/auth/v1/native",
+            "https://buy.itunes.apple.com/auth/v1/native",
+            "https://auth.itunes.apple.com/auth/v1/native%2f",
+            "https://auth.itunes.apple.com/auth/v1/native/other",
+            "http://auth.itunes.apple.com/auth/v1/native",
+            "https://user@auth.itunes.apple.com/auth/v1/native"
+        ] {
+            XCTAssertThrowsError(try AuthenticationEndpoint.validate(URL(string: address)!))
+        }
+    }
+
     func testIdentityBytesAndGUIDAreTheSameStableIdentity() throws {
         let identity = try MachineIdentity(hardwareID: Data([2, 1, 2, 3, 4, 255]))
         XCTAssertEqual(identity.guid, "0201020304FF")

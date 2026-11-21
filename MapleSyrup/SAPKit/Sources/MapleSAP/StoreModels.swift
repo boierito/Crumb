@@ -49,7 +49,7 @@ public struct StoreDownload: Sendable {
     public let md5: String
 }
 public protocol KBSyncGenerator {
-    func generate(identity: MachineIdentity, dsid: UInt64) throws -> Data
+    func generate(identity: MachineIdentity, dsid: UInt64) async throws -> Data
 }
 public protocol KBSyncPersistence {
     func load(dsid: String, guid: String) throws -> Data?

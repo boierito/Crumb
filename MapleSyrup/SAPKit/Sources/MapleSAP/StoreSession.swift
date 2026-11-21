@@ -130,7 +130,7 @@ public actor StoreSession {
                 }
                 guard let dsid = UInt64(account.dsid), dsid > 0 else { throw AuthenticationError.invalidSession }
                 await progress(.kbsync)
-                let blob = try generator.generate(identity: identity, dsid: dsid)
+                let blob = try await generator.generate(identity: identity, dsid: dsid)
                 try Task.checkCancellation()
                 let result = try await ent(url, app: app, version: version, blob: blob)
                 // Cache failures cannot invalidate an already validated Apple reply.

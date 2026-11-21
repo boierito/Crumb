@@ -37,7 +37,7 @@ extension AppData {
                 let signer = try await prepared.prepare { self.setAuthenticationStage($0) }
                 try Task.checkCancellation()
                 let authentication = AppleAuthentication(transport: prepared.loginTransport, signer: signer,
-                    persistence: KeychainStoreAccount(), automaticRecovery: true)
+                    persistence: KeychainStoreAccount(), proof: CrumbSAPStoreProof(), automaticRecovery: true)
                 guard let endpoint = prepared.endpoint else { throw CancellationError() }
                 let outcome = try await authentication.login(email: input.email, password: input.password, code: input.code,
                     identity: prepared.identity, endpoint: endpoint, resolvedEndpoint: { endpoint in
@@ -217,7 +217,7 @@ final class PreparedAppleLogin {
     let identity: MachineIdentity
     let loginTransport: AppleAuthenticationTransport
     private let sapTransport = AppleSAPTransport()
-    private var signer: SAPSession?
+    private var signer: (any ActionSigning)?
     private var closed = false
     var endpoint: URL?
     private(set) var expiresAt = Date.distantPast
@@ -229,17 +229,18 @@ final class PreparedAppleLogin {
     func canReuse(for email: String) -> Bool {
         !closed && self.email == email && signer != nil && expiresAt > Date()
     }
-    func prepare(progress: (AuthenticationStage) -> Void) async throws -> SAPSession {
+    func prepare(progress: (AuthenticationStage) -> Void) async throws -> any ActionSigning {
         guard !closed else { throw CancellationError() }
         if let signer { progress(.prepared); return signer }
         progress(.bag)
         let configuration = try await SAPProtocol(transport: sapTransport).bag(identity: identity)
         endpoint = try AuthenticationEndpoint.validate(configuration.authenticationURL)
         progress(.sap)
-        let created = try SAPSession(guest: NativeSAPGuest(), transport: sapTransport)
-        // Own the guest immediately, including cancellation during initialization.
+        // iPadN WebKit/WASM runtime performs SAP setup, signing and device proof.
+        // Its prepared WebView is shared across login and download operations.
+        let created = CrumbSAPActionSigner(guid: identity.guid)
         signer = created
-        try await created.initialize(configuration: configuration, identity: identity)
+        CrumbSAPSigner.shared.prewarm()
         try Task.checkCancellation()
         guard !closed else { throw CancellationError() }
         expiresAt = Date().addingTimeInterval(300)
@@ -249,7 +250,6 @@ final class PreparedAppleLogin {
         guard !closed else { return }
         closed = true
         sapTransport.close(); loginTransport.close()
-        if let signer { await signer.close() }
         signer = nil; endpoint = nil
     }
 }

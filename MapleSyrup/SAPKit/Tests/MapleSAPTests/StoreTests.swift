@@ -52,7 +52,7 @@ private actor StoreFixtureTransport: AuthenticationTransport {
 }
 private final class StoreFixtureGenerator: KBSyncGenerator {
     var calls = 0
-    func generate(identity: MachineIdentity, dsid: UInt64) throws -> Data { calls += 1; return Data("fresh-fixture-blob".utf8) }
+    func generate(identity: MachineIdentity, dsid: UInt64) async throws -> Data { calls += 1; return Data("fresh-fixture-blob".utf8) }
 }
 private final class StoreFixtureCache: KBSyncPersistence {
     var data: Data?; var clears = 0; var saves = 0

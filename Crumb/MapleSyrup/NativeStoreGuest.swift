@@ -2,7 +2,7 @@ import Foundation
 import MapleSAP
 
 nonisolated final class NativeKBSyncGenerator: KBSyncGenerator {
-    func generate(identity: MachineIdentity, dsid: UInt64) throws -> Data {
+    func generate(identity: MachineIdentity, dsid: UInt64) async throws -> Data {
         let cache = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask,
             appropriateFor: nil, create: true).appendingPathComponent("MapleSAP", isDirectory: true)
         try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)

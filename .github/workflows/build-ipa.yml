@@ -42,6 +42,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.99.1
         with:
           targets: aarch64-apple-ios
+      - name: Assemble pinned and SHA-256-verified iPadN SAP runtime
+        run: python3 scripts/prepare-ipadn-sap-runtime.py
       - name: Test App Group archive pipeline
         run: bash scripts/test-app-group-decryption.sh
       - name: Test FairPlay fallback and verification pipeline

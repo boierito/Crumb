@@ -15,7 +15,7 @@ final class IPATool {
         if let store = store { return store }
         let transport = AppleAuthenticationTransport(cookies: account.cookies)
         let store = try StoreSession(account: account, identity: KeychainMachineIdentity.loadOrCreate(),
-            transport: transport, generator: NativeKBSyncGenerator(), persistence: KeychainKBSync(),
+            transport: transport, generator: CrumbSAPKBSyncGenerator(), persistence: KeychainKBSync(),
             accountPersistence: KeychainStoreAccount(), progress: { stage in
                 await MainActor.run {
                     switch stage {
