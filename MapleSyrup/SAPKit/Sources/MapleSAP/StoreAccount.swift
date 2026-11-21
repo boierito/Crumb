@@ -24,6 +24,12 @@ public struct StoreAccount: Codable, Equatable {
         self.cookies = cookies
     }
 
+    public func replacingStorefront(_ corrected: String) -> StoreAccount {
+        StoreAccount(email: email, name: name, dsid: dsid, passwordToken: passwordToken,
+                     storefront: corrected, pod: pod, guid: guid,
+                     authenticationURL: authenticationURL, cookies: cookies)
+    }
+
     public func validate(identity: MachineIdentity) throws {
         guard guid == identity.guid, !dsid.isEmpty, dsid.allSatisfy({ $0.isASCII && $0.isNumber }),
               !passwordToken.isEmpty, !storefront.isEmpty else { throw AuthenticationError.invalidSession }
