@@ -35,6 +35,14 @@ struct DownloadRecord: Codable, Identifiable {
         let url = directory.appendingPathComponent(filename)
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
+    // Never trust a persisted `decrypted` flag by itself to permit sharing.
+    // A prior helper could have marked an IPA as decrypted while retaining SINF.
+    var exportableFileURL: URL? {
+        guard isDecrypted, let url = fileURL,
+              IPAExportPrivacy.isSafeToShare(url) else { return nil }
+        return url
+    }
+
     func save() throws {
         guard let url = fileURL else { throw CocoaError(.fileNoSuchFile) }
         try JSONEncoder().encode(self).write(to: url.deletingPathExtension().appendingPathExtension("json"), options: .atomic)
