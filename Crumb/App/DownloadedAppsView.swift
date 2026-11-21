@@ -166,7 +166,9 @@ struct DownloadedAppsView: View {
             HStack(spacing:12) {
                 Button { device.install(record) } label: { Label("Install",systemImage:"arrow.down.app").frame(maxWidth:.infinity) }
                     .disabled(device.busy || device.waitingForHelper)
-                if let url = record.fileURL {
+                // Encrypted originals carry account-bound FairPlay SINF and are
+                // strictly local; only verified, scrubbed decrypted IPAs export.
+                if record.isDecrypted, let url = record.fileURL {
                     ShareLink(item:url) { Label("Export",systemImage:"square.and.arrow.up").frame(maxWidth:.infinity) }
                 }
             }.buttonStyle(.bordered).controlSize(.regular)
