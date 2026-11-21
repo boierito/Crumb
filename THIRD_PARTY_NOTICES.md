@@ -1,5 +1,19 @@
 # Attribution and redistribution status
 
+## Vendored iPadN FairPlayCore (2026-11-21)
+
+The on-device FairPlay engine in `Crumb/Device/FairPlayCore.c` and
+`Crumb/Device/FairPlayCore.h` is vendored from
+[mengangs/ipadn](https://github.com/mengangs/ipadn) (GPL-2.0-or-later).
+Upstream file hashes at import: C blob `e68bbbc3d22f21ce53df936a5df36e31a245669c`,
+header blob `aaa012b8e22216999c82b5d2c82e4dcc131c8d12`.
+License text: `third_party/iPadN-GPL-2.0.txt`.
+The `GroupFairPlay.m` adapter connects this engine to the existing Crumb pipeline.
+Publication of binary releases remains subject to review of the combined
+GPL and unrelated third-party redistribution permissions described below.
+
+
+
 The SAP v200 protocol/state flow in `MapleSyrup/SAPKit` is adapted from
 [majd/ipatool](https://github.com/majd/ipatool), pinned at
 `3411d57f451f5111ae115641c22f7ed17bbd5fbe` (2026-10-01).
