@@ -613,6 +613,11 @@ final class DeviceWorkflow: NSObject, ObservableObject, NetServiceDelegate {
                     activeRecord = original ?? DownloadRecord(filename:"legacy.ipa",appID:"",appName:bundle,bundleID:bundle,version:value["version"] as? String ?? "",build:value["build"] as? String,externalVersionID:"",date:Date())
                 }
                 guard let path = value["path"] as? String else { throw DeviceOperationError.message("Missing verified result.") }
+                // Older helper flows may retain SINF/account metadata even after
+                // remapping. Reject their publication unless the output is clean.
+                guard IPAExportPrivacy.isSafeToShare(URL(fileURLWithPath: path)) else {
+                    throw DeviceOperationError.message("Legacy output contains Apple license metadata. Use App Group decryption.")
+                }
                 guard let source = activeRecord else { throw DeviceOperationError.message("Missing download record.") }
                 let name = UUID().uuidString + "-decrypted.ipa"
                 let directory = FileManager.default.urls(for:.documentDirectory,in:.userDomainMask)[0].appendingPathComponent("Downloads",isDirectory:true)
