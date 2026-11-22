@@ -1,5 +1,23 @@
 # Attribution and redistribution status
 
+## iPadN WebKit / WebAssembly SAP engine (2026-11-22)
+
+The WebKit signing service in `Crumb/MapleSyrup/iPadNSAPSigner.swift`,
+loopback server in `Crumb/MapleSyrup/iPadNLoopbackServer.swift`, and
+related adapters are ported from [iPadN](https://github.com/mengangs/ipadn),
+upstream commit `70f2ac36e7f87cacf82a45b58e6fa27ed23ecb80`,
+under GPL-2.0-or-later. Its nine-file SAP runtime is fetched from that
+pinned commit during CI, checked against each vendor SHA-256 in
+`scripts/ipadn-sap-manifest.json`, and bundled as `SAPRuntime.zip`.
+The runtime includes `sap.wasm`, JavaScript, `libCoreADI.so`, and
+`libstoreservicescore.so`. Upstream's
+`iPadn-iOS/vendor/SAPRuntime/PROVENANCE.json` identifies the latter
+libraries as coming from the official Apple Music for Android package and
+explicitly states that a complete license grant for every component has
+not been established. **Technical provenance is not redistribution
+permission**. Publishing binaries that include those files requires
+a separate review of Apple and other upstream rights.
+
 ## Vendored iPadN FairPlayCore (2026-11-21)
 
 The on-device FairPlay engine in `Crumb/Device/FairPlayCore.c` and
@@ -19,8 +37,10 @@ The SAP v200 protocol/state flow in `MapleSyrup/SAPKit` is adapted from
 `3411d57f451f5111ae115641c22f7ed17bbd5fbe` (2026-10-01).
 The adaptation uses Swift protocol code and a statically linked guest-only
 Go library, not an embedded ipatool executable. Experimental Unicorn/TCI is
-statically linked in the IPA. Apple proprietary assets are **not** bundled;
-the guest downloads hash-pinned assets into the app's cache when requested.
+statically linked in the IPA. The legacy guest downloads its own hash-pinned
+assets into the app cache when requested. Separately, the iPadN SAPRuntime
+bundle includes vendor binaries whose redistribution rights remain unverified
+(see iPadN section above).
 The Linux negative test downloads upstream Unicorn separately via pip.
 
 ## ipatool MIT notice

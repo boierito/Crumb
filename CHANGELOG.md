@@ -1,5 +1,15 @@
 # Development changelog
 
+## Crumb 2.0.3 — build 23057
+
+- more fixes
+- Add iPadN / mengangs and contributors to the app's Credits and project attributions.
+- Integrate the iPadN WebKit/WASM SAP signer, KBSync, device-proof challenge support,
+  FairPlayCore and App Groups integration, with pinned runtime integrity checks.
+- Keep decrypted IPA exports free of selected Apple account licensing resources.
+- Builds and automated tests verified; physical-device behavior depends on signing
+  and Apple authentication and is not fully proven by CI.
+
 ## Crumb 2.0.2 — build 23056
 
 - fix decrypter

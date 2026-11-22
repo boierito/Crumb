@@ -77,6 +77,7 @@ struct SettingsView: View {
                     LinkCreditCell(image: Image("nxtcoreee3"), name: "nxtcoreee3", description: "UI changes and feature improvements.".localized, url: "https://github.com/nxtcoreee3")
                     LinkCreditCell(image: Image(systemName: "person.crop.circle"), name: "boierito", description: "Revival coordination and iOS 27 device testing.", url: "https://github.com/boierito")
                     LinkCreditCell(image: Image(systemName: "shippingbox"), name: "majd / ipatool", description: "MIT-licensed reference for SAP, Apple authentication and App Store downloads.", url: "https://github.com/majd/ipatool")
+                    LinkCreditCell(image: Image(systemName: "cpu"), name: "iPadN / mengangs", description: "FairPlayCore, App Groups, WebKit/WASM SAP runtime and Apple Store device-proof integration (GPL-2.0-or-later).", url: "https://github.com/mengangs/ipadn")
                 }
             }
             .navigationTitle("Settings".localized)

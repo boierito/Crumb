@@ -50,6 +50,7 @@ authentication and download backend adapts logic from
   and contributions that Crumb is based on.
 - **[boierito](https://github.com/boierito)** — Crumb coordination and device testing.
 - **[Majd Alfhaily / ipatool](https://github.com/majd/ipatool)** — modern backend reference, MIT licensed.
+- **[iPadN / mengangs and contributors](https://github.com/mengangs/ipadn)** — GPL-2.0-or-later FairPlayCore, WebKit/WebAssembly SAP signing engine, Apple Store device-proof handling, App Groups integration and implementation references.
 - **OpenAI Codex and ImageGen** — AI-assisted implementation and app icon. **AI slop.**
 
 For build instructions and technical details, see [IMPLEMENTATION.md](IMPLEMENTATION.md),
