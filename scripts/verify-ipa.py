@@ -43,8 +43,8 @@ with zipfile.ZipFile(ipa) as archive:
         assert helper_info["CFBundleExecutable"] == "CrumbDecrypt", "Wrong helper executable"
         assert helper_info["UIFileSharingEnabled"] is True, "Helper retrieval unavailable"
         assert struct.unpack("<II", helper.read("CrumbDecrypt")[:8]) == (0xFEEDFACF, 0x0100000C), "Helper must be arm64"
-    notices = [n for n in archive.namelist() if n.endswith(("ThirdPartyNotices.txt", "UNICORN-COPYING", "GoThirdPartyNotices.txt"))]
-    assert len(notices) == 3, "Linked code license notices missing"
+    notices = [n for n in archive.namelist() if n.endswith(("ThirdPartyNotices.txt", "GoThirdPartyNotices.txt"))]
+    assert len(notices) == 2, "Linked code license notices missing"
     assert b"MIT License" in archive.read(root + "ThirdPartyNotices.txt"), "ipatool MIT notice missing"
     print(json.dumps({"ipa": str(ipa), "build": expected_build, "version": expected_version,
                       "bundleID": info["CFBundleIdentifier"], "displayName": info["CFBundleDisplayName"],

@@ -169,34 +169,6 @@ struct ContentView: View {
     
 }
 
-struct ItemInfoCell: View {
-    var label: String
-    var icon: String
-    var text: String
-    
-    var body: some View {
-        LabeledContent {
-            if text.isEmpty {
-                ProgressView()
-            } else {
-                Text(text)
-            }
-        } label: {
-            HStack {
-                Image(systemName: icon)
-                    .frame(width: 22, height: 22, alignment: .center)
-                Text(label)
-            }
-        }
-        .contextMenu {
-            Button(action: {
-                UIPasteboard.general.string = text
-            }) {
-                Label("Copy Value".localized, systemImage: "character.cursor.ibeam")
-            }
-        }
-    }
-}
 
 #Preview {
     ContentView()

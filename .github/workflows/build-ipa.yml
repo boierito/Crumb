@@ -69,8 +69,8 @@ jobs:
           path: |
             NativeDevice/target
             build/Native
-          key: native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('NativeDevice/Cargo.lock', 'NativeDevice/vendor/**', 'MapleSyrup/NativeSAP/**', 'scripts/build-sap-native.sh', 'scripts/build-unicorn-tci.sh', 'scripts/prepare-unicorn-tci.py') }}
-          restore-keys: device-${{ runner.os }}-${{ hashFiles('NativeDevice/Cargo.lock', 'NativeDevice/vendor/**') }}
+          key: native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('NativeDevice/Cargo.lock', 'NativeDevice/vendor/**', 'MapleSyrup/NativeIPA/**', 'scripts/build-ipa-native.sh') }}
+          restore-keys: native-${{ runner.os }}-${{ runner.arch }}-
       - name: Build and package unsigned IPA
         env:
           CONFIGURATION: ${{ matrix.configuration }}
@@ -102,12 +102,8 @@ jobs:
             python3 scripts/verify-ipa.py "artifacts/Crumb-$CONFIGURATION.ipa" | tee "artifacts/verification-$CONFIGURATION.json"
           fi
           tar --exclude=target -czf artifacts/crumb-device-corresponding-source.tar.gz NativeDevice DecryptHelper scripts/build-device-native.sh
-          if [ -f build/Native/unicorn-tci-corresponding-source.tar.gz ]; then
-            cp build/Native/unicorn-tci-corresponding-source.tar.gz artifacts/
-            cp build/Native/UNICORN-COPYING artifacts/
-          fi
-          if [ -f build/Native/ipatool-sap-corresponding-source.tar.gz ]; then
-            cp build/Native/ipatool-sap-corresponding-source.tar.gz artifacts/
+          if [ -f build/Native/ipatool-ipa-corresponding-source.tar.gz ]; then
+            cp build/Native/ipatool-ipa-corresponding-source.tar.gz artifacts/
             cp build/Native/IPATOOL-LICENSE artifacts/
           fi
       - uses: actions/cache/save@v4
@@ -116,7 +112,7 @@ jobs:
           path: |
             NativeDevice/target
             build/Native
-          key: native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('NativeDevice/Cargo.lock', 'NativeDevice/vendor/**', 'MapleSyrup/NativeSAP/**', 'scripts/build-sap-native.sh', 'scripts/build-unicorn-tci.sh', 'scripts/prepare-unicorn-tci.py') }}
+          key: native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('NativeDevice/Cargo.lock', 'NativeDevice/vendor/**', 'MapleSyrup/NativeIPA/**', 'scripts/build-ipa-native.sh') }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -124,7 +120,7 @@ jobs:
           path: artifacts/
           if-no-files-found: error
   publish:
-    if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != '' || (github.ref == 'refs/heads/main' && github.event_name == 'push' && contains(github.event.head_commit.message, 'Crumb 2.0.3'))
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
     needs: ipa
     runs-on: ubuntu-latest
     permissions:
@@ -135,24 +131,6 @@ jobs:
           pattern: Crumb-*
           path: artifacts
           merge-multiple: true
-      # One-time production release for the explicitly requested 2.0.3
-      # merge. The guard prevents creating a release on unrelated main pushes.
-      - name: Publish Crumb 2.0.3 (more fixes)
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && contains(github.event.head_commit.message, 'Crumb 2.0.3')
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          if gh release view 'v2.0.3' --repo "$REPOSITORY" >/dev/null 2>&1; then
-            echo 'Refusing to overwrite existing v2.0.3 release.' >&2
-            exit 1
-          fi
-          gh release create v2.0.3 \
-            artifacts/Crumb-Release.ipa artifacts/Crumb-Debug.ipa \
-            artifacts/*-corresponding-source.tar.gz \
-            artifacts/UNICORN-COPYING artifacts/IPATOOL-LICENSE \
-            --repo "$REPOSITORY" --target "$GITHUB_SHA" \
-            --title 'Crumb 2.0.3' --notes 'more fixes' --latest
       - name: Create draft prerelease
         if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
         env:
@@ -163,10 +141,10 @@ jobs:
           if DRAFT=$(gh release view "$RELEASE_TAG" --repo "$REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null); then
             test "$DRAFT" = true || { echo 'Refusing to modify a published release.' >&2; exit 1; }
             gh release upload "$RELEASE_TAG" artifacts/*.ipa artifacts/*-corresponding-source.tar.gz \
-              artifacts/UNICORN-COPYING artifacts/IPATOOL-LICENSE --repo "$REPOSITORY" --clobber
+              artifacts/IPATOOL-LICENSE --repo "$REPOSITORY" --clobber
             exit 0
           fi
           gh release create "$RELEASE_TAG" artifacts/*.ipa artifacts/*-corresponding-source.tar.gz \
-            artifacts/UNICORN-COPYING artifacts/IPATOOL-LICENSE --repo "$REPOSITORY" \
+            artifacts/IPATOOL-LICENSE --repo "$REPOSITORY" \
             --draft --prerelease --title "$RELEASE_TAG" \
             --notes 'Unsigned development IPA; resign with a conventional sideloader. See IMPLEMENTATION.md and TESTING.md for verified milestones and limitations. Redistribution rights for the upstream project must be resolved before publication.'

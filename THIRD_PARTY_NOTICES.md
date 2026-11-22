@@ -32,16 +32,13 @@ GPL and unrelated third-party redistribution permissions described below.
 
 
 
-The SAP v200 protocol/state flow in `MapleSyrup/SAPKit` is adapted from
-[majd/ipatool](https://github.com/majd/ipatool), pinned at
-`3411d57f451f5111ae115641c22f7ed17bbd5fbe` (2026-10-01).
-The adaptation uses Swift protocol code and a statically linked guest-only
-Go library, not an embedded ipatool executable. Experimental Unicorn/TCI is
-statically linked in the IPA. The legacy guest downloads its own hash-pinned
-assets into the app cache when requested. Separately, the iPadN SAPRuntime
-bundle includes vendor binaries whose redistribution rights remain unverified
-(see iPadN section above).
-The Linux negative test downloads upstream Unicorn separately via pip.
+The App Store protocol/state flow in `MapleSyrup/SAPKit` is adapted from
+[majd/ipatool](https://github.com/majd/ipatool) (MIT). The iPadN WebKit/WASM
+service now handles request SAP signatures and KBSync. A small local Go
+c-archive in `MapleSyrup/NativeIPA` handles only IPA inspection and streaming
+packaging, with no legacy Unicorn/TCI SAP emulation.
+Redistribution rights for the separate iPadN SAPRuntime remain unresolved
+as described above.
 
 ## ipatool MIT notice
 
@@ -79,15 +76,10 @@ CI creates **draft** prereleases for development tags, not public releases.
 
 The existing SwiftPM dependencies retain their upstream notices. See the pinned
 `Package.resolved` for PartyUI, Zip, Telegraph, CocoaAsyncSocket and HTTPParserC.
-Unicorn includes GPL-2.0 code; ipatool's MIT license does not relicense Unicorn.
-The restored QEMU TCI sources preserve their GPL headers. Every CI artifact
-includes the modified corresponding source for Unicorn/TCI, its COPYING file,
-and the source/notice for the guest bridge. The embedded Go dependencies retain
-their licenses (including purego Apache-2.0); the build generates their complete
-notices from the dependency modules. The combined licensing and upstream
-redistribution rights require review before public binary publication; providing
-source alone does not resolve an incompatible combination or missing upstream
-grant. Apple CommerceKit/CoreFP/StoreAgent binaries have their
+The IPA package library uses Go and howett.net/plist; the build preserves
+module notices and package corresponding sources. Third-party code and
+redistribution permissions still require review before releasing binaries.
+Apple CommerceKit/CoreFP/StoreAgent binaries have their
 own proprietary terms; downloading them from Apple does not grant a right to
 bundle them in a redistributed IPA. No such binaries have been copied here.
 
