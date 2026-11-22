@@ -1,5 +1,5 @@
-// Modern Swift Store facade. The Go library supplies only interpreted guest
-// operations and streaming ZIP preparation; no ipatool executable is bundled.
+// Modern Swift Store facade. The local Go library supplies only streaming IPA
+// inspection and packaging; SAP and KBSync use iPadN WebKit/WASM.
 import Foundation
 import MapleSAP
 

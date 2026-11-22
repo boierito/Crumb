@@ -10,7 +10,6 @@
 		A77700000000000000000001 = {isa = PBXBuildFile; productRef = A77700000000000000000002; };
 		B00100000000000000000007 = {isa = PBXBuildFile; fileRef = B00100000000000000000008; };
 		B00100000000000000000009 = {isa = PBXBuildFile; fileRef = B0010000000000000000000A; };
-		B00100000000000000000004 /* UnicornTCI in Frameworks */ = {isa = PBXBuildFile; fileRef = B00100000000000000000005; };
 		B00100000000000000000001 /* MapleSAP in Frameworks */ = {isa = PBXBuildFile; productRef = B00100000000000000000002 /* MapleSAP */; };
 		E6F5D491301692B600FEEC8A /* PartyUI in Frameworks */ = {isa = PBXBuildFile; productRef = 63A7EF12A4ADD015377FF7FF /* PartyUI */; };
 		E6F5D492301692B600FEEC8A /* Telegraph in Frameworks */ = {isa = PBXBuildFile; productRef = 4B51818CFD6F6A0FD21DFB33 /* Telegraph */; };
@@ -20,7 +19,6 @@
 /* Begin PBXFileReference section */
 		B00100000000000000000008 = {isa = PBXFileReference; lastKnownFileType = text; path = build/Native/GoThirdPartyNotices.txt; sourceTree = SOURCE_ROOT; };
 		B0010000000000000000000A = {isa = PBXFileReference; lastKnownFileType = text; path = build/Native/UNICORN-COPYING; sourceTree = SOURCE_ROOT; };
-		B00100000000000000000005 /* libunicorn.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = build/Native/libunicorn.a; sourceTree = SOURCE_ROOT; };
 		E6F5D41330168FCC00FEEC8A /* Crumb.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Crumb.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -38,7 +36,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				A77700000000000000000001,
-				B00100000000000000000004 /* UnicornTCI in Frameworks */,
 				B00100000000000000000001 /* MapleSAP in Frameworks */,
 				E6F5D493301692B600FEEC8A /* Zip in Frameworks */,
 				E6F5D492301692B600FEEC8A /* Telegraph in Frameworks */,
@@ -161,7 +158,7 @@
 			buildActionMask = 2147483647;
 			files = ();
 			inputPaths = ();
-			outputPaths = ("$(SRCROOT)/build/Native/libunicorn.a", "$(SRCROOT)/build/Native/libWaffleSAP.a", "$(SRCROOT)/build/Native/libcrumb_device.a", "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/CrumbDecryptTemplate.zip", "$(SRCROOT)/build/Native/GoThirdPartyNotices.txt", "$(SRCROOT)/build/Native/UNICORN-COPYING");
+			outputPaths = ("$(SRCROOT)/build/Native/libCrumbIPA.a", "$(SRCROOT)/build/Native/libcrumb_device.a", "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/CrumbDecryptTemplate.zip", "$(SRCROOT)/build/Native/GoThirdPartyNotices.txt", "$(SRCROOT)/build/Native/UNICORN-COPYING");
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
 			shellScript = "bash \"$SRCROOT/scripts/ensure-native.sh\"\n";
@@ -351,7 +348,7 @@
 				SWIFT_OBJC_BRIDGING_HEADER = "Crumb/MapleSyrup/Native/SAP-Bridging-Header.h";
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/build/Native/include";
 				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/build/Native";
-				OTHER_LDFLAGS = ("$(inherited)", "-Wl,-export_dynamic", "-Wl,-force_load,$(SRCROOT)/build/Native/libunicorn.a", "$(SRCROOT)/build/Native/libWaffleSAP.a", "$(SRCROOT)/build/Native/libcrumb_device.a", "-framework", "Security", "-framework", "SystemConfiguration", "-liconv", "-lz");
+				OTHER_LDFLAGS = ("$(inherited)", "-Wl,-export_dynamic", "$(SRCROOT)/build/Native/libCrumbIPA.a", "$(SRCROOT)/build/Native/libcrumb_device.a", "-framework", "Security", "-framework", "SystemConfiguration", "-liconv", "-lz");
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
@@ -396,7 +393,7 @@
 				SWIFT_OBJC_BRIDGING_HEADER = "Crumb/MapleSyrup/Native/SAP-Bridging-Header.h";
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/build/Native/include";
 				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/build/Native";
-				OTHER_LDFLAGS = ("$(inherited)", "-Wl,-export_dynamic", "-Wl,-force_load,$(SRCROOT)/build/Native/libunicorn.a", "$(SRCROOT)/build/Native/libWaffleSAP.a", "$(SRCROOT)/build/Native/libcrumb_device.a", "-framework", "Security", "-framework", "SystemConfiguration", "-liconv", "-lz");
+				OTHER_LDFLAGS = ("$(inherited)", "-Wl,-export_dynamic", "$(SRCROOT)/build/Native/libCrumbIPA.a", "$(SRCROOT)/build/Native/libcrumb_device.a", "-framework", "Security", "-framework", "SystemConfiguration", "-liconv", "-lz");
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
