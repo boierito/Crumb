@@ -7,7 +7,7 @@ WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 SDK=$(xcrun --sdk iphoneos --show-sdk-path)
 CLANG=$(xcrun --sdk iphoneos --find clang)
-cd "$ROOT/MapleSyrup/NativeSAP"
+cd "$ROOT/MapleSyrup/NativeIPA"
 GOOS=ios GOARCH=arm64 CGO_ENABLED=1 CC="$CLANG" SDKROOT="$SDK" \
   CGO_CFLAGS="-isysroot $SDK -target arm64-apple-ios16.4" \
   CGO_LDFLAGS="-isysroot $SDK -target arm64-apple-ios16.4" \
@@ -31,7 +31,6 @@ for name,root in sorted(modules.items()):
     pieces.append(name+'\n'+'\n'.join(found))
 pathlib.Path(sys.argv[2]).write_text('\n\n'.join(pieces))
 PY
-cp "$OUTPUT/libCrumbIPA.h" "$OUTPUT/SAP-generated-ABI.h"
 python3 - "$ROOT/Crumb/Resources/ThirdPartyNotices.txt" "$OUTPUT/IPATOOL-LICENSE" <<'PY'
 import pathlib,sys
 s=pathlib.Path(sys.argv[1]).read_text()
@@ -39,5 +38,5 @@ s=s.split('## ipatool MIT notice\n',1)[1].split('\n## WaffleStore',1)[0].strip()
 assert s.startswith('MIT License')
 pathlib.Path(sys.argv[2]).write_text(s+'\n')
 PY
-tar -czf "$OUTPUT/ipatool-sap-corresponding-source.tar.gz" -C "$ROOT" MapleSyrup/NativeSAP
+tar -czf "$OUTPUT/ipatool-ipa-corresponding-source.tar.gz" -C "$ROOT" MapleSyrup/NativeIPA
 echo 'Built local streaming IPA library without legacy Go SAP or Unicorn.'

@@ -22,6 +22,7 @@ backend details and historical validation. `docs/APP_GROUP_DECRYPTION.md` descri
   actual CMS signing, resource preservation and cancellation integration tests.
 - `NativeDevice/src/signing.rs`: certificate/profile inspection, existing
   entitlement decoding and profile permission matching.
+- `MapleSyrup/NativeIPA/`: streaming IPA inspection and packaging (Go), without SAP emulation.
 - `Crumb/Device/FairPlayCore.c`: iPadN's production FairPlay page reader.
 - `Crumb/Device/AppGroupDecryption.swift`: secure App Group staging and export.
 - `DecryptHelper/`: legacy helper and shared regression utilities, pending separation.

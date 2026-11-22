@@ -69,8 +69,8 @@ jobs:
           path: |
             NativeDevice/target
             build/Native
-          key: native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('NativeDevice/Cargo.lock', 'NativeDevice/vendor/**', 'MapleSyrup/NativeSAP/**', 'scripts/build-sap-native.sh', 'scripts/build-unicorn-tci.sh', 'scripts/prepare-unicorn-tci.py') }}
-          restore-keys: device-${{ runner.os }}-${{ hashFiles('NativeDevice/Cargo.lock', 'NativeDevice/vendor/**') }}
+          key: native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('NativeDevice/Cargo.lock', 'NativeDevice/vendor/**', 'MapleSyrup/NativeIPA/**', 'scripts/build-ipa-native.sh') }}
+          restore-keys: native-${{ runner.os }}-${{ runner.arch }}-
       - name: Build and package unsigned IPA
         env:
           CONFIGURATION: ${{ matrix.configuration }}
@@ -102,12 +102,8 @@ jobs:
             python3 scripts/verify-ipa.py "artifacts/Crumb-$CONFIGURATION.ipa" | tee "artifacts/verification-$CONFIGURATION.json"
           fi
           tar --exclude=target -czf artifacts/crumb-device-corresponding-source.tar.gz NativeDevice DecryptHelper scripts/build-device-native.sh
-          if [ -f build/Native/unicorn-tci-corresponding-source.tar.gz ]; then
-            cp build/Native/unicorn-tci-corresponding-source.tar.gz artifacts/
-            cp build/Native/UNICORN-COPYING artifacts/
-          fi
-          if [ -f build/Native/ipatool-sap-corresponding-source.tar.gz ]; then
-            cp build/Native/ipatool-sap-corresponding-source.tar.gz artifacts/
+          if [ -f build/Native/ipatool-ipa-corresponding-source.tar.gz ]; then
+            cp build/Native/ipatool-ipa-corresponding-source.tar.gz artifacts/
             cp build/Native/IPATOOL-LICENSE artifacts/
           fi
       - uses: actions/cache/save@v4
@@ -116,7 +112,7 @@ jobs:
           path: |
             NativeDevice/target
             build/Native
-          key: native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('NativeDevice/Cargo.lock', 'NativeDevice/vendor/**', 'MapleSyrup/NativeSAP/**', 'scripts/build-sap-native.sh', 'scripts/build-unicorn-tci.sh', 'scripts/prepare-unicorn-tci.py') }}
+          key: native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('NativeDevice/Cargo.lock', 'NativeDevice/vendor/**', 'MapleSyrup/NativeIPA/**', 'scripts/build-ipa-native.sh') }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -145,10 +141,10 @@ jobs:
           if DRAFT=$(gh release view "$RELEASE_TAG" --repo "$REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null); then
             test "$DRAFT" = true || { echo 'Refusing to modify a published release.' >&2; exit 1; }
             gh release upload "$RELEASE_TAG" artifacts/*.ipa artifacts/*-corresponding-source.tar.gz \
-              artifacts/UNICORN-COPYING artifacts/IPATOOL-LICENSE --repo "$REPOSITORY" --clobber
+              artifacts/IPATOOL-LICENSE --repo "$REPOSITORY" --clobber
             exit 0
           fi
           gh release create "$RELEASE_TAG" artifacts/*.ipa artifacts/*-corresponding-source.tar.gz \
-            artifacts/UNICORN-COPYING artifacts/IPATOOL-LICENSE --repo "$REPOSITORY" \
+            artifacts/IPATOOL-LICENSE --repo "$REPOSITORY" \
             --draft --prerelease --title "$RELEASE_TAG" \
             --notes 'Unsigned development IPA; resign with a conventional sideloader. See IMPLEMENTATION.md and TESTING.md for verified milestones and limitations. Redistribution rights for the upstream project must be resolved before publication.'
