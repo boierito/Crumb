@@ -2,13 +2,13 @@
 
 The application project is `Crumb.xcodeproj`, with the shared `Crumb` scheme.
 `README.md` describes the product; `IMPLEMENTATION.md` and `TESTING.md` retain
-backend details and historical validation. `docs/ON_DEVICE_DECRYPTION.md` records
-the on-device workflow and signing changes.
+backend details and historical validation. `docs/APP_GROUP_DECRYPTION.md` describes the active App Group decryption path;
+`docs/ON_DEVICE_DECRYPTION.md` preserves historical helper research.
 
 ## Code layout
 
-- `Crumb/Device/DeviceWorkflow.swift`: workflow state, task lifecycle, helper
-  handoff, cancellation, result retrieval and installation orchestration.
+- `Crumb/Device/DeviceWorkflow.swift`: App Group decryption and IPA-signing orchestration;
+  legacy pairing and helper paths are retained pending separation.
 - `Crumb/Device/SigningModels.swift`: value models shared by the workflow and UI.
 - `Crumb/Device/SigningViews.swift`: configuration, signing review and report UI.
 - `NativeDevice/src/resign.rs`: profile loading, signing plans, bundle signing,
@@ -22,7 +22,9 @@ the on-device workflow and signing changes.
   actual CMS signing, resource preservation and cancellation integration tests.
 - `NativeDevice/src/signing.rs`: certificate/profile inspection, existing
   entitlement decoding and profile permission matching.
-- `DecryptHelper/`: helper UI, job isolation, image processing and IPA resources.
+- `Crumb/Device/FairPlayCore.c`: iPadN's production FairPlay page reader.
+- `Crumb/Device/AppGroupDecryption.swift`: secure App Group staging and export.
+- `DecryptHelper/`: legacy helper and shared regression utilities, pending separation.
 
 ## Behavior to preserve
 
@@ -62,7 +64,6 @@ physical-device validation; host fixtures do not establish Apple acceptance.
 ## Main integration and rollback
 
 `backup/main-before-decrypter-2026-11-06` preserves the pre-integration main commit
-`ae40ff1d114a19c5b5c7543425fa0e6a5281527a`. Keep this branch and the development
-branches when integrating. Use a merge commit to retain the feature history.
+`ae40ff1d114a19c5b5c7543425fa0e6a5281527a`. Retain the backup branch as a historical recovery point. Use a merge commit to retain the feature history.
 To undo the integration on shared main, revert the merge commit in a new PR
 rather than rewriting main or removing the backup branch.

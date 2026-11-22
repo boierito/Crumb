@@ -1,7 +1,7 @@
 // Protocol, retry and redirect behavior adapted from majd/ipatool (MIT),
 // pkg/appstore/appstore_login.go; Bag normalization follows f9aa653 (Oct 5).
 // iPadn request semantics: plist content type, explicit 2FA attempt, phone Store routing.
-// No CLI or password persistence. See docs/IPADN_LOGIN.md for the port boundary.
+// No CLI or password persistence. Crumb's production SAP signing now uses the iPadN WebKit/WASM bridge.
 import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
