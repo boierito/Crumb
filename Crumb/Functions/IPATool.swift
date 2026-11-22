@@ -5,7 +5,7 @@ import MapleSAP
 
 @MainActor
 final class IPATool {
-    let account: StoreAccount
+    private(set) var account: StoreAccount
     private var store: StoreSession?
     private var transport: AppleAuthenticationTransport?
     init(account: StoreAccount) { self.account = account }
@@ -15,7 +15,8 @@ final class IPATool {
         if let store = store { return store }
         let transport = AppleAuthenticationTransport(cookies: account.cookies)
         let store = try StoreSession(account: account, identity: KeychainMachineIdentity.loadOrCreate(),
-            transport: transport, generator: NativeKBSyncGenerator(), persistence: KeychainKBSync(), progress: { stage in
+            transport: transport, generator: CrumbSAPKBSyncGenerator(), persistence: KeychainKBSync(),
+            accountPersistence: KeychainStoreAccount(), progress: { stage in
                 await MainActor.run {
                     switch stage {
                     case .purchase: AppData.shared.applicationStatus = "Obtaining free app…"
@@ -34,8 +35,20 @@ final class IPATool {
     func descriptor(app: StoreApp, version: String = "") async throws -> StoreDownload {
         AppData.shared.storeRequestCount += 1
         defer { AppData.shared.storeRequestCount -= 1 }
-        do { return try await session().descriptor(app: app, externalVersionID: version) }
+        do {
+            let current = try session()
+            let result = try await current.descriptor(app: app, externalVersionID: version)
+            // The validated -128 Apple response may correct the storefront.
+            account = await current.currentAccount()
+            return result
+        }
         catch {
+            if let storeError = error as? StoreError, storeError == .sessionExpired {
+                // User interaction is required: passwords and 2FA are not saved.
+                // Keep Keychain credentials intact instead of inventing a token.
+                AppData.shared.authenticationError = storeError.localizedDescription
+                AppData.shared.selectedTab = .account
+            }
             #if DEBUG
             print("Apple Store failure: category=\(ResponseDiagnostic.category(error))")
             #endif

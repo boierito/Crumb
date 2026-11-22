@@ -27,7 +27,7 @@
 		<true/>
 	</dict>
 	<key>UIFileSharingEnabled</key>
-	<true/>
+	<false/>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Crumb advertises a pairing host and connects to this device after you approve pairing in Settings.</string>
 	<key>NSBonjourServices</key>

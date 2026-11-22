@@ -41,15 +41,22 @@ try fm.zipItem(at: tree, to: ipa, shouldKeepParent: false)
 let original = try Data(contentsOf: ipa)
 let output = try AppGroupDecryption.run(source: ipa, root: root, cancelled: { false }, progress: { _ in })
 defer { try? fm.removeItem(at: output) }
+try require(IPAExportPrivacy.isSafeToShare(output), "verified decrypted export denied")
+try require(!IPAExportPrivacy.isSafeToShare(ipa), "original licensed IPA was shareable")
 let unpack = root.appendingPathComponent("check")
 try fm.unzipItem(at: output, to: unpack)
 print("Verified archive paths:", try fm.subpathsOfDirectory(atPath: unpack.path))
 try require(try Data(contentsOf: unpack.appendingPathComponent("Payload/Test.app/Test")) == Data("verified-plaintext".utf8), "plaintext missing")
-try require(try Data(contentsOf: unpack.appendingPathComponent("Payload/Test.app/SC_Info/Test.sinf")) == license, "license changed")
+// Original SINF is used internally during remapping but must never leave
+// Crumb in a shared plaintext IPA.
+try require(!fm.fileExists(atPath: unpack.appendingPathComponent("Payload/Test.app/SC_Info/Test.sinf").path),
+            "account-bound license leaked to exported IPA")
 for path in (sinfManifest["SinfReplicationPaths"] as! [String]).prefix(2) {
-    try require(try Data(contentsOf: unpack.appendingPathComponent("Payload/Test.app/" + path)) == license, "nested SINF replication lost")
+    try require(!fm.fileExists(atPath: unpack.appendingPathComponent("Payload/Test.app/" + path).path),
+                "nested account-bound SINF leaked")
 }
-try require(fm.fileExists(atPath: unpack.appendingPathComponent("iTunesMetadata.plist").path), "root resource lost")
+try require(!fm.fileExists(atPath: unpack.appendingPathComponent("iTunesMetadata.plist").path),
+            "purchase metadata leaked into export")
 try require(try Data(contentsOf: ipa) == original, "original IPA changed")
 func reject(_ input: URL, cancelled: Bool = false) throws {
     do {
@@ -74,7 +81,7 @@ try fm.zipItem(at: plainTree, to: plainIPA, shouldKeepParent: false)
 try reject(plainIPA)
 let remaining = try fm.contentsOfDirectory(atPath: root.path).filter { $0.hasPrefix("crumb-fairplay-") }
 try require(remaining.isEmpty, "staging workspace leaked")
-print("App Group archive tests passed: plaintext round trip, original/license/root preservation, traversal rejection, cancellation, no-encryption rejection, workspace cleanup.")
+print("App Group archive tests passed: plaintext round trip, private license/metadata removal, traversal rejection, cancellation, no-encryption rejection, workspace cleanup.")
 
 try require(AppGroupDecryption.candidates(signed: ["group.signed"], profile: ["group.*", "group.signed", "group.profile"], configured: [" group.manual ", ""]) == ["group.signed", "group.manual", "group.profile"], "effective groups must take priority; wildcard must not suppress them")
 try require(AppGroupDecryption.candidates(signed: nil, profile: ["group.profile"], configured: []) == ["group.profile"], "runtime-unavailable fallback failed")

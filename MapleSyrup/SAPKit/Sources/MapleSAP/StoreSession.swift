@@ -5,11 +5,12 @@ import FoundationNetworking
 #endif
 
 public actor StoreSession {
-    private let account: StoreAccount
+    private var account: StoreAccount
     private let identity: MachineIdentity
     private let transport: AuthenticationTransport
     private let generator: KBSyncGenerator
     private let persistence: KBSyncPersistence
+    private let accountPersistence: StoreAccountPersistence?
     private var bag: [String: String]?
     private var busy = false
     private let sleep: (TimeInterval) async throws -> Void
@@ -17,13 +18,17 @@ public actor StoreSession {
     private let diagnostic: (String) async -> Void
     public init(account: StoreAccount, identity: MachineIdentity, transport: AuthenticationTransport,
                 generator: KBSyncGenerator, persistence: KBSyncPersistence = NoKBSyncPersistence(),
+                accountPersistence: StoreAccountPersistence? = nil,
                 progress: @escaping (StoreStage) async -> Void = { _ in },
                 diagnostic: @escaping (String) async -> Void = { _ in },
                 sleep: @escaping (TimeInterval) async throws -> Void = { try await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000)) }) throws {
         try account.validate(identity: identity)
         self.account = account; self.identity = identity; self.transport = transport
-        self.generator = generator; self.persistence = persistence; self.sleep = sleep; self.progress = progress; self.diagnostic = diagnostic
+        self.generator = generator; self.persistence = persistence; self.accountPersistence = accountPersistence
+        self.sleep = sleep; self.progress = progress; self.diagnostic = diagnostic
     }
+    public func currentAccount() -> StoreAccount { account }
+
     public func lookup(_ input: String, country: String? = nil) async throws -> StoreApp {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         var id = StoreParsing.identifier(trimmed)
@@ -125,7 +130,7 @@ public actor StoreSession {
                 }
                 guard let dsid = UInt64(account.dsid), dsid > 0 else { throw AuthenticationError.invalidSession }
                 await progress(.kbsync)
-                let blob = try generator.generate(identity: identity, dsid: dsid)
+                let blob = try await generator.generate(identity: identity, dsid: dsid)
                 try Task.checkCancellation()
                 let result = try await ent(url, app: app, version: version, blob: blob)
                 // Cache failures cannot invalidate an already validated Apple reply.
@@ -175,7 +180,7 @@ public actor StoreSession {
     private func payload(_ app: StoreApp, version: String, key: String) -> [String: Any] {
         ["creditDisplay": "", "guid": identity.guid, "salableAdamId": NSNumber(value: UInt64(app.id) ?? 0), "serialNumber": "0", key: version]
     }
-    private func purchaseFree(_ app: StoreApp) async throws {
+    private func purchaseFree(_ app: StoreApp, storefrontRecovered: Bool = false) async throws {
         guard app.price == 0 else { throw StoreError.paidPurchase }
         // The live Bag's MZBuy buyProduct is not ipatool's Configurator purchase
         // service. Derive the MZFinance sibling from the validated authenticated
@@ -209,6 +214,22 @@ public actor StoreSession {
             await progress(.purchase)
             await diagnostic("purchase-route=MZFinance; guid-query=false; pricing=\(pricing)")
             let result = try await post(purchaseURL, body: body, token: true, retry: false, guidQuery: false, userAgent: purchaseAgent)
+            if !storefrontRecovered,
+               let corrected = StoreParsing.purchaseStorefrontCorrection(result, current: account.storefront) {
+                // Trust only iPadN's strictly validated Apple resetAndRedirect DSF.
+                // Never follow its URL or replay more than once.
+                let previous = account
+                let updated = previous.replacingStorefront(corrected)
+                try updated.validate(identity: identity)
+                account = updated
+                do { try accountPersistence?.save(updated) }
+                catch { account = previous; throw error }
+                await diagnostic("purchase-recovery=validated-apple-country-mismatch; retries=1")
+                return try await purchaseFree(app, storefrontRecovered: true)
+            }
+            if StoreParsing.purchaseRequiresTerms(result) {
+                throw StoreError.purchaseTermsRequired
+            }
             if StoreParsing.identifier(result["failureType"]) == "2059", pricing == "STDQ" {
                 await diagnostic("purchase-recovery=2059-STDQ-to-GAME; max-alternates=1")
                 continue

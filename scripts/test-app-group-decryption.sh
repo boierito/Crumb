@@ -4,7 +4,7 @@ cd "$(dirname "$0")/.."
 task_root=$(mktemp -d)
 trap 'rm -rf "$task_root"' EXIT
 mkdir -p "$task_root/Sources/ArchiveTests"
-cp Crumb/Device/AppGroupDecryption.swift tests/AppGroupDecryption/main.swift "$task_root/Sources/ArchiveTests/"
+cp Crumb/Device/AppGroupDecryption.swift Crumb/Device/IPAExportPrivacy.swift Crumb/DownloadRecord.swift tests/AppGroupDecryption/main.swift "$task_root/Sources/ArchiveTests/"
 cat > "$task_root/Package.swift" <<'SWIFT'
 // swift-tools-version: 5.9
 import PackageDescription

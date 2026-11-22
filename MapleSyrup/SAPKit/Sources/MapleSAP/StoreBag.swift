@@ -54,10 +54,11 @@ public struct SAPConfiguration: Equatable {
         guard version == 200 else { throw SAPError.unsupportedVersion }
         var authURL = try trustedAppleURL(authentication)
         let host = authURL.host!.lowercased()
-        let modern = (host == "auth.itunes.apple.com" || host.hasSuffix("-buy.itunes.apple.com")) &&
-            ["/auth/v1/native", "/auth/v1/native/"].contains(authURL.path)
-        // SAP-only native discovery remains supported. Actual Store login uses
-        // the stricter credential policy, including pods and both path forms.
+        let nativePaths: Set<String> = ["/auth/v1/native", "/auth/v1/native/", "/auth/v1/native/fast", "/auth/v1/native/fast/"]
+        let rawPath = URLComponents(url: authURL, resolvingAgainstBaseURL: false)?.percentEncodedPath
+        let modern = host == "auth.itunes.apple.com" && rawPath.map { nativePaths.contains($0) } == true
+        // Native routes are now part of the credential allowlist. Their device
+        // proof challenges are resolved through the iPadN SAP runtime.
         // Validate BEFORE normalization so a foreign/encoded path is not repaired.
         if !modern {
             do { authURL = try AuthenticationEndpoint.initial(authURL) }

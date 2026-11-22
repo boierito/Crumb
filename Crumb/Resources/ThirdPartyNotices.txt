@@ -1,12 +1,25 @@
 # Attribution and redistribution status
 
+## iPadN / mengangs and contributors
+Crumb includes adapted GPL-2.0-or-later FairPlayCore, WebKit/WASM SAP
+signing and Apple Store device provisioning logic from
+https://github.com/mengangs/ipadn at upstream commit
+70f2ac36e7f87cacf82a45b58e6fa27ed23ecb80.
+See third_party/iPadN-GPL-2.0.txt in the corresponding sources.
+The bundled upstream SAPRuntime includes libCoreADI.so and
+libstoreservicescore.so, which the iPadN provenance attributes to the
+official Apple Music for Android package. The complete redistribution
+rights for those runtime components have NOT been established.
+The SAP runtime and FairPlayCore are NOT MIT licensed.
+
 The SAP v200 protocol/state flow in `MapleSyrup/SAPKit` is adapted from
 [majd/ipatool](https://github.com/majd/ipatool), pinned at
 `3411d57f451f5111ae115641c22f7ed17bbd5fbe` (2026-10-01).
 The adaptation uses Swift protocol code and a statically linked guest-only
 Go library, not an embedded ipatool executable. Experimental Unicorn/TCI is
-statically linked in the IPA. Apple proprietary assets are **not** bundled;
-the guest downloads hash-pinned assets into the app's cache when requested.
+statically linked in the IPA. The legacy guest downloads its own hash-pinned
+assets into the app cache. The iPadN SAPRuntime separately contains binaries
+with incomplete rights documentation (see above).
 The Linux negative test downloads upstream Unicorn separately via pip.
 
 ## ipatool MIT notice

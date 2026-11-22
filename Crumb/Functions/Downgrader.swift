@@ -74,9 +74,7 @@ extension AppData {
                 }.value
                 try Task.checkCancellation()
                 if let expectedVersion, info.version != expectedVersion { throw StoreError.versionMismatch }
-                let downloads = try fm.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-                    .appendingPathComponent("Downloads", isDirectory: true)
-                try fm.createDirectory(at: downloads, withIntermediateDirectories: true)
+                let downloads = try DownloadRecord.storageDirectory(decrypted: false, create: true)
                 let filename = "\(app.id)-\(descriptor.externalVersionID)-\(UUID().uuidString).ipa"
                 let destination = downloads.appendingPathComponent(filename)
                 let record = DownloadRecord(filename: filename, appID: app.id, appName: app.name, bundleID: info.bundleID,
@@ -88,7 +86,7 @@ extension AppData {
                 completedDownloads = DownloadRecord.load()
                 downloadedIPAURL = destination; hasAppBeenServed = true
                 appBundleID = info.bundleID; appVersion = info.version
-                storeStage("IPA verified and saved. Ready to install or export.")
+                storeStage("IPA verified and saved privately. Decrypt to export.")
                 if decryptWhenReady { DeviceWorkflow.shared.decrypt(record,install:installWhenReady) }
                 else if installWhenReady { installationRequest = record }
                 else { downloadReady = nil }
@@ -126,14 +124,7 @@ extension AppData {
     func restoreDownloadedIPA() {
         completedDownloads = DownloadRecord.load()
         downloadedIPAURL = nil; hasAppBeenServed = false
-        let fm = FileManager.default
-        guard let docs = try? fm.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false),
-              let files = try? fm.contentsOfDirectory(at: docs.appendingPathComponent("Downloads"),
-                  includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
-        downloadedIPAURL = files.filter { $0.pathExtension == "ipa" }.sorted {
-            ((try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast) >
-            ((try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast)
-        }.first
+        downloadedIPAURL = completedDownloads.first?.fileURL
         hasAppBeenServed = downloadedIPAURL != nil
         if let record = completedDownloads.first { appBundleID = record.bundleID; appVersion = record.version }
         else { appBundleID = ""; appVersion = "" }

@@ -5,7 +5,7 @@ public enum StoreError: Error, LocalizedError, Equatable {
     case unsupportedStorefront, invalidApp, unavailable, invalidResponse, versionMismatch
     case retryLater
     case emptyRedownload
-    case sessionExpired, licenseRequired, paidPurchase, http(Int), native(Int32), packageInvalid
+    case sessionExpired, licenseRequired, purchaseTermsRequired, regionMismatch, paidPurchase, http(Int), native(Int32), packageInvalid
     case apple(String, String)
     public var errorDescription: String? {
         switch self {
@@ -18,6 +18,8 @@ public enum StoreError: Error, LocalizedError, Equatable {
         case .versionMismatch: return "Apple returned a different app or externalVersionId. Download refused."
         case .sessionExpired: return "Apple Store requires sign-in for this request. The saved account was retained. Please try again later if a fresh login gives the same error."
         case .licenseRequired: return "This account needs a license. Acquire the app in the App Store, then retry."
+        case .purchaseTermsRequired: return "Accept the updated App Store terms in the system App Store, then retry."
+        case .regionMismatch: return "Apple reports an account storefront mismatch. Open the App Store with this account and retry."
         case .paidPurchase: return "Only verified free apps can be acquired automatically. Use the App Store for paid apps or subscriptions."
         case .http(let code): return "Store request failed (HTTP \(code))."
         case .native(let stage):
@@ -47,7 +49,7 @@ public struct StoreDownload: Sendable {
     public let md5: String
 }
 public protocol KBSyncGenerator {
-    func generate(identity: MachineIdentity, dsid: UInt64) throws -> Data
+    func generate(identity: MachineIdentity, dsid: UInt64) async throws -> Data
 }
 public protocol KBSyncPersistence {
     func load(dsid: String, guid: String) throws -> Data?
@@ -81,7 +83,17 @@ public enum StoreParsing {
         guard let text = item["URL"] as? String else { throw StoreError.invalidResponse }
         let url = try CDNPolicy.validate(text)
         let versions = (metadata["softwareVersionExternalIdentifiers"] as? [Any] ?? []).compactMap(identifier)
-        metadata["apple-id"] = email; metadata["userName"] = email
+        // Do not package the account email or any opaque account-specific fields
+        // from Apple's response into iTunesMetadata.plist. License SINF is handled
+        // separately and must remain private until successfully decrypted.
+        let nonPersonalKeys: Set<String> = [
+            "itemId", "softwareVersionExternalIdentifier", "softwareVersionBundleId",
+            "softwareVersionExternalIdentifiers", "bundleShortVersionString",
+            "bundleVersion", "softwareVersionBundleVersion", "kind",
+            "softwareVersionBundleShortVersionString"
+        ]
+        metadata = metadata.filter { nonPersonalKeys.contains($0.key) }
+        _ = email // Retained in public API for source compatibility.
         let sinfItems = item["sinfs"] as? [[String: Any]] ?? []
         var sinfs: [Data] = []
         for entry in sinfItems {
@@ -93,10 +105,57 @@ public enum StoreParsing {
             metadata: try PropertyListSerialization.data(fromPropertyList: metadata, format: .xml, options: 0),
             sinfs: sinfs, md5: item["md5"] as? String ?? "")
     }
+    // iPadN 2.3.3: recover only a server-provided, strictly validated
+    // MZCommerce.CountryMismatch redirect. Never follow the supplied URL.
+    public static func purchaseStorefrontCorrection(_ root: [String: Any], current: String) -> String? {
+        let code = (root["failureType"] as? String) ?? (root["failureType"] as? NSNumber)?.stringValue
+        guard code == "-128", let metrics = root["metrics"] as? [String: Any],
+              metrics["dialogId"] as? String == "MZCommerce.CountryMismatch",
+              let dialog = root["dialog"] as? [String: Any],
+              let action = dialog["okButtonAction"] as? [String: Any],
+              action["kind"] as? String == "Goto",
+              let raw = action["url"] as? String,
+              let components = URLComponents(string: raw),
+              components.scheme?.lowercased() == "https",
+              components.host?.lowercased() == "itunes.apple.com",
+              components.port == nil || components.port == 443,
+              components.user == nil, components.password == nil, components.fragment == nil,
+              components.percentEncodedPath == "/WebObjects/MZStore.woa/wa/resetAndRedirect"
+        else { return nil }
+        let ids = (components.queryItems ?? []).filter { $0.name == "dsf" }
+        guard ids.count == 1, let value = ids[0].value,
+              let identifier = UInt32(value), identifier > 0,
+              String(identifier) == value else { return nil }
+        let currentPrefix = String(current.prefix(while: { $0.isASCII && $0.isNumber }))
+        guard !currentPrefix.isEmpty, currentPrefix != value else { return nil }
+        return value + String(current.dropFirst(currentPrefix.count))
+    }
+
+    public static func purchaseRequiresTerms(_ root: [String: Any]) -> Bool {
+        guard root["jingleDocType"] as? String == "buyProductFailure",
+              let action = root["action"] as? [String: Any],
+              action["kind"] as? String == "Goto", let raw = action["url"] as? String,
+              let components = URLComponents(string: raw),
+              components.scheme?.lowercased() == "https",
+              let host = components.host?.lowercased(),
+              (host == "buy.itunes.apple.com" || {
+                  guard host.hasPrefix("p"), host.hasSuffix("-buy.itunes.apple.com") else { return false }
+                  let digits = host.dropFirst().dropLast("-buy.itunes.apple.com".count)
+                  return !digits.isEmpty && digits.allSatisfy { $0.isASCII && $0.isNumber }
+              }()),
+              components.port == nil || components.port == 443,
+              components.user == nil, components.password == nil, components.fragment == nil,
+              components.percentEncodedPath == "/WebObjects/MZFinance.woa/wa/com.apple.jingle.app.finance.DirectAction/termsPage"
+        else { return false }
+        return true
+    }
+
     static func failure(_ root: [String: Any]) throws {
         let code = (root["failureType"] as? String) ?? (root["failureType"] as? NSNumber)?.stringValue ?? ""
         let message = root["customerMessage"] as? String ?? ""
-        if ["2034", "2042", "1008"].contains(code) || message.lowercased().contains("password has changed") { throw StoreError.sessionExpired }
+        if ["2034", "2042", "1008"].contains(code) || message.lowercased().contains("password has changed") || message == "MZFinance.BadLogin.Configurator_message" { throw StoreError.sessionExpired }
+        if purchaseRequiresTerms(root) { throw StoreError.purchaseTermsRequired }
+        if code == "-128" { throw StoreError.regionMismatch }
         if code == "9610" { throw StoreError.licenseRequired }
         if code == "5002" { return } // already owned; purchase handles separately
         if !code.isEmpty || !message.isEmpty {

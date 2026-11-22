@@ -47,6 +47,14 @@ public protocol ActionSigning {
 }
 extension SAPSession: ActionSigning {}
 
+// iPadN native Store login: device proof is calculated on-device, persisted in
+// the Keychain and never packaged into a downloaded IPA.
+public protocol StoreProofProvider {
+    func currentHeaders(guid: String) async throws -> [String: String]?
+    func provision(challenge: String, guid: String) async throws -> [String: String]
+    func reset(guid: String) async
+}
+
 public struct TwoFactorAuthentication {
     public static func normalize(_ input: String) throws -> String {
         if input.isEmpty { return "" }
@@ -62,6 +70,7 @@ public struct AppleAuthentication {
     private let transport: AuthenticationTransport
     private let signer: ActionSigning
     private let persistence: StoreAccountPersistence
+    private let proof: StoreProofProvider?
     private let sleep: (TimeInterval) async throws -> Void
     private let diagnostic: (String) async -> Void
     private let recoveryAttempts: Int
@@ -69,13 +78,14 @@ public struct AppleAuthentication {
     private let now: () -> Date
     public init(transport: AuthenticationTransport, signer: ActionSigning,
                 persistence: StoreAccountPersistence,
+                proof: StoreProofProvider? = nil,
                 diagnostic: @escaping (String) async -> Void = { _ in },
                 automaticRecovery: Bool = false,
                 now: @escaping () -> Date = Date.init,
                 sleep: @escaping (TimeInterval) async throws -> Void = {
                     try await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000))
                 }) {
-        self.transport = transport; self.signer = signer; self.persistence = persistence; self.sleep = sleep; self.diagnostic = diagnostic; self.now = now
+        self.transport = transport; self.signer = signer; self.persistence = persistence; self.proof = proof; self.sleep = sleep; self.diagnostic = diagnostic; self.now = now
         recoveryAttempts = automaticRecovery ? 12 : 3
         recoveryWindow = automaticRecovery ? 120 : nil
     }
@@ -93,7 +103,7 @@ public struct AppleAuthentication {
             // Only publish endpoints after the same strict validation used for
             // credential replay. A warm 2FA/retry can skip an already resolved pod.
             await resolvedEndpoint(endpoint)
-            let (data, response) = try await send(body: body, endpoint: endpoint, progress: progress, secrets: [password, code, email], storefront: phoneNumberStorefront(email), recovery: &recovery)
+            let (data, response) = try await send(body: body, endpoint: endpoint, guid: identity.guid, progress: progress, secrets: [password, code, email], storefront: phoneNumberStorefront(email), recovery: &recovery)
             if (300..<400).contains(response.statusCode) {
                 await diagnostic("authentication-redirect=received; HTTP=\(response.statusCode); location-present=\(response.value(forHTTPHeaderField: "Location") != nil)")
                 guard [301, 302, 307, 308].contains(response.statusCode),
@@ -186,7 +196,10 @@ public struct AppleAuthentication {
             "guid": guid, "password": password + code, "rmp": "0", "why": "signIn"], format: .xml, options: 0)
     }
 
-    private func send(body: Data, endpoint: URL, progress: (AuthenticationStage) async -> Void, secrets: [String], storefront: String?, recovery: inout AuthenticationRecoveryBudget) async throws -> (Data, HTTPURLResponse) {
+    private func send(body: Data, endpoint: URL, guid: String, progress: (AuthenticationStage) async -> Void, secrets: [String], storefront: String?, recovery: inout AuthenticationRecoveryBudget) async throws -> (Data, HTTPURLResponse) {
+        var refreshedProof: [String: String]? = nil
+        var provisioningRounds = 0
+        var resetRounds = 0
         for attempt in 1...recoveryAttempts {
             try Task.checkCancellation()
             try recovery.checkDeadline(now: now())
@@ -199,6 +212,19 @@ public struct AppleAuthentication {
             request.setValue(storefront, forHTTPHeaderField: "X-Apple-Store-Front")
             request.setValue(SAPProtocol.userAgent, forHTTPHeaderField: "User-Agent")
             request.setValue("close", forHTTPHeaderField: "Connection")
+            // Native iPadN login requires one-time X-Apple-AMD device proof.
+            // Only attach it to the exact trusted Apple Store authentication paths.
+            if let proof, Self.needsStoreProof(endpoint) {
+                let headers: [String: String]?
+                if let prepared = refreshedProof { headers = prepared; refreshedProof = nil }
+                else { headers = try await proof.currentHeaders(guid: guid) }
+                if let headers,
+                   let amd = headers["X-Apple-AMD"], !amd.isEmpty,
+                   let machine = headers["X-Apple-AMD-M"], !machine.isEmpty {
+                    request.setValue(amd, forHTTPHeaderField: "X-Apple-AMD")
+                    request.setValue(machine, forHTTPHeaderField: "X-Apple-AMD-M")
+                }
+            }
             let signature = try await signer.actionSignature(body: body)
             guard !signature.isEmpty else { throw SAPError.emptySignature }
             request.setValue(signature, forHTTPHeaderField: "X-Apple-ActionSignature")
@@ -213,6 +239,36 @@ public struct AppleAuthentication {
                 await diagnostic(ResponseDiagnostic.response(data, status: response.statusCode, scope: "authentication", attempt: attempt, secrets: secrets))
                 guard data.count <= SAPProtocol.maximumBodySize else { throw SAPError.oversizedResponse }
                 let result = try? ApplePlist.dictionary(data)
+                // Apple Store SP/RP requests must be processed before interpreting
+                // an ordinary login response, and cannot replay credentials to
+                // an untrusted host or beyond the bounded recovery window.
+                if let proof, Self.needsStoreProof(endpoint),
+                   let action = response.value(forHTTPHeaderField: "X-Apple-AMD-Action")?.uppercased().trimmingCharacters(in: .whitespacesAndNewlines) {
+                    if action == "SP" {
+                        guard provisioningRounds < 2, attempt < recoveryAttempts,
+                              let challenge = response.value(forHTTPHeaderField: "X-Apple-AMD-Data"),
+                              challenge.count <= 16_384, !challenge.isEmpty,
+                              challenge.count % 4 == 0,
+                              let decoded = Data(base64Encoded: challenge), !decoded.isEmpty,
+                              decoded.base64EncodedString() == challenge else {
+                            throw AuthenticationError.invalidResponse(response.statusCode)
+                        }
+                        refreshedProof = try await proof.provision(challenge: challenge, guid: guid)
+                        provisioningRounds += 1
+                        await progress(.retrying)
+                        continue
+                    }
+                    if action == "RP" {
+                        guard resetRounds < 1, attempt < recoveryAttempts else {
+                            throw AuthenticationError.invalidResponse(response.statusCode)
+                        }
+                        await proof.reset(guid: guid)
+                        refreshedProof = nil
+                        resetRounds += 1
+                        await progress(.retrying)
+                        continue
+                    }
+                }
                 let populated = result.map { !string($0["failureType"]).isEmpty || !string($0["customerMessage"]).isEmpty || !string($0["passwordToken"]).isEmpty } ?? false
                 let status = response.statusCode
                 // An allowed redirect status without a usable Location is not an
@@ -242,6 +298,17 @@ public struct AppleAuthentication {
             }
         }
         throw AuthenticationError.invalidResponse(0)
+    }
+
+    private static func needsStoreProof(_ url: URL) -> Bool {
+        guard (try? AuthenticationEndpoint.validate(url)) != nil,
+              let host = url.host?.lowercased() else { return false }
+        let path = URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedPath ?? ""
+        if host == "auth.itunes.apple.com" {
+            return ["/auth/v1/native", "/auth/v1/native/", "/auth/v1/native/fast", "/auth/v1/native/fast/"].contains(path)
+        }
+        return (host == "buy.itunes.apple.com" || host.hasSuffix("-buy.itunes.apple.com")) &&
+            ["/WebObjects/MZFinance.woa/wa/authenticate", "/WebObjects/MZFinance.woa/wa/authenticate/"].contains(path)
     }
 
     private func retryDelay(_ header: String?, attempt: Int) throws -> TimeInterval {

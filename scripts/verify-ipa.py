@@ -20,7 +20,7 @@ with zipfile.ZipFile(ipa) as archive:
     info = plistlib.loads(archive.read(root + "Info.plist"))
     assert info["CFBundleVersion"] == expected_build, "Wrong build number"
     assert info["CFBundleShortVersionString"] == expected_version, "Wrong version"
-    assert info.get("UIFileSharingEnabled") is True, "Files sharing missing"
+    assert info.get("UIFileSharingEnabled") is False, "Files sharing must be disabled to protect account-bound encrypted IPAs"
     assert info.get("LSSupportsOpeningDocumentsInPlace") is True, "Files in-place access missing"
     assert any("crumb" in item.get("CFBundleURLSchemes", [])
                for item in info.get("CFBundleURLTypes", [])), "Crumb URL scheme missing"
@@ -49,5 +49,5 @@ with zipfile.ZipFile(ipa) as archive:
     print(json.dumps({"ipa": str(ipa), "build": expected_build, "version": expected_version,
                       "bundleID": info["CFBundleIdentifier"], "displayName": info["CFBundleDisplayName"],
                       "minimumOS": info["MinimumOSVersion"], "cpu": "arm64",
-                      "FilesEnabled": True, "CrumbURLScheme": True, "DeviceHelperTemplate": True,
+                      "FilesEnabled": False, "CrumbURLScheme": True, "DeviceHelperTemplate": True,
                       "sha256": hashlib.file_digest(ipa.open("rb"), "sha256").hexdigest()}, indent=2))

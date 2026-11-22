@@ -16,11 +16,23 @@ struct DownloadRecord: Codable, Identifiable {
     var signed: Bool? = nil
     var lastSigning: SigningSummary? = nil
     var isDecrypted: Bool { decrypted == true }
+
+    // Encrypted Apple downloads contain account-bound FairPlay material and
+    // must never be placed in the Files-visible Documents container.
+    static func storageDirectory(decrypted: Bool, create: Bool = false) throws -> URL {
+        let fm = FileManager.default
+        let base = try fm.url(for: decrypted ? .documentDirectory : .applicationSupportDirectory,
+                              in: .userDomainMask, appropriateFor: nil, create: create)
+        let url = base.appendingPathComponent(decrypted ? "Downloads" : "PrivateDownloads", isDirectory: true)
+        if create { try fm.createDirectory(at: url, withIntermediateDirectories: true) }
+        return url
+    }
+
     var fileURL: URL? {
         guard filename == URL(fileURLWithPath: filename).lastPathComponent,
               filename.hasSuffix(".ipa"), !filename.contains(".."),
-              let docs = try? FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false) else { return nil }
-        let url = docs.appendingPathComponent("Downloads").appendingPathComponent(filename)
+              let directory = try? Self.storageDirectory(decrypted: isDecrypted) else { return nil }
+        let url = directory.appendingPathComponent(filename)
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
     func save() throws {
@@ -37,10 +49,7 @@ struct DownloadRecord: Codable, Identifiable {
         let fm = FileManager.default
         let root: URL
         if let directory { root = directory }
-        else {
-            root = try fm.url(for: .documentDirectory, in: .userDomainMask,
-                appropriateFor: nil, create: false).appendingPathComponent("Downloads")
-        }
+        else { root = try Self.storageDirectory(decrypted: isDecrypted) }
         let ipa = root.appendingPathComponent(filename)
         for file in [ipa, ipa.deletingPathExtension().appendingPathExtension("json")] {
             if fm.fileExists(atPath: file.path) { try fm.removeItem(at: file) }
@@ -49,9 +58,16 @@ struct DownloadRecord: Codable, Identifiable {
     // Clean downloaded IPAs and their sidecars, including IPAs without records.
     // Preserve unrelated documents and never follow a substituted Downloads directory.
     static func deleteAllFiles(in directory: URL? = nil) throws {
+        if directory == nil {
+            for decrypted in [false, true] {
+                if let root = try? storageDirectory(decrypted: decrypted) {
+                    try deleteAllFiles(in: root)
+                }
+            }
+            return
+        }
         let fm = FileManager.default
-        let root = try directory ?? fm.url(for: .documentDirectory, in: .userDomainMask,
-            appropriateFor: nil, create: false).appendingPathComponent("Downloads")
+        let root = directory!
         guard fm.fileExists(atPath: root.path) else { return }
         let values = try root.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
         guard values.isDirectory == true, values.isSymbolicLink != true else {
@@ -73,15 +89,46 @@ struct DownloadRecord: Codable, Identifiable {
             try record.deleteFiles(in: root)
         }
     }
-    static func load() -> [DownloadRecord] {
+    private static func migrateLegacyEncryptedDownloads() {
         let fm = FileManager.default
-        guard let docs = try? fm.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false),
-              let files = try? fm.contentsOfDirectory(at: docs.appendingPathComponent("Downloads"), includingPropertiesForKeys: nil) else { return [] }
-        return files.filter { $0.pathExtension == "json" }.compactMap { file in
-            guard let data = try? Data(contentsOf: file), data.count < 65536,
-                  let record = try? JSONDecoder().decode(DownloadRecord.self, from: data), record.fileURL != nil else { return nil }
-            return record
-        }.sorted { $0.date > $1.date }
+        guard let publicRoot = try? storageDirectory(decrypted: true),
+              let privateRoot = try? storageDirectory(decrypted: false, create: true),
+              let files = try? fm.contentsOfDirectory(at: publicRoot, includingPropertiesForKeys: nil) else { return }
+        for sidecar in files where sidecar.pathExtension == "json" {
+            guard let data = try? Data(contentsOf: sidecar), data.count < 65536,
+                  let record = try? JSONDecoder().decode(DownloadRecord.self, from: data),
+                  !record.isDecrypted,
+                  record.filename == sidecar.deletingPathExtension().appendingPathExtension("ipa").lastPathComponent else { continue }
+            let oldIPA = publicRoot.appendingPathComponent(record.filename)
+            let privateIPA = privateRoot.appendingPathComponent(record.filename)
+            let privateJSON = privateRoot.appendingPathComponent(sidecar.lastPathComponent)
+            guard fm.fileExists(atPath: oldIPA.path),
+                  !fm.fileExists(atPath: privateIPA.path),
+                  !fm.fileExists(atPath: privateJSON.path) else { continue }
+            // Move the license-bound binary first, then the non-secret sidecar.
+            // If the second step fails, the source record is not shared.
+            do {
+                try fm.moveItem(at: oldIPA, to: privateIPA)
+                try fm.moveItem(at: sidecar, to: privateJSON)
+            } catch { try? fm.removeItem(at: sidecar) }
+        }
+    }
+
+    static func load() -> [DownloadRecord] {
+        migrateLegacyEncryptedDownloads()
+        let fm = FileManager.default
+        let directories = [false, true].compactMap { try? storageDirectory(decrypted: $0) }
+        var records: [DownloadRecord] = []
+        for root in directories {
+            guard let files = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else { continue }
+            for file in files where file.pathExtension == "json" {
+                guard let data = try? Data(contentsOf: file), data.count < 65536,
+                      let record = try? JSONDecoder().decode(DownloadRecord.self, from: data),
+                      record.fileURL != nil else { continue }
+                records.append(record)
+            }
+        }
+        return records.sorted { $0.date > $1.date }
     }
 }
 

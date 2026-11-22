@@ -52,7 +52,7 @@ private actor StoreFixtureTransport: AuthenticationTransport {
 }
 private final class StoreFixtureGenerator: KBSyncGenerator {
     var calls = 0
-    func generate(identity: MachineIdentity, dsid: UInt64) throws -> Data { calls += 1; return Data("fresh-fixture-blob".utf8) }
+    func generate(identity: MachineIdentity, dsid: UInt64) async throws -> Data { calls += 1; return Data("fresh-fixture-blob".utf8) }
 }
 private final class StoreFixtureCache: KBSyncPersistence {
     var data: Data?; var clears = 0; var saves = 0
@@ -415,5 +415,86 @@ extension StoreTests {
         catch { XCTAssertEqual(error as? StoreError, .apple("", "Subscription required")) }
         let requests = await transport.requests
         XCTAssertEqual(requests.count, 4)
+    }
+}
+
+extension StoreTests {
+    func testDownloadMetadataNeverContainsAppleAccountIdentity() throws {
+        let app = StoreApp(id: "123", bundleID: "test.app", name: "Test", price: 0)
+        let response: [String: Any] = ["songList": [[
+            "URL": "https://iosapps.itunes.apple.com/a.ipa",
+            "metadata": ["itemId": "123", "softwareVersionExternalIdentifier": "999",
+                         "softwareVersionBundleId": "test.app",
+                         "softwareVersionExternalIdentifiers": ["999"],
+                         "apple-id": "account@example.invalid", "userName": "account@example.invalid",
+                         "dsPersonId": "000123", "passwordToken": "private-token",
+                         "accountInfo": ["email": "account@example.invalid"]],
+            "sinfs": []
+        ]]]
+        let download = try StoreParsing.download(response, app: app, version: "999", email: "account@example.invalid")
+        let metadata = try XCTUnwrap(PropertyListSerialization.propertyList(from: download.metadata, format: nil) as? [String: Any])
+        XCTAssertEqual(metadata["itemId"] as? String, "123")
+        for field in ["apple-id", "userName", "dsPersonId", "passwordToken", "accountInfo"] {
+            XCTAssertNil(metadata[field], "Sensitive field \(field) leaked into IPA")
+        }
+        XCTAssertFalse(String(data: download.metadata, encoding: .utf8)?.contains("account@example.invalid") ?? true)
+    }
+
+    func testValidatedAppleCountryMismatchCorrectionAndSpoofRejection() {
+        func response(_ url: String) -> [String: Any] {
+            ["failureType": "-128", "metrics": ["dialogId": "MZCommerce.CountryMismatch"],
+             "dialog": ["okButtonAction": ["kind": "Goto", "url": url]]]
+        }
+        let valid = response("https://itunes.apple.com/WebObjects/MZStore.woa/wa/resetAndRedirect?dsf=143441")
+        XCTAssertEqual(StoreParsing.purchaseStorefrontCorrection(valid, current: "143505-1,29"), "143441-1,29")
+        XCTAssertNil(StoreParsing.purchaseStorefrontCorrection(valid, current: "143441-1,29"))
+        for bad in ["https://itunes.apple.com.evil.test/WebObjects/MZStore.woa/wa/resetAndRedirect?dsf=143441",
+                    "http://itunes.apple.com/WebObjects/MZStore.woa/wa/resetAndRedirect?dsf=143441",
+                    "https://itunes.apple.com/WebObjects/MZStore.woa/wa/resetAndRedirect?dsf=143441&dsf=143441",
+                    "https://itunes.apple.com/WebObjects/MZStore.woa/wa/resetAndRedirect?dsf=1%2f2"] {
+            XCTAssertNil(StoreParsing.purchaseStorefrontCorrection(response(bad), current: "143505-1,29"))
+        }
+    }
+
+    func testPurchaseTermsAndExpiredDeviceSessionAreClassified() throws {
+        let terms: [String: Any] = ["jingleDocType": "buyProductFailure",
+            "action": ["kind": "Goto", "url": "https://p42-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/com.apple.jingle.app.finance.DirectAction/termsPage"]]
+        XCTAssertTrue(StoreParsing.purchaseRequiresTerms(terms))
+        XCTAssertThrowsError(try StoreParsing.failure(terms)) {
+            XCTAssertEqual($0 as? StoreError, .purchaseTermsRequired)
+        }
+        XCTAssertFalse(StoreParsing.purchaseRequiresTerms(["jingleDocType": "buyProductFailure",
+            "action": ["kind": "Goto", "url": "https://p42-buy.itunes.apple.com.evil.test/WebObjects/MZFinance.woa/wa/com.apple.jingle.app.finance.DirectAction/termsPage"]]))
+        for code in ["1008", "2034", "2042"] {
+            XCTAssertThrowsError(try StoreParsing.failure(["failureType": code])) {
+                XCTAssertEqual($0 as? StoreError, .sessionExpired)
+            }
+        }
+    }
+
+    func testAppleCountryCorrectionRetriesOnlyOnceWithUpdatedHeader() async throws {
+        let mismatch: [String: Any] = [
+            "failureType": "-128", "metrics": ["dialogId": "MZCommerce.CountryMismatch"],
+            "dialog": ["okButtonAction": ["kind": "Goto",
+                "url": "https://itunes.apple.com/WebObjects/MZStore.woa/wa/resetAndRedirect?dsf=143441"]]
+        ]
+        let transport = StoreFixtureTransport([
+            .init(status: 200, data: try bag()),
+            .init(status: 200, data: try plist(["failureType": "9610"])),
+            .init(status: 200, data: try plist(mismatch)),
+            .init(status: 200, data: try plist(["jingleDocType": "purchaseSuccess", "status": 0])),
+            .init(status: 200, data: try reply(version: "999"))
+        ])
+        let free = StoreApp(id: "123", bundleID: "test.app", name: "Test", price: 0)
+        let service = try session(transport)
+        let output = try await service.descriptor(app: free, externalVersionID: "999")
+        XCTAssertEqual(output.externalVersionID, "999")
+        let correctedAccount = await service.currentAccount()
+        XCTAssertEqual(correctedAccount.storefront, "143441-1,29")
+        let requests = await transport.requests
+        let purchases = requests.filter { $0.url?.path.hasSuffix("buyProduct") == true }
+        XCTAssertEqual(purchases.count, 2)
+        XCTAssertEqual(purchases[0].value(forHTTPHeaderField: "X-Apple-Store-Front"), "143505-1,29")
+        XCTAssertEqual(purchases[1].value(forHTTPHeaderField: "X-Apple-Store-Front"), "143441-1,29")
     }
 }

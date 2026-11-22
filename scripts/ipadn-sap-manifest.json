@@ -1,0 +1,15 @@
+{
+  "format": 1,
+  "storage": "repository-local",
+  "files": {
+    "Go-BSD-3-Clause.txt": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad",
+    "index.html": "2c8aa13604ee77ef315820239deadd9a6ee70668a39e334e4f6689cf38f7067f",
+    "LGPL-2.0.txt": "681e386e44a19d7d0674b4320272c90e66b6610b741e7e6305f8219c42e85366",
+    "libCoreADI.so": "ece4ffa6bbe4239e8f0d4714da57e62ce5e3c581d19553a83d78ac897783b905",
+    "libstoreservicescore.so": "d8be230df34c0044758d43e33a8dabd3236b9a4258c4d48cb366911224d52f68",
+    "sap-signer.js": "8b8d9e95e59832b272170dd0368178d8a47147a9501896a898490bf5f9e0a825",
+    "sap.wasm": "b7150bb4d31a03c1a813d310c0b5d7211be2510f7ee970b273f4fce7ea134015",
+    "unicorn_x86.js": "a6733c9f2b2b01cba236f945419c70319edbf6a7fb2a0250d61d1b98ca7a0314",
+    "wasm_exec.js": "0c949f4996f9a89698e4b5c586de32249c3b69b7baadb64d220073cc04acba14"
+  }
+}

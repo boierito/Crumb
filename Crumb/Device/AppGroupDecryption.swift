@@ -28,16 +28,23 @@ enum AppGroupDecryption {
             Bundle.main.object(forInfoDictionaryKey: "FairPlayAppGroup") as? String ?? ""
         ])
     }
-    static func container() -> URL? {
+    // Equivalent to iPadN SigningCapability.resolved: resolve once per signed
+    // process. A profile string is only a candidate, never authorization.
+    // A successful real write probe proves the container is usable.
+    struct Resolution { let identifier: String; let url: URL }
+    static let resolution: Resolution? = {
         let fm = FileManager.default
         for group in groupCandidates {
             guard let url = fm.containerURL(forSecurityApplicationGroupIdentifier: group) else { continue }
             let probe = url.appendingPathComponent(".crumb-group-probe-" + UUID().uuidString)
             defer { try? fm.removeItem(at: probe) }
-            if (try? Data().write(to: probe, options: .withoutOverwriting)) != nil { return url }
+            if (try? Data().write(to: probe, options: .withoutOverwriting)) != nil {
+                return Resolution(identifier: group, url: url)
+            }
         }
         return nil
-    }
+    }()
+    static func container() -> URL? { resolution?.url }
 
     static func fail(_ message: String) -> DeviceOperationError { .message(message) }
 
@@ -177,6 +184,34 @@ enum AppGroupDecryption {
             progress(0.1 + 0.75 * Double(index + 1) / Double(max(files.count, 1)))
         }
         guard decrypted > 0 else { throw fail("No encrypted images found; no decrypted result was published.") }
+        // The original encrypted archive is private and contains account-bound
+        // FairPlay license data. Export only from the verified plaintext tree:
+        // remove all Apple purchase metadata, SINF/SUPP and per-bundle SC_Info.
+        // Signed installation uses the decrypted binary, not the purchase token.
+        guard let privateEnumerator = fm.enumerator(atPath: packed.path) else {
+            throw fail("Cannot inspect export privacy.")
+        }
+        let privateEntries = privateEnumerator.allObjects.compactMap { $0 as? String }
+        for relative in privateEntries.sorted(by: { $0.count > $1.count }) {
+            let components = relative.split(separator: "/").map(String.init)
+            let name = components.last ?? ""
+            let accountMetadata = ["iTunesMetadata.plist", "iTunesArtwork", "iTunesArtwork@2x"].contains(name)
+            let licenseResource = components.contains("SC_Info")
+            guard accountMetadata || licenseResource else { continue }
+            let candidate = packed.appendingPathComponent(relative)
+            if fm.fileExists(atPath: candidate.path) {
+                try fm.removeItem(at: candidate)
+            }
+        }
+        // Fail closed: never publish an export containing original license files.
+        if let residual = fm.enumerator(atPath: packed.path) {
+            for case let relative as String in residual {
+                let parts = relative.split(separator: "/")
+                guard !parts.contains("SC_Info"), parts.last != "iTunesMetadata.plist" else {
+                    throw fail("Personal Apple license metadata remains in output.")
+                }
+            }
+        }
         if cancelled() { throw CancellationError() }
         let downloads = fm.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("Downloads", isDirectory: true)
         try fm.createDirectory(at: downloads, withIntermediateDirectories: true)
