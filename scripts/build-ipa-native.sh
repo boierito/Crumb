@@ -20,7 +20,8 @@ decoder=json.JSONDecoder(); modules={}
 while raw.strip():
     value,end=decoder.raw_decode(raw.lstrip()); raw=raw.lstrip()[end:]
     module=value.get('Module')
-    if module and module.get('Dir'): modules[module['Path']]=pathlib.Path(module['Dir'])
+    if module and module.get('Dir') and not module.get('Main'):
+        modules[module['Path']]=pathlib.Path(module['Dir'])
 pieces=['Go standard library\n'+(pathlib.Path(sys.argv[3])/'LICENSE').read_text()]
 for name,root in sorted(modules.items()):
     found=[]
