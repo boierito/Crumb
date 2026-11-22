@@ -34,7 +34,7 @@ PY
 python3 - "$ROOT/Crumb/Resources/ThirdPartyNotices.txt" "$OUTPUT/IPATOOL-LICENSE" <<'PY'
 import pathlib,sys
 s=pathlib.Path(sys.argv[1]).read_text()
-s=s.split('## ipatool MIT notice\n',1)[1].split('\n## WaffleStore',1)[0].strip()
+s=s.split('## ipatool MIT notice\n',1)[1].split('\n## ',1)[0].strip()
 assert s.startswith('MIT License')
 pathlib.Path(sys.argv[2]).write_text(s+'\n')
 PY
