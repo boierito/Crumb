@@ -230,7 +230,7 @@ Crumb physical validation pending: install alongside Crumb, confirm name/icon in
 
 ## Crumb 1.0.0 (23021) — login timing comparison (device pending)
 
-See [docs/LOGIN_AUDIT.md](docs/LOGIN_AUDIT.md) for the upstream path correction,
+See [historical login audit](https://github.com/boierito/crumb/blob/278302dad1bb97d17fe70980a327014f9be1c545/docs/LOGIN_AUDIT.md) for the upstream path correction,
 trailing-slash validation bug and shared retry allowance. On the same physical
 iPhone, network, bundle ID and signing identity, compare Release 23020 and 23021.
 Keep the cached guest assets and machine identity: wiping them would confound

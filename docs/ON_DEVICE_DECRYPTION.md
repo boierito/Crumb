@@ -144,7 +144,7 @@ native invalid-record test proving that this failure occurs before TCP.
   Decrypted installation signs the main app and nested app extensions, validates
   profile scopes and original capabilities, then uses the existing iOS OTA handoff.
   A profile that cannot authorize an extension/capability fails without dropping it.
-- The helper uses the approved branding/Crumb-AppIcon-1024.png artwork.
+- The helper uses the approved Crumb/Assets/Assets.xcassets/AppIcon.appiconset/Light.png artwork.
 - User-provided FilePickerFix.dylib is embedded in Crumb (not target apps) through
   an arm64 LC_LOAD_DYLIB command before ordinary signing. The build checks its
   exact bytes and load path. Runtime behavior still needs physical testing.

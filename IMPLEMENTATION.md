@@ -157,7 +157,7 @@ Version/download modals use inline navigation titles and grouped rows. Technical
 IDs are under Advanced/Details. Install/Export use the original PartyUI button
 style, and downloaded-file deletion remains in the item menu/swipe with confirmation.
 The clean integration line is based on build 23008; the optional investigation
-branch/build 23009 remains separate. See docs/UI_REVIEW_23010.md for screenshot
+branch/build 23009 remains separate. See [historical UI_REVIEW_23010.md](https://github.com/boierito/crumb/blob/278302dad1bb97d17fe70980a327014f9be1c545/docs/UI_REVIEW_23010.md) for screenshot
 findings and explicit visual/device validation gaps.
 
 ## Purchase recovery and readable logs (23011)
@@ -301,7 +301,7 @@ is added. Physical-device appearance remains a manual verification.
 ## Build 23015: deeper DLiPA parity and download/installation presentation
 
 23014 still returned 2059 in the user's device test. The completed caller/body
-inspection is in docs/DLIPA_BINARY_AUDIT.md; the earlier pricing fallback alone
+inspection is in [historical DLIPA_BINARY_AUDIT.md](https://github.com/boierito/crumb/blob/278302dad1bb97d17fe70980a327014f9be1c545/docs/DLIPA_BINARY_AUDIT.md); the earlier pricing fallback alone
 was insufficient. Regional acquisition now uses the nine-field/string-ID/2.20
 request profile observed in DLiPA's binary. The default ipatool purchase profile
 and login/SAP are preserved. This is a compatibility attempt whose live result
@@ -352,14 +352,14 @@ Repository: https://github.com/boierito/Crumb. Merged its initial README commit 
 
 Re-audited current ipatool `cde7d00355e152714377b953ec57438626d3cb5a`; the previous comparison missed `f9aa653` (October 5), which canonicalizes the initial Bag authentication URL to authenticate/ after strict validation, preserving the host and encoded query. Ported into SAPConfiguration/AuthenticationEndpoint; legitimate canonical/pod Bag URLs are accepted. HTTP path validation uses URLComponents.percentEncodedPath rather than comparing it to URL.path (which can strip a trailing slash). Unsafe/encoded paths remain rejected before normalization; Apple redirects retain their exact URL and POST body.
 
-Factored the existing deadline/retry allowance into one AuthenticationRecoveryBudget per user login/verification. Changing pods or logical attempt does not refill automatic retries; HTTP/network errors share the allowance, normal routing/2FA incur no sleep. Reference non-automatic retry behavior and backoff/Retry-After remain; fractional remaining time no longer rounds up. Native SAP/TCI, user agent, cookie isolation, prepared signer reuse, RAM-only credentials and Release logging policy unchanged. Nine regressions added; see docs/LOGIN_AUDIT.md for trace arithmetic and precise limits. Live Apple login latency and first-login/new-code UI still require physical-device testing.
+Factored the existing deadline/retry allowance into one AuthenticationRecoveryBudget per user login/verification. Changing pods or logical attempt does not refill automatic retries; HTTP/network errors share the allowance, normal routing/2FA incur no sleep. Reference non-automatic retry behavior and backoff/Retry-After remain; fractional remaining time no longer rounds up. Native SAP/TCI, user agent, cookie isolation, prepared signer reuse, RAM-only credentials and Release logging policy unchanged. Nine regressions added; see [historical LOGIN_AUDIT.md](https://github.com/boierito/crumb/blob/278302dad1bb97d17fe70980a327014f9be1c545/docs/LOGIN_AUDIT.md) for trace arithmetic and precise limits. Live Apple login latency and first-login/new-code UI still require physical-device testing.
 
 ## Crumb 1.0.0 (23022) — typed sign-in and 2FA recovery
 
 Crumb is an adaptation, not a one-to-one runtime/wire-byte copy of ipatool. The
 current email authentication semantics follow upstream cde7d0; the jailed TCI,
 URLSession, stable Keychain identity, password-free persistence and prepared
-challenge reuse differ. docs/LOGIN_AUDIT.md records these differences explicitly.
+challenge reuse differ. [historical LOGIN_AUDIT.md](https://github.com/boierito/crumb/blob/278302dad1bb97d17fe70980a327014f9be1c545/docs/LOGIN_AUDIT.md) records these differences explicitly.
 
 The controller previously cleared the code on every error, even when Apple had
 not rejected verification. AppleSignInForm replaces scattered pending credentials,

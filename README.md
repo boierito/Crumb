@@ -1,6 +1,6 @@
 # Crumb
 
-<p align="center"><img src="branding/Crumb-AppIcon-1024.png" width="120" alt="Crumb icon"></p>
+<p align="center"><img src="Crumb/Assets/Assets.xcassets/AppIcon.appiconset/Light.png" width="120" alt="Crumb icon"></p>
 
 [![Build IPA](https://github.com/boierito/Crumb/actions/workflows/build-ipa.yml/badge.svg)](https://github.com/boierito/Crumb/actions/workflows/build-ipa.yml)
 [![Protocol tests](https://github.com/boierito/Crumb/actions/workflows/sap-tests.yml/badge.svg)](https://github.com/boierito/Crumb/actions/workflows/sap-tests.yml)
