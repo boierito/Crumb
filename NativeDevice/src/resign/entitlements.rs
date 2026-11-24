@@ -4,17 +4,6 @@ use crate::signing;
 use anyhow::{Result, ensure};
 use std::collections::BTreeSet;
 
-#[cfg(test)]
-pub(super) fn compatible_entitlements(
-    original: plist::Dictionary,
-    grants: &plist::Dictionary,
-    team: &str,
-    old_main: &str,
-    new_main: &str,
-    bundle: &str,
-) -> Result<(plist::Dictionary, Vec<String>)> {
-    compatible_with_identity(original, grants, team, old_main, new_main, bundle, None)
-}
 pub(super) fn compatible_with_identity(
     original: plist::Dictionary,
     grants: &plist::Dictionary,

@@ -3,7 +3,6 @@
 <p align="center"><img src="Crumb/Assets/Assets.xcassets/AppIcon.appiconset/Light.png" width="120" alt="Crumb icon"></p>
 
 [![Build IPA](https://github.com/boierito/Crumb/actions/workflows/build-ipa.yml/badge.svg)](https://github.com/boierito/Crumb/actions/workflows/build-ipa.yml)
-[![Protocol tests](https://github.com/boierito/Crumb/actions/workflows/sap-tests.yml/badge.svg)](https://github.com/boierito/Crumb/actions/workflows/sap-tests.yml)
 
 Crumb lets you find App Store apps, choose a version and download its IPA on your
 iPhone or iPad. It runs as a normally sideloaded app,
@@ -53,7 +52,6 @@ authentication and download backend adapts logic from
 - **[iPadN / mengangs and contributors](https://github.com/mengangs/ipadn)** — GPL-2.0-or-later FairPlayCore, WebKit/WebAssembly SAP signing engine, Apple Store device-proof handling, App Groups integration and implementation references.
 - **OpenAI Codex and ImageGen** — AI-assisted implementation and app icon. **AI slop.**
 
-For build instructions and technical details, see [IMPLEMENTATION.md](IMPLEMENTATION.md),
-[TESTING.md](TESTING.md), and the [development guide](docs/DEVELOPMENT.md).
+For build instructions and technical details, see the [development guide](docs/DEVELOPMENT.md).
 Licensing and third-party attributions are documented
 in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); the project as a whole is not MIT licensed.

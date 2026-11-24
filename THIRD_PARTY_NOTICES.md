@@ -83,9 +83,9 @@ Apple CommerceKit/CoreFP/StoreAgent binaries have their
 own proprietary terms; downloading them from Apple does not grant a right to
 bundle them in a redistributed IPA. No such binaries have been copied here.
 
-## Experimental device pipeline
+## Native signing pipeline
 
-- jkcoxson/idevice: MIT, pinned to 89702099f4d7552f704f93b4526756abda319ceb.
+- Legacy locked dependency jkcoxson/idevice: MIT, pinned to 89702099f4d7552f704f93b4526756abda319ceb; the pairing and transport implementation has been removed.
 - apple-codesign-quick 0.1.0 (Dadoum/apple-crates): LGPL-2.1-or-later.
   Corresponding modified source is in NativeDevice/vendor/apple-codesign-quick,
   including COPYING.LESSER and CRUMB_CHANGES.md. The change prevents re-signing

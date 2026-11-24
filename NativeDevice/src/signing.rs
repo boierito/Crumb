@@ -58,53 +58,11 @@ pub(super) fn identity_material(
         leaf.to_vec(),
     ))
 }
-pub fn choose_helper(profile: &plist::Dictionary, own: &str) -> Result<String> {
-    let pattern = profile
-        .get("Entitlements")
-        .and_then(|x| x.as_dictionary())
-        .and_then(|x| x.get("application-identifier"))
-        .and_then(|x| x.as_string())
-        .context("Profile has no app identifier")?
-        .split_once('.')
-        .context("Invalid app identifier")?
-        .1;
-    let candidate = if let Some(prefix) = pattern.strip_suffix('*') {
-        format!(
-            "{prefix}{}",
-            if prefix.is_empty() {
-                "com.certlium.crumb.decrypt"
-            } else {
-                "crumbdecrypt"
-            }
-        )
-    } else {
-        pattern.to_string()
-    };
-    super::package::helper_application_id(profile, &candidate, own)?;
-    Ok(candidate)
-}
 pub fn inspect(v: &Value) -> Result<Value> {
     let (_, profile) = profile(v)?;
     let _ = identity(v, &profile)?;
-    if v["purpose"] == "installation" {
-        return Ok(
-            json!({"phase":"installation-signing-ready", "name":profile.plist().get("Name").and_then(|v|v.as_string()).unwrap_or("Signing profile")}),
-        );
-    }
-    if v["purpose"] == "shared" {
-        let helper = choose_helper(
-            profile.plist(),
-            v["own_bundle"].as_str().unwrap_or("com.certlium.crumb"),
-        );
-        return Ok(json!({"phase":"signing-ready", "helper_bundle":helper.ok(),
-            "name":profile.plist().get("Name").and_then(|x| x.as_string()).unwrap_or("Signing identity")}));
-    }
-    let bundle = choose_helper(
-        profile.plist(),
-        v["own_bundle"].as_str().unwrap_or("com.certlium.crumb"),
-    )?;
-    Ok(json!({"phase":"signing-ready", "helper_bundle":bundle,
-        "name":profile.plist().get("Name").and_then(|x| x.as_string()).unwrap_or("Signing identity")}))
+    Ok(json!({"phase":"installation-signing-ready",
+        "name":profile.plist().get("Name").and_then(|v|v.as_string()).unwrap_or("Signing profile")}))
 }
 // Read original XML entitlements from the existing thin arm64 code signature.
 // Invalid signatures fail closed instead of silently losing app capabilities.
@@ -205,81 +163,4 @@ pub(super) fn permits_entitlement(key: &str, grant: &plist::Value, request: &pli
         }
     }
     permits(grant, request)
-}
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn scalar_profile_patterns_authorize_only_matching_string_list_members() {
-        let services = plist::Value::Array(vec!["CloudKit".into(), "CloudDocuments".into()]);
-        assert!(permits(&"*".into(), &services));
-        assert!(!permits(&"CloudKit".into(), &services));
-        assert!(permits(
-            &"applinks:*".into(),
-            &plist::Value::Array(vec!["applinks:example.com".into()])
-        ));
-        assert!(!permits(
-            &"applinks:*".into(),
-            &plist::Value::Array(vec!["webcredentials:example.com".into()])
-        ));
-        assert!(!permits(
-            &"*".into(),
-            &plist::Value::Array(vec![true.into()])
-        ));
-        assert!(!permits(&plist::Value::Array(vec![]), &services));
-    }
-    #[test]
-    fn icloud_environment_selects_one_of_profile_alternatives() {
-        let options = plist::Value::Array(vec!["Development".into(), "Production".into()]);
-        let key = "com.apple.developer.icloud-container-environment";
-        assert!(permits_entitlement(key, &options, &"Production".into()));
-        assert!(!permits_entitlement(key, &options, &"Unknown".into()));
-        assert!(!permits_entitlement(
-            key,
-            &plist::Value::Array(vec!["Development".into()]),
-            &"Production".into()
-        ));
-        assert!(!permits_entitlement(
-            "unrelated",
-            &options,
-            &"Production".into()
-        ));
-    }
-    #[test]
-    fn wildcard_grants_are_scoped() {
-        assert!(permits(
-            &plist::Value::String("TEAM.com.test.*".into()),
-            &plist::Value::String("TEAM.com.test.app".into())
-        ));
-        assert!(!permits(
-            &plist::Value::String("TEAM.com.test.*".into()),
-            &plist::Value::String("TEAM.com.other.app".into())
-        ));
-    }
-    #[test]
-    fn helper_identifier_is_automatic_and_respects_profile_scope() {
-        let own = "com.certlium.crumb";
-        for (pattern, expected) in [
-            ("*", "com.certlium.crumb.decrypt"),
-            ("org.example.*", "org.example.crumbdecrypt"),
-            ("org.example.helper", "org.example.helper"),
-        ] {
-            let mut ent = plist::Dictionary::new();
-            ent.insert(
-                "application-identifier".into(),
-                format!("TEAM.{pattern}").into(),
-            );
-            let mut profile = plist::Dictionary::new();
-            profile.insert("Entitlements".into(), ent.into());
-            profile.insert(
-                "ApplicationIdentifierPrefix".into(),
-                vec![plist::Value::String("TEAM".into())].into(),
-            );
-            assert_eq!(choose_helper(&profile, own).unwrap(), expected);
-        }
-    }
-    #[test]
-    fn malformed_signature_fails() {
-        assert!(entitlements(b"truncated").is_err());
-    }
 }

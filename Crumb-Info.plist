@@ -28,16 +28,5 @@
 	</dict>
 	<key>UIFileSharingEnabled</key>
 	<false/>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Crumb advertises a pairing host and connects to this device after you approve pairing in Settings.</string>
-	<key>NSBonjourServices</key>
-	<array>
-		<string>_remotepairing-pairable-host._tcp</string>
-        <string>_remotepairing._tcp</string>
-	</array>
-	<key>LSApplicationQueriesSchemes</key>
-	<array>
-		<string>crumb-decrypt-helper</string>
-	</array>
 </dict>
 </plist>

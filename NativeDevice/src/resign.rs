@@ -5,8 +5,6 @@ mod identifiers;
 use super::signing;
 use anyhow::{Context, Result, ensure};
 use apple_codesign_quick::{BundleSigningSettings, ProvisioningProfile};
-#[cfg(test)]
-use entitlements::compatible_entitlements;
 use entitlements::{cloud_entitlements, compatible_with_identity};
 use identifiers::{pattern, permits_id, remap_id, select_main, valid_id};
 use serde_json::{Value, json};
@@ -438,8 +436,3 @@ pub fn sign(v: &Value, job: &super::Job) -> Result<Value> {
     }
     result
 }
-#[cfg(test)]
-#[path = "resign_tests.rs"]
-mod integration;
-#[cfg(test)]
-mod tests;

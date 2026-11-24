@@ -47,7 +47,7 @@ struct DownloadedAppsView: View {
                     }
                 }
 
-                if device.activeRecord != nil || device.waitingForHelper {
+                if device.activeRecord != nil {
                     Section {
                         HStack(spacing:12) {
                             ProgressView()
@@ -61,13 +61,6 @@ struct DownloadedAppsView: View {
                                 .frame(minWidth: 44, minHeight: 44)
                         }
                         if let progress = device.progress { ProgressView(value:progress) }
-                        if device.waitingForHelper && !device.busy {
-                            HStack {
-                                Button("Open decrypter") { device.openHelper() }
-                                Spacer()
-                                Button("Save result") { device.retrieve() }
-                            }.font(.subheadline).buttonStyle(.borderless)
-                        }
                     }
                 }
                 Section("Encrypted") {
@@ -155,7 +148,7 @@ struct DownloadedAppsView: View {
                         Button("Signing options") { device.install(record,review:true) }
                         if record.lastSigning != nil { Button("Signing details") { signingDetails = record } }
                     }
-                    if !record.isDecrypted && DeviceWorkflow.decryptSupported {
+                    if !record.isDecrypted {
                         Button("Decrypt") { device.decrypt(record) }
                         Button("Decrypt and install") { device.decrypt(record,install:true) }
                     }
@@ -165,7 +158,7 @@ struct DownloadedAppsView: View {
             }
             HStack(spacing:12) {
                 Button { device.install(record) } label: { Label("Install",systemImage:"arrow.down.app").frame(maxWidth:.infinity) }
-                    .disabled(device.busy || device.waitingForHelper)
+                    .disabled(device.busy)
                 // Encrypted originals carry account-bound FairPlay SINF and are
                 // strictly local; only verified, scrubbed decrypted IPAs export.
                 if let url = record.exportableFileURL {

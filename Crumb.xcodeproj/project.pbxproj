@@ -155,7 +155,7 @@
 			buildActionMask = 2147483647;
 			files = ();
 			inputPaths = ();
-			outputPaths = ("$(SRCROOT)/build/Native/libCrumbIPA.a", "$(SRCROOT)/build/Native/libcrumb_device.a", "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/CrumbDecryptTemplate.zip", "$(SRCROOT)/build/Native/GoThirdPartyNotices.txt");
+			outputPaths = ("$(SRCROOT)/build/Native/libCrumbIPA.a", "$(SRCROOT)/build/Native/libcrumb_device.a", "$(SRCROOT)/build/Native/GoThirdPartyNotices.txt");
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
 			shellScript = "bash \"$SRCROOT/scripts/ensure-native.sh\"\n";

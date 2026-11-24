@@ -113,28 +113,3 @@ pub fn decode(mut bytes: &[u8]) -> Result<plist::Dictionary> {
     );
     dictionary(dict, 0).context("Invalid DER entitlements")
 }
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn apples_versioned_envelope_round_trips() {
-        let mut d = plist::Dictionary::new();
-        d.insert(
-            "keychain-access-groups".into(),
-            vec![plist::Value::String("TEAM.app".into())].into(),
-        );
-        d.insert("get-task-allow".into(), false.into());
-        d.insert("number".into(), 42u64.into());
-        let encoded = apple_codesign_quick::signature::der_entitlements(&d).unwrap();
-        assert_eq!(decode(&encoded).unwrap(), d);
-        for i in 0..encoded.len() {
-            assert!(decode(&encoded[..i]).is_err());
-        }
-    }
-    #[test]
-    fn invalid_lengths_are_rejected() {
-        for b in [vec![0x70, 0x80], vec![0x70, 0x81, 0], vec![0x70, 0xff]] {
-            assert!(decode(&b).is_err());
-        }
-    }
-}

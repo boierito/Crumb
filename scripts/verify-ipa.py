@@ -2,7 +2,6 @@
 """Validate the produced artifact, not only xcodebuild's exit status."""
 import hashlib
 import json
-import io
 import pathlib
 import plistlib
 import re
@@ -33,21 +32,12 @@ with zipfile.ZipFile(ipa) as archive:
     assert hashlib.sha256(picker).digest() == hashlib.sha256(pathlib.Path("EmbeddedLibraries/FilePickerFix.dylib").read_bytes()).digest(), "Picker fix changed"
     assert b"@executable_path/Frameworks/FilePickerFix.dylib\0" in executable, "Picker fix load command missing"
     assert not any(n.endswith("embedded.mobileprovision") for n in archive.namelist()), "IPA must be resignable"
-    assert "_remotepairing-pairable-host._tcp" in info.get("NSBonjourServices", []), "Pairing service declaration missing"
-    assert "_remotepairing._tcp" in info.get("NSBonjourServices", []), "Pairing port discovery declaration missing"
-    assert info.get("NSLocalNetworkUsageDescription"), "Local network permission text missing"
-    with zipfile.ZipFile(io.BytesIO(archive.read(root + "CrumbDecryptTemplate.zip"))) as helper:
-        assert set(helper.namelist()) == {"CrumbDecrypt", "Info.plist", "Icon60@2x.png", "Icon60@3x.png", "Icon76@2x.png", "Icon83.5@2x.png"}, "Unexpected helper template contents"
-        helper_info = plistlib.loads(helper.read("Info.plist"))
-        assert helper_info["CFBundleIcons"]["CFBundlePrimaryIcon"]["CFBundleIconFiles"] == ["Icon60"], "Helper icon missing"
-        assert helper_info["CFBundleExecutable"] == "CrumbDecrypt", "Wrong helper executable"
-        assert helper_info["UIFileSharingEnabled"] is True, "Helper retrieval unavailable"
-        assert struct.unpack("<II", helper.read("CrumbDecrypt")[:8]) == (0xFEEDFACF, 0x0100000C), "Helper must be arm64"
+    assert root + "CrumbDecryptTemplate.zip" not in archive.namelist(), "Legacy helper must not be bundled"
     notices = [n for n in archive.namelist() if n.endswith(("ThirdPartyNotices.txt", "GoThirdPartyNotices.txt"))]
     assert len(notices) == 2, "Linked code license notices missing"
     assert b"MIT License" in archive.read(root + "ThirdPartyNotices.txt"), "ipatool MIT notice missing"
     print(json.dumps({"ipa": str(ipa), "build": expected_build, "version": expected_version,
                       "bundleID": info["CFBundleIdentifier"], "displayName": info["CFBundleDisplayName"],
                       "minimumOS": info["MinimumOSVersion"], "cpu": "arm64",
-                      "FilesEnabled": False, "CrumbURLScheme": True, "DeviceHelperTemplate": True,
+                      "FilesEnabled": False, "CrumbURLScheme": True, "DeviceHelperTemplate": False,
                       "sha256": hashlib.file_digest(ipa.open("rb"), "sha256").hexdigest()}, indent=2))

@@ -40,7 +40,7 @@ struct CrumbApp: App {
                 }
                 .onOpenURL { schemedURL in
                     if ["device-result", "device-cancelled"].contains(schemedURL.host ?? "") {
-                        if DeviceWorkflow.shared.receiveResultURL(schemedURL) { appData.selectedTab = .downloads }
+                        // Ignore callbacks from versions that used an external helper.
                         return
                     }
                     let rawURL = schemedURL.absoluteString.replacingOccurrences(of: "crumb:", with: "")
