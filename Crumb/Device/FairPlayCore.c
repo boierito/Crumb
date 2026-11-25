@@ -1,4 +1,4 @@
-// Vendor snapshot: https://github.com/mengangs/ipadn/blob/main/iPadn-iOS/FairPlayCore/FairPlayCore.c
+// Vendor snapshot: https://github.com/mengangs/ipadn/blob/v2.3.5/iPadn-iOS/FairPlayCore/FairPlayCore.c
 // iPadN FairPlayCore (GPL-2.0-or-later). Kept unchanged below for update tracking.
 #include "FairPlayCore.h"
 
@@ -365,13 +365,19 @@ bool fp_attempt_looks_decrypted(const fp_attempt_t *a) {
     // bits/byte, code lands near 6.0-7.1 and data/zero padding far below.
     // Measured on device (2026-11-19): 17 accepted files peaked at 7.06, the 14
     // misjudged ones landed at 0.53-6.19, and a half-decrypted page stays > 7.8.
+    // Some constant-table heavy frameworks (e.g. Python CJK codec tables such as
+    // `_codecs_cn`) naturally sit around 7.50-7.70 bits/byte after clean kernel
+    // decryption while exhibiting a strong surge of ARM64 code landmarks (0->23).
     if (!fp_attempt_hard_ok(a)) return false;
     if (!(a->ent_before > 7.9)) return false;
-    if (a->ent_after >= 7.5) return false;
-    if ((a->ent_before - a->ent_after) < 0.5) return false;
-    // ret_after / ret_before stay in the log as a diagnostic: heavily obfuscated
-    // or data-only payloads decrypt correctly without a single `ret` word.
-    return true;
+    double drop = a->ent_before - a->ent_after;
+    if (a->ent_after < 7.5 && drop >= 0.5) {
+        return true;
+    }
+    if (a->ent_after < 7.8 && drop >= 0.2 && a->ret_after >= a->ret_before + 8) {
+        return true;
+    }
+    return false;
 }
 
 /// Short reason for the log: why a verdict did or did not pass.
@@ -383,8 +389,11 @@ static const char *fp_attempt_reason(bool legacy, const fp_attempt_t *a) {
         if (a->ret_after <= a->ret_before) return "no_landmark";
         return "pass";
     }
+    double drop = a->ent_before - a->ent_after;
+    if (a->ent_after < 7.5 && drop >= 0.5) return "pass";
+    if (a->ent_after < 7.8 && drop >= 0.2 && a->ret_after >= a->ret_before + 8) return "pass_code";
     if (a->ent_after >= 7.5) return "ent_high";
-    if ((a->ent_before - a->ent_after) < 0.5) return "drop_small";
+    if (drop < 0.5) return "drop_small";
     return "pass";
 }
 
